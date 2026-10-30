@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Taieri Ops">
+<title>Taieri Ops</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="stylesheet" href="/shared/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+ .rb{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+ .rb table{border-collapse:separate;border-spacing:0;min-width:980px;width:100%}
+ .rb th{position:sticky;top:0;background:var(--soft);font:600 11px var(--fm);letter-spacing:.05em;text-transform:uppercase;color:var(--ink2);padding:6px 8px;text-align:left;border-bottom:1px solid var(--line);z-index:2}
+ .rb th.run,.rb td.run{position:sticky;left:0;background:var(--card);z-index:1;min-width:120px;border-right:1px solid var(--line)}
+ .rb th.run{z-index:3;background:var(--soft)}
+ .rb td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:4px;vertical-align:top;min-width:135px}
+ .rb td.run .code{font:700 15px var(--fm)}.rb td.run .nm{display:block;font-size:11px;color:var(--ink3)}
+ .rb td.off{background:repeating-linear-gradient(135deg,transparent 0 6px,var(--soft) 6px 7px)}
+ .rb td.changed{box-shadow:inset 0 0 0 2px var(--crit)}
+ .rb td.pending{box-shadow:inset 0 0 0 2px var(--warn)}
+ .rb .slot{display:flex;flex-direction:column;gap:3px;border:1px dashed var(--line);border-radius:7px;padding:4px 6px;min-height:40px;cursor:pointer;font-size:13px}
+ .rb .slot.filled{border-style:solid;border-color:var(--accent);background:var(--accent-fill)}
+ .rb .slot .d{font-weight:700;font-size:14px}.rb .slot .v{font:600 11px var(--fm);color:var(--accent)}.rb .slot .w{font:500 10.5px var(--fm);color:var(--ink3)}
+ .rb .slot .a{display:flex;flex-wrap:wrap;gap:2px}.rb .slot .a span{font:500 9.5px var(--fm);background:var(--ok-fill);color:var(--ok);padding:0 4px;border-radius:3px}
+ .rb .slot .tr{font:600 10px var(--fm);color:var(--warn)}
+ .rb .slot .ack{font:600 10px var(--fm);color:var(--crit)}.rb .slot .ack.ok{color:var(--ok)}
+ .rb .slot .sod{font:600 10px var(--fm);color:var(--ok)}
+ .board{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+ .bcard{background:var(--soft);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:4px;font-size:13px;border-left:4px solid var(--line)}
+ .bcard.ok{border-left-color:var(--ok)}.bcard.late{border-left-color:var(--warn)}.bcard.miss{border-left-color:var(--crit)}.bcard.done{opacity:.7}
+ .bcard .nm{font-weight:800;font-size:15px}
+ .wkbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+ .wkbar b{font:600 13px var(--fm);min-width:180px;text-align:center}
+ .wkbar button.ar{border:1px solid var(--line);background:var(--soft);color:var(--ink);border-radius:8px;min-width:40px;min-height:36px;font-size:16px}
+ .chip{display:inline-flex;align-items:center;gap:4px;border-radius:5px;padding:2px 7px;font:600 11px var(--fm);background:var(--soft);cursor:pointer;border:1px solid transparent}
+ .chip.ok{background:var(--ok-fill);color:var(--ok)}.chip.late,.chip.part{background:var(--warn-fill);color:var(--warn)}.chip.miss,.chip.over{background:var(--crit-fill);color:var(--crit)}.chip.exc{color:var(--ink3);text-decoration:line-through}.chip.due{color:var(--ink3)}.chip.man{border-color:var(--accent)}
+ .dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+ .dcard{background:var(--soft);border-radius:10px;padding:10px;display:flex;gap:10px;align-items:center}
+ .mini{display:grid;grid-template-columns:28px 1fr auto;gap:2px 6px;font:600 10px var(--fm);align-items:center;color:var(--ink3)}
+ .leaflet-container{background:#0b0e12;font-family:var(--fd)}
+ .mk{background:var(--accent);color:#041a20;font:800 11px var(--fd);border-radius:999px;padding:2px 7px;border:2px solid #fff;white-space:nowrap}
+ .mk.stale{background:var(--grey);color:#fff}
+ @media (max-width:600px){h1{font-size:22px}.wkbar b{min-width:0}}
+</style>
+</head>
+<body class="wide">
+<div id="app"><div class="wrap"><div class="top"><div><div class="brand">Taieri Ops</div><h1>Loading…</h1></div></div></div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script type="module" src="/admin/admin.js"></script>
+</body>
+</html>
