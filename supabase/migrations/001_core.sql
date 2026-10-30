@@ -1,9 +1,9 @@
--- Taieri Post real-time system: core schema (draft 30 Oct 2026)
+-- Taieri Post real-time system: core schema (applied 30 Oct 2026)
 -- Decisions: push notifications to drivers; SOD editable until EOD is sent;
 -- roster changes can be made by Jeremy or Alejandro, but Alejandro's need Jeremy's OK.
 
 create extension if not exists pg_cron;
-create extension if not exists pg_net;
+create extension if not exists pg_net with schema extensions;
 
 -- People -------------------------------------------------------------------
 create type staff_role as enum ('owner','admin','fleet','driver');
@@ -27,6 +27,15 @@ $$ select role from people where user_id = auth.uid() $$;
 
 create or replace function is_boss() returns boolean language sql stable as
 $$ select coalesce(my_role() in ('owner','admin'), false) $$;
+
+-- Link a person to their login the first time they sign in (matched by email)
+create or replace function link_person_to_user() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  update people set user_id = new.id where user_id is null and lower(email) = lower(new.email);
+  return new;
+end $$;
+create trigger on_auth_user_created after insert on auth.users
+  for each row execute function link_person_to_user();
 
 -- Runs, vans, add-ons ------------------------------------------------------
 create table runs (
@@ -62,6 +71,10 @@ create table shifts (
   unique (day, run)
 );
 create index on shifts (driver, day);
+
+create or replace function touch_updated_at() returns trigger language plpgsql as $$
+begin new.updated_at = now(); return new; end $$;
+create trigger shifts_touch before update on shifts for each row execute function touch_updated_at();
 
 -- A roster change = a batch of shift edits. Alejandro's need Jeremy's approval.
 create type change_status as enum ('draft','awaiting_approval','sent','rejected');
@@ -160,6 +173,14 @@ create table message_recipients (
   primary key (message_id, person)
 );
 
+-- Helpers that bypass RLS so policies don't loop into each other
+create or replace function is_msg_sender(mid uuid) returns boolean language sql stable security definer set search_path = public as
+$$ select exists (select 1 from messages where id = mid and sender = me()) $$;
+create or replace function is_msg_recipient(mid uuid) returns boolean language sql stable security definer set search_path = public as
+$$ select exists (select 1 from message_recipients where message_id = mid and person = me()) $$;
+create or replace function change_is_sent(cid uuid) returns boolean language sql stable security definer set search_path = public as
+$$ select exists (select 1 from roster_changes where id = cid and status = 'sent') $$;
+
 -- Leave --------------------------------------------------------------------
 create table leave_requests (
   id          uuid primary key default gen_random_uuid(),
@@ -212,21 +233,22 @@ create policy boss_all on vans for all to authenticated using (is_boss() or my_r
 create policy boss_all on addons for all to authenticated using (is_boss()) with check (is_boss());
 create policy boss_all on timing_rules for all to authenticated using (is_boss()) with check (is_boss());
 
--- People: see yourself; bosses see all
-create policy self_read on people for select to authenticated using (user_id = auth.uid() or is_boss());
+-- People: everyone signed in sees names (needed to show the roster); bosses see all fields and only the owner writes
+create policy read_all on people for select to authenticated using (true);
 create policy owner_write on people for all to authenticated using (my_role()='owner') with check (my_role()='owner');
 
 -- Shifts: drivers read whole roster (to see who's where), only bosses write
 create policy read_all on shifts for select to authenticated using (true);
 create policy boss_write on shifts for all to authenticated using (is_boss()) with check (is_boss());
 
--- Roster changes: bosses manage; only owner can move to 'sent' from awaiting_approval (enforced in send function)
+-- Roster changes: bosses manage; drivers see sent changes that affect them
 create policy boss_all on roster_changes for all to authenticated using (is_boss()) with check (is_boss());
+create policy driver_read on roster_changes for select to authenticated using (status = 'sent');
 create policy boss_all on roster_change_items for all to authenticated using (is_boss()) with check (is_boss());
 create policy driver_read on roster_change_items for select to authenticated
-  using (me() = any(affects) and exists (select 1 from roster_changes c where c.id = change_id and c.status='sent'));
+  using (me() = any(affects) and change_is_sent(change_id));
 
--- Acks: driver reads/updates own; bosses read all
+-- Acks: driver reads/updates own; bosses read all and create the rows
 create policy own on change_acks for select to authenticated using (driver = me() or is_boss());
 create policy own_upd on change_acks for update to authenticated using (driver = me()) with check (driver = me());
 create policy boss_ins on change_acks for insert to authenticated with check (is_boss());
@@ -247,13 +269,10 @@ create policy read on alerts for select to authenticated using (is_boss() or dri
 create policy boss_upd on alerts for update to authenticated using (is_boss()) with check (is_boss());
 
 -- Messages
-create policy read on messages for select to authenticated using (
-  is_boss() or sender = me() or exists (select 1 from message_recipients r where r.message_id = messages.id and r.person = me()));
+create policy read on messages for select to authenticated using (is_boss() or sender = me() or is_msg_recipient(id));
 create policy send on messages for insert to authenticated with check (sender = me());
-create policy read on message_recipients for select to authenticated using (person = me() or is_boss()
-  or exists (select 1 from messages m where m.id = message_id and m.sender = me()));
-create policy add on message_recipients for insert to authenticated with check (
-  exists (select 1 from messages m where m.id = message_id and m.sender = me()));
+create policy read on message_recipients for select to authenticated using (person = me() or is_boss() or is_msg_sender(message_id));
+create policy add on message_recipients for insert to authenticated with check (is_msg_sender(message_id));
 create policy mark on message_recipients for update to authenticated using (person = me()) with check (person = me());
 
 -- Leave

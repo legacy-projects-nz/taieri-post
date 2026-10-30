@@ -1,0 +1,2 @@
+-- Applied 30 Oct 2026. Mirrors the fastas (Fire Safety) project: secrets table, activity log, locked function grants,
+-- 2FA (aal2) required for staff, indexes on linked columns. See the applied migration in Supabase for the full text.
