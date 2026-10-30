@@ -59,7 +59,7 @@ export async function verifyCode(email, token) { const { data, error } = await s
 export async function signOut() { await sb.auth.signOut(); location.reload(); }
 export async function me() {
   const s = await session(); if (!s) return null;
-  const { data, error } = await sb.from("people").select("*").eq("user_id", s.user.id).maybeSingle();
+  const { data, error } = await sb.rpc("whoami").maybeSingle();   // security-definer lookup, works before two-factor
   if (error) throw error;
   return data ? { ...data, isOwner: data.role === "owner", isStaff: data.role === "owner" || (data.perms || []).length > 0, can: a => data.role === "owner" || (data.perms || []).includes(a) } : null;
 }
