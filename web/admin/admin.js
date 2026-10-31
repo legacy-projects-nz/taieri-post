@@ -2,10 +2,11 @@
 import { sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmt24, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, settings as loadSettings, signOut, hours, nzToIso } from "/shared/core.js";
 import { requireUser } from "/shared/auth.js";
 import { AREAS, AREA_LABEL } from "/shared/config.js";
-import { cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, segTimes } from "/shared/score.js";
+import { cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, segTimes, setEvidence } from "/shared/score.js";
 import { runBoardTab, wireRunBoard } from "/admin/runboard.js";
 import { scorecardTab, wireScorecard } from "/admin/scorecard.js";
 import { liveTab as liveTab2, wireLive as wireLive2 } from "/admin/live.js";
+import { bind } from "/admin/detail.js";
 
 export const S = { me: null, tab: location.hash.slice(1) || "live", week: monOf(today()), set: {}, C: null, runs: [], runsBy: {}, vans: [], vansBy: {}, addons: [], rules: [], people: [], peopleBy: {}, shifts: [], sods: [], eods: [], marks: [], entries: [], feed: [], ovs: [], changes: [], items: [], acks: [], sent: [], msgs: [], recips: [], leave: [], alerts: [], locs: [], skills: [], notes: [], vchk: [], log: [] };
 const app = $("#app");
@@ -33,7 +34,7 @@ export async function loadAll() {
     q(sb.from("message_recipients").select("*")),
     q(sb.from("leave_requests").select("*").order("created_at", { ascending: false }).limit(100)),
     q(sb.from("alerts").select("*").order("created_at", { ascending: false }).limit(200)),
-    q(sb.from("entries").select("*").gte("day", from)),
+    q(sb.from("entries").select("*").order("day", { ascending: false }).limit(3000)),
     q(sb.from("marks").select("*")),
     q(sb.from("nzpost_feed").select("*").gte("day", from)),
     q(sb.from("eff_overrides").select("*")),
@@ -46,6 +47,7 @@ export async function loadAll() {
   const ids = shifts.map(s => s.id);
   if (ids.length) { const [sods, eods] = await Promise.all([q(sb.from("sod").select("*").in("shift_id", ids)), q(sb.from("eod").select("*").in("shift_id", ids))]); S.sods = sods; S.eods = eods; } else { S.sods = []; S.eods = []; }
   S.sodBy = Object.fromEntries(S.sods.map(s => [s.shift_id, s])); S.eodBy = Object.fromEntries(S.eods.map(e => [e.shift_id, e]));
+  setEvidence(S.shifts, S.eods);   // average figures per run & weekday → the estimate used until each EOD is in
 }
 
 const TABS = [["live", "Live", "alerts"], ["runboard", "Run Board", "roster"], ["classic", "Run Board (classic)", "roster"], ["scorecard", "Scorecard", "scorecard"], ["alerts", "Alerts", "alerts"], ["messages", "Messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"]];
@@ -64,14 +66,17 @@ export function render(soft = false) {
   $$("[data-tab]").forEach(b => b.onclick = () => { S.tab = b.dataset.tab; location.hash = S.tab; render(); });
   if (S.tab !== "live") { /* the live board draws its own map */ }
   ({ live: wireLive2, runboard: wireRunBoard, classic: () => { }, scorecard: wireScorecard, alerts: wireAlerts, messages: wireMessages, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople })[S.tab]?.();
+  bind($("#view"));   // every tile, row and chip with a data-… attribute opens its detail sheet
 }
 
 /* ================= shared helpers ================= */
-export function sheet(html, onOpen) {
-  const bg = h(`<div class="sheet-bg"><div class="sheet" role="dialog" aria-modal="true" style="position:relative;max-width:640px"><button class="x" aria-label="Close">×</button>${html}</div></div>`);
-  const close = () => bg.remove(); bg.querySelector(".x").onclick = close; bg.addEventListener("click", e => { if (e.target === bg) close(); });
-  document.body.appendChild(bg); onOpen?.(bg, close); return { bg, close };
+export function sheet(html, onOpen, opts = {}) {
+  const bg = h(`<div class="sheet-bg"><div class="sheet ${opts.wide ? "wide" : ""}" role="dialog" aria-modal="true" style="position:relative;max-width:${opts.wide ? 900 : 640}px"><button class="x" aria-label="Close">×</button>${html}</div></div>`);
+  const close = () => { bg.remove(); if (!$(".sheet-bg")) render(true); }; bg.querySelector(".x").onclick = close; bg.addEventListener("click", e => { if (e.target === bg) close(); });
+  bg._close = close; document.body.appendChild(bg); onOpen?.(bg, close); bind(bg); return { bg, close };
 }
+export function closeSheets() { $$(".sheet-bg").forEach(b => b.remove()); }
+document.addEventListener("keydown", e => { if (e.key === "Escape") { const all = $$(".sheet-bg"); const top = all[all.length - 1]; if (top) (top._close || (() => top.remove()))(); } });
 export const opt = (list, val) => list.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(val) ? "selected" : ""}>${esc(l)}</option>`).join("");
 export const nm = id => S.peopleBy[id]?.name || id || "—";
 export const fnm = id => first(nm(id));
@@ -113,7 +118,7 @@ function taskLine(D, t, n) {
   for (const x of D.segs) if (!x.sort) for (const a of (x.shift.addons || [])) { const ad = S.addons.find(z => z.id === a); if (!ad?.task) continue; const done = x.shift.done?.[a]; const plan = x.shift.plan?.[a]; out.push(`<span class="chip ${done ? "ok" : plan ? "due" : "over"}">${esc(ad.short || ad.name)}${done ? ` ✓ ${fmtTime(done)}` : plan ? ` ~${fmtT(toMin(plan))}` : " no plan"}</span>`); }
   return out.length ? `<div class="row" style="gap:3px">${out.join("")}</div>` : "";
 }
-export function alertRow(a) { return `<div class="item ${a.kind.includes("miss") ? "crit" : "warn"}"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><b>${esc(a.title)}</b>${a.body ? `<div class="meta">${esc(a.body)}</div>` : ""}<div class="m">${a.driver ? esc(nm(a.driver)) + " · " : ""}${ago(a.created_at)}</div></div>${a.resolved_at ? pill("resolved", "grey") : S.me.can("alerts") ? `<button class="btn ghost sm" data-resolve="${a.id}">Resolve</button>` : ""}</div></div>`; }
+export function alertRow(a) { return `<div class="item clk ${a.kind.includes("miss") ? "crit" : "warn"}" data-alert="${a.id}" title="Tap for the detail"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><b>${esc(a.title)}</b>${a.body ? `<div class="meta">${esc(a.body)}</div>` : ""}<div class="m">${a.driver ? esc(nm(a.driver)) + " · " : ""}${ago(a.created_at)}</div></div>${a.resolved_at ? pill("resolved", "grey") : S.me.can("alerts") ? `<button class="btn ghost sm" data-resolve="${a.id}">Resolve</button>` : ""}</div></div>`; }
 function wireLive() {
   $$("[data-resolve]").forEach(b => b.onclick = async () => { await q(sb.from("alerts").update({ resolved_at: new Date().toISOString(), resolved_by: S.me.id }).eq("id", b.dataset.resolve)); });
   const el = $("#map"); if (!el || !window.L) return;
@@ -139,9 +144,9 @@ function timingsToday() {
     const done = s.done?.[r.addon] || (r.addon?.startsWith("tw_") && /game plan/i.test(r.name) && Object.keys(s.plan || {}).length ? (s.plan && Object.values(s.plan)[0] ? "plan" : null) : null);
     const f = toMin(r.opens), c = toMin(r.closes); const win = f != null && c != null ? `${fmtT(f)}–${fmtT(c)}` : c != null ? `by ${fmtT(c)}` : f != null ? `from ${fmtT(f)}` : "any time";
     let st, cls; if (done) { st = done === "plan" ? "game plan in" : `done ${fmtTime(done)}`; cls = "ok"; } else if (c != null && n.min > c) { st = `PASSED · due ${fmtT(c)}`; cls = "miss"; } else if (c != null && c - n.min <= 60) { st = `due soon · ${fmtT(c)}`; cls = "late"; } else if (f != null && n.min >= f) { st = "window open"; cls = "due"; } else { st = "later"; cls = "due"; }
-    rows.push({ sort: c ?? f ?? 0, html: `<tr><td class="mono">${win}</td><td><b>${esc(r.name)}</b>${r.note ? `<div class="meta">${esc(r.note)}</div>` : ""}</td><td>${esc(s.run)} · ${esc(fnm(s.driver))}</td><td><span class="chip ${cls}">${st}</span></td></tr>` }); }
+    rows.push({ sort: c ?? f ?? 0, html: `<tr class="clk" data-task="${s.id}" data-rule="${r.id}"><td class="mono">${win}</td><td><b>${esc(r.name)}</b>${r.note ? `<div class="meta">${esc(r.note)}</div>` : ""}</td><td>${esc(s.run)} · ${esc(fnm(s.driver))}</td><td><span class="chip ${cls}">${st}</span>${!done && r.addon && S.me.can("roster") ? ` <button class="btn ghost sm" data-mark-done="${s.id}|${esc(r.addon)}" title="Mark it done on ${esc(fnm(s.driver))}'s behalf">Mark done</button>` : ""}</td></tr>` }); }
   rows.sort((a, b) => a.sort - b.sort);
-  return `<div class="card"><h2>Timings today<span>${label(t)} · red = passed without being done</span></h2>${rows.length ? `<div class="scroll"><table class="dt"><tr><th>Window</th><th>What</th><th>Who</th><th>Status</th></tr>${rows.map(r => r.html).join("")}</table></div>` : `<p class="empty">No timed tasks on today's runs.</p>`}<p class="hint">Drivers tap Done in their app as each one is finished. A passed window raises an alert here and pings you and the driver.</p></div>`;
+  return `<div class="card"><h2>Timings today<span>${label(t)} · red = passed without being done</span></h2>${rows.length ? `<div class="scroll"><table class="dt"><tr><th>Window</th><th>What</th><th>Who</th><th>Status</th></tr>${rows.map(r => r.html).join("")}</table></div>` : `<p class="empty">No timed tasks on today's runs.</p>`}<p class="hint">Drivers tap Done in their app as each one is finished (every timed task on their run shows there with its own Done button). A passed window raises an alert here and pings you and the driver; Done clears it. Tap a row for the plan, the history and the driver's day.</p></div>`;
 }
 function alertsTab() {
   const open = S.alerts.filter(a => !a.resolved_at), done = S.alerts.filter(a => a.resolved_at);
@@ -152,7 +157,6 @@ function alertsTab() {
     <div class="card"><h2>Resolved recently<span>${done.length}</span></h2>${done.length ? `<div class="list">${done.slice(0, 30).map(alertRow).join("")}</div>` : `<p class="empty">Nothing yet</p>`}</div>`;
 }
 function wireAlerts() {
-  $$("[data-resolve]").forEach(b => b.onclick = async () => { await q(sb.from("alerts").update({ resolved_at: new Date().toISOString(), resolved_by: S.me.id }).eq("id", b.dataset.resolve)); });
   $("#resolve-all")?.addEventListener("click", async () => { await q(sb.from("alerts").update({ resolved_at: new Date().toISOString(), resolved_by: S.me.id }).is("resolved_at", null)); toast("Resolved", "ok"); });
   $("#rem-on")?.addEventListener("change", async e => { await q(sb.from("settings").upsert({ key: "reminders", value: { ...(S.set.reminders || {}), enabled: e.target.checked } })); toast("Saved", "ok"); });
 }
@@ -164,7 +168,7 @@ function messagesTab() {
     <label class="f full">Message<textarea class="in" id="body" rows="3" required placeholder="e.g. Depot reminder: no parking past the bike shed."></textarea></label>
     <label class="chk full"><input type="checkbox" id="confirm">Ask each driver to tap "Got it"</label><label class="chk full"><input type="checkbox" id="push" checked>Also send a phone notification</label><button class="btn full" type="submit">Send</button></form></div>
     <div class="card"><h2>Sent<span>${S.msgs.length}</span></h2><div class="list">${S.msgs.map(m => { const rs = rec[m.id] || []; const read = rs.filter(r => r.read_at).length, conf = rs.filter(r => r.confirmed_at).length;
-      return `<div class="item"><div class="m">${fmtTs(m.created_at)} · ${esc(fnm(m.sender))} → ${rs.length === S.drivers.length ? "everyone" : rs.map(r => fnm(r.person)).join(", ")}</div><div style="white-space:pre-wrap">${esc(m.body)}</div>
+      return `<div class="item clk" data-msgof="${m.id}" title="Tap for who has read it"><div class="m">${fmtTs(m.created_at)} · ${esc(fnm(m.sender))} → ${rs.length === S.drivers.length ? "everyone" : rs.map(r => fnm(r.person)).join(", ")}</div><div style="white-space:pre-wrap">${esc(m.body)}</div>
         <div class="row" style="gap:3px">${rs.map(r => `<span class="chip ${r.confirmed_at ? "ok" : r.read_at ? "due" : "over"}" title="${r.read_at ? "read " + fmtTs(r.read_at) : "not read yet"}">${esc(fnm(r.person))} ${r.confirmed_at ? "✓✓" : r.read_at ? "✓" : "·"}</span>`).join("")}</div>
         <div class="meta">${read} of ${rs.length} read${m.needs_confirm ? ` · ${conf} confirmed` : ""} · ✓ read · ✓✓ confirmed</div></div>`; }).join("") || `<p class="empty">Nothing sent yet</p>`}</div></div>`;
 }
@@ -181,7 +185,7 @@ function wireMessages() {
 const LEAVE_T = { annual: "Annual leave", sick: "Sick leave", unpaid: "Unpaid leave", bereave: "Bereavement leave", dayoff: "Day off request", other: "Other" };
 function leaveTab() {
   const pend = S.leave.filter(l => l.status === "pending"), rest = S.leave.filter(l => l.status !== "pending");
-  const row = l => `<div class="item ${l.status === "pending" ? "warn" : l.status === "approved" ? "ok" : l.status === "declined" ? "crit" : ""}"><div class="row" style="justify-content:space-between"><b>${esc(nm(l.driver))} · ${esc(LEAVE_T[l.type] || l.type)}</b>${pill(l.status, l.status === "approved" ? "ok" : l.status === "declined" ? "crit" : l.status === "pending" ? "warn" : "grey")}</div>
+  const row = l => `<div class="item clk ${l.status === "pending" ? "warn" : l.status === "approved" ? "ok" : l.status === "declined" ? "crit" : ""}" data-leaveof="${l.id}"><div class="row" style="justify-content:space-between"><b>${esc(nm(l.driver))} · ${esc(LEAVE_T[l.type] || l.type)}</b>${pill(l.status, l.status === "approved" ? "ok" : l.status === "declined" ? "crit" : l.status === "pending" ? "warn" : "grey")}</div>
     <div class="meta mono">${label(l.date_from, true)}${l.date_to !== l.date_from ? ` – ${label(l.date_to, true)}` : ""}${l.part !== "full" ? ` · ${l.part === "AM" ? "morning off" : "afternoon off"}` : ""} · asked ${fmtTs(l.created_at)}${l.acked_email_at ? " · received email sent" : ""}</div>${l.notes ? `<div>${esc(l.notes)}</div>` : ""}
     ${l.status === "pending" ? `<div class="row"><input class="in" placeholder="Reply to the driver (optional)" data-reply="${l.id}" style="flex:1 1 200px"><button class="btn sm" data-decide="approved" data-id="${l.id}">Approve</button><button class="btn sm crit" data-decide="declined" data-id="${l.id}">Decline</button></div>` : l.reply ? `<div class="meta">Reply: ${esc(l.reply)}${l.decided_by ? ` · by ${esc(fnm(l.decided_by))}` : ""}</div>` : ""}</div>`;
   return `<div class="card"><h2>Waiting<span>${pend.length}</span></h2>${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : `<p class="empty">✓ Nothing waiting</p>`}<p class="hint">Approving sends the driver an email and a notification, and blocks them on the Run Board for those days.</p></div>
@@ -200,25 +204,23 @@ function fleetTab() {
   const st = d => { if (!d) return pill("not set", "grey"); const n = Math.round((new Date(d) - new Date(today())) / 86400000); return n < 0 ? pill("overdue", "crit") : n <= R.dueSoonDays ? pill(`due in ${n}d`, "warn") : pill("✓", "ok"); };
   return `<div class="card"><h2>WOF, rego and RUCs<span>due soon = within ${R.dueSoonDays} days or under ${R.rucSoonKm} km</span></h2><div class="scroll"><table class="dt"><tr><th>Van</th><th>Model</th><th>WOF</th><th>Rego</th><th>RUCs</th><th>Odometer</th><th>Responsible</th><th></th></tr>
     ${S.vans.filter(v => v.plate !== "OTHER").map(v => { const chk = S.vchk.filter(c => c.van === v.plate).sort((a, b) => b.at.localeCompare(a.at))[0]; const odo = chk?.odometer && (!v.odometer_at || chk.at.slice(0, 10) >= v.odometer_at) ? chk.odometer : v.odometer; const left = v.ruc_paid_to && odo ? v.ruc_paid_to - odo : null;
-      return `<tr><td><b class="mono">${esc(v.plate)}</b>${v.active ? "" : pill("inactive", "grey")}</td><td>${esc(v.model || "")}</td><td>${v.wof_due ? label(v.wof_due, true) : ""} ${v.wof_failed ? pill("failed", "crit") : st(v.wof_due)}</td><td>${v.rego_due ? label(v.rego_due, true) : ""} ${st(v.rego_due)}</td>
+      return `<tr class="clk" data-vanof="${esc(v.plate)}"><td><b class="mono">${esc(v.plate)}</b>${v.active ? "" : pill("inactive", "grey")}</td><td>${esc(v.model || "")}</td><td>${v.wof_due ? label(v.wof_due, true) : ""} ${v.wof_failed ? pill("failed", "crit") : st(v.wof_due)}</td><td>${v.rego_due ? label(v.rego_due, true) : ""} ${st(v.rego_due)}</td>
         <td>${v.no_ruc ? "petrol, no RUCs" : v.ruc_paid_to ? `paid to ${v.ruc_paid_to.toLocaleString()} km${left != null ? `<br>${left.toLocaleString()} km left ${left <= 0 ? pill("overdue", "crit") : left <= R.rucSoonKm ? pill("low", "warn") : pill("✓", "ok")}` : ""}` : pill("not set", "grey")}</td>
-        <td>${odo ? `${odo.toLocaleString()} km` : "—"}${chk?.odometer ? `<div class="meta">check ${label(chk.at.slice(0, 10))}</div>` : ""}</td><td>${v.responsible ? esc(nm(v.responsible)) : "<span class='meta'>main driver</span>"}</td><td><button class="btn ghost sm" data-van="${v.plate}">Edit</button></td></tr>`; }).join("")}</table></div>
-    <button class="btn ghost sm" id="van-add">+ Add a van</button></div>
+        <td>${odo ? `${odo.toLocaleString()} km` : "—"}${chk?.odometer ? `<div class="meta">check ${label(chk.at.slice(0, 10))}</div>` : ""}</td><td>${v.responsible ? esc(nm(v.responsible)) : "<span class='meta'>main driver</span>"}</td><td><button class="btn ghost sm" data-van-edit="${v.plate}">Edit</button></td></tr>`; }).join("")}</table></div>
+    <p class="hint">Tap a van for its history: checks, odometer, who's had it and what's due.</p><button class="btn ghost sm" id="van-add">+ Add a van</button></div>
     <div class="card"><h2>Weekly vehicle checks<span>due Thu ${esc(R.vchkTime)} · week of ${label(wk)}</span></h2><div class="scroll"><table class="dt"><tr><th>Van</th>${[0, 1, 2, 3, 4, 5].map(i => `<th>${label(addDays(wk, -7 * i)).slice(4)}</th>`).join("")}</tr>
       ${S.vans.filter(v => v.active && v.plate !== "OTHER").map(v => `<tr><td class="mono"><b>${esc(v.plate)}</b></td>${[0, 1, 2, 3, 4, 5].map(i => { const w = addDays(wk, -7 * i); const c = S.vchk.find(x => x.van === v.plate && x.week_start === w); return `<td>${c ? `<button class="chip ok" data-vchk="${c.id}">${esc(fnm(c.driver))} ✓</button>` : `<span class="chip ${i === 0 && dow(today()) < 3 ? "due" : "miss"}">${i === 0 && dow(today()) < 3 ? "due" : "—"}</span>`}</td>`; }).join("")}</tr>`).join("")}</table></div></div>`;
 }
-function wireFleet() {
-  const edit = plate => { const v = S.vansBy[plate] || { plate: "", active: true };
+export function editVan(plate) { const v = S.vansBy[plate] || { plate: "", active: true };
     sheet(`<h3>${plate ? esc(plate) : "New van"}</h3><form class="frm" id="vf">${plate ? "" : `<label class="f">Plate<input class="in" id="plate" required style="text-transform:uppercase"></label>`}<label class="f">Model<input class="in" id="model" value="${esc(v.model || "")}"></label><label class="f">Colour<input class="in" id="colour" value="${esc(v.colour || "")}"></label>
       <label class="f">WOF expires<input class="in" type="date" id="wof" value="${v.wof_due || ""}"></label><label class="f">Rego expires<input class="in" type="date" id="rego" value="${v.rego_due || ""}"></label>
       <label class="f">RUCs paid to (km)<input class="in" id="ruc" inputmode="numeric" value="${v.ruc_paid_to ?? ""}"></label><label class="f">Odometer (km)<input class="in" id="odo" inputmode="numeric" value="${v.odometer ?? ""}"></label>
       <label class="f full">Responsible for the weekly check<select class="in" id="resp">${opt([["", "Main driver from the roster"], ...S.drivers.map(d => [d.id, d.name])], v.responsible || "")}</select></label>
       <label class="chk"><input type="checkbox" id="noruc" ${v.no_ruc ? "checked" : ""}>Petrol (no RUCs)</label><label class="chk"><input type="checkbox" id="woff" ${v.wof_failed ? "checked" : ""}>WOF failed</label><label class="chk"><input type="checkbox" id="active" ${v.active ? "checked" : ""}>Active</label>
       <button class="btn full" type="submit">Save</button></form>`, (bg, close) => { bg.querySelector("#vf").onsubmit = async e => { e.preventDefault(); const g = id => bg.querySelector("#" + id); const row = { plate: plate || g("plate").value.trim().toUpperCase(), name: plate || g("plate").value.trim().toUpperCase(), model: g("model").value || null, colour: g("colour").value || null, wof_due: g("wof").value || null, rego_due: g("rego").value || null, ruc_paid_to: g("ruc").value ? +g("ruc").value : null, odometer: g("odo").value ? +g("odo").value : null, odometer_at: g("odo").value && +g("odo").value !== v.odometer ? today() : v.odometer_at || null, responsible: g("resp").value || null, no_ruc: g("noruc").checked, wof_failed: g("woff").checked, active: g("active").checked };
-        const { error } = await sb.from("vans").upsert(row); if (error) return toast(error.message, "err"); close(); toast("Saved", "ok"); }; }); };
-  $$("[data-van]").forEach(b => b.onclick = () => edit(b.dataset.van)); $("#van-add")?.addEventListener("click", () => edit(""));
-  $$("[data-vchk]").forEach(b => b.onclick = async () => { const c = S.vchk.find(x => x.id === b.dataset.vchk); const urls = []; for (const p of c.photos || []) { const { data } = await sb.storage.from("vchk").createSignedUrl(p, 3600); if (data) urls.push(data.signedUrl); }
-    sheet(`<h3>${esc(c.van)} · ${esc(nm(c.driver))}</h3><p class="meta">${fmtTs(c.at)}</p><dl class="kv"><dt>Odometer</dt><dd>${c.odometer?.toLocaleString() || "—"} km</dd><dt>RUCs left</dt><dd>${c.rucs_left?.toLocaleString() || "—"}</dd><dt>Washed</dt><dd>${c.washed ? "Yes" : "No"}</dd><dt>Tyres</dt><dd>${c.tyres_ok ? "OK" : "Check"}</dd><dt>Vault</dt><dd>${c.vault_ok ? "OK" : "Check"}</dd><dt>Bodywork</dt><dd>${esc(c.bodywork || "—")}</dd><dt>Service</dt><dd>${esc(c.service_due || "—")}</dd><dt>Notes</dt><dd>${esc(c.notes || "—")}</dd></dl><div class="row">${urls.map(u => `<a href="${u}" target="_blank"><img src="${u}" style="width:140px;height:140px;object-fit:cover;border-radius:8px"></a>`).join("") || "<span class='meta'>No photos</span>"}</div>`); });
+        const { error } = await sb.from("vans").upsert(row); if (error) return toast(error.message, "err"); close(); toast("Saved", "ok"); }; }); }
+function wireFleet() {
+  $("#van-add")?.addEventListener("click", () => editVan(""));
 }
 
 /* ================= TIMING RULES ================= */
@@ -249,16 +251,15 @@ function wireTiming() {
 /* ================= PEOPLE & SETTINGS ================= */
 function peopleTab() {
   const staff = S.people.filter(p => p.role !== "driver" || (p.perms || []).length), drivers = S.people.filter(p => p.role === "driver" && !(p.perms || []).length);
-  const row = p => `<tr><td><b>${esc(p.name)}</b><div class="meta">${esc(p.email || "no email")}${p.phone ? " · " + esc(p.phone) : ""}</div></td><td>${pill(p.role, p.role === "owner" ? "accent" : "")} ${p.active ? "" : pill("paused", "crit")}${p.cleared ? pill("not rostered", "grey") : ""}${p.user_id ? pill("signed in", "ok") : pill("never signed in", "grey")}</td><td class="meta">${(p.perms || []).map(a => AREA_LABEL[a]?.split(",")[0].split(" (")[0] || a).join(", ")}</td><td class="row" style="gap:4px;flex-wrap:nowrap"><button class="btn ghost sm" data-person="${p.id}">Edit</button>${p.role === "driver" || (p.perms || []).length === 0 ? `<a class="btn ghost sm" style="text-decoration:none" href="/#as=${esc(p.id)}" target="_blank" rel="noopener" title="See exactly what ${esc(first(p.name))} sees">View app</a>` : ""}</td></tr>`;
+  const row = p => `<tr class="clk" data-personof="${p.id}"><td><b>${esc(p.name)}</b><div class="meta">${esc(p.email || "no email")}${p.phone ? " · " + esc(p.phone) : ""}</div></td><td>${pill(p.role, p.role === "owner" ? "accent" : "")} ${p.active ? "" : pill("paused", "crit")}${p.cleared ? pill("not rostered", "grey") : ""}${p.user_id ? pill("signed in", "ok") : pill("never signed in", "grey")}</td><td class="meta">${(p.perms || []).map(a => AREA_LABEL[a]?.split(",")[0].split(" (")[0] || a).join(", ")}</td><td class="row" style="gap:4px;flex-wrap:nowrap"><button class="btn ghost sm" data-person-edit="${p.id}">Edit</button>${p.role === "driver" || (p.perms || []).length === 0 ? `<a class="btn ghost sm" style="text-decoration:none" href="/#as=${esc(p.id)}" target="_blank" rel="noopener" title="See exactly what ${esc(first(p.name))} sees">View app</a>` : ""}</td></tr>`;
   const L = S.set.links || {};
   return `<div class="card"><h2>Staff<span>${staff.length}</span></h2><div class="scroll"><table class="dt"><tr><th>Name</th><th>Role</th><th>Areas</th><th></th></tr>${staff.map(row).join("")}</table></div></div>
-    <div class="card"><h2>Drivers<span>${drivers.length}</span></h2><div class="scroll"><table class="dt"><tr><th>Name</th><th>Status</th><th></th><th></th></tr>${drivers.map(row).join("")}</table></div><button class="btn ghost sm" id="person-add">+ Add a person</button><p class="hint">A new person signs in with the email you enter here. Tick areas to make someone staff (they'll be asked to set up two-factor on first sign-in).</p></div>
+    <div class="card"><h2>Drivers<span>${drivers.length}</span></h2><div class="scroll"><table class="dt"><tr><th>Name</th><th>Status</th><th></th><th></th></tr>${drivers.map(row).join("")}</table></div><button class="btn ghost sm" id="person-add">+ Add a person</button><p class="hint">A new person signs in with the email you enter here. Tick areas to make someone staff (they'll be asked to set up two-factor on first sign-in). Tap a name for their sheet and history.</p></div>
     <div class="card"><h2>Settings</h2><form class="frm" id="sf"><label class="f full">Vault (Damstra) link shown to drivers<input class="in" id="vault" value="${esc(L.vault || "")}"></label><label class="f">SOD grace (min)<input class="in" id="sodGrace" inputmode="numeric" value="${S.C.rules.sodGrace}"></label><label class="f">EOD due (hours after finish)<input class="in" id="eodHours" inputmode="decimal" value="${S.C.rules.eodHours}"></label><label class="f">Admin: % off per late/missing post<input class="in" id="perEvent" inputmode="decimal" value="${S.C.rules.perEvent}"></label><label class="f">Admin floor %<input class="in" id="adminFloor" inputmode="numeric" value="${S.C.rules.adminFloor}"></label><label class="f">Mistake: % off Accuracy<input class="in" id="mistakePct" inputmode="numeric" value="${S.C.rules.mistakePct}"></label><label class="f">Default wage $/h<input class="in" id="hourRate" inputmode="decimal" value="${S.C.rules.hourRate}"></label>
       <label class="f">Weights: Admin<input class="in" id="w_admin" value="${S.C.weights.admin}"></label><label class="f">Efficiency<input class="in" id="w_eff" value="${S.C.weights.eff}"></label><label class="f">Accuracy<input class="in" id="w_acc" value="${S.C.weights.acc}"></label><label class="f">Safety<input class="in" id="w_safe" value="${S.C.weights.safe}"></label><button class="btn full" type="submit">Save settings</button></form></div>
     <div class="card"><h2>Activity log</h2><button class="btn ghost sm" id="log-load">Show the last 100 changes</button><div id="log"></div></div>`;
 }
-function wirePeople() {
-  const edit = id => { const p = S.peopleBy[id] || { id: "", name: "", email: "", role: "driver", perms: [], active: true, cleared: false };
+export function editPerson(id) { const p = S.peopleBy[id] || { id: "", name: "", email: "", role: "driver", perms: [], active: true, cleared: false };
     sheet(`<h3>${id ? esc(p.name) : "Add a person"}</h3><form class="frm" id="pf">${id ? "" : `<label class="f">Short id<input class="in" id="pid" required placeholder="e.g. TM" pattern="[A-Za-z0-9_-]+"></label>`}<label class="f ${id ? "full" : ""}">Name<input class="in" id="name" value="${esc(p.name)}" required></label><label class="f full">Email (they sign in with this)<input class="in" type="email" id="email" value="${esc(p.email || "")}"></label><label class="f">Phone<input class="in" id="phone" value="${esc(p.phone || "")}"></label><label class="f">Role<select class="in" id="role" ${p.role === "owner" ? "disabled" : ""}>${opt([["driver", "Driver"], ["admin", "Admin"], ["fleet", "Fleet"], ["owner", "Owner"]], p.role)}</select></label>
       <label class="f">Wage $/h<input class="in" id="rate" inputmode="decimal" value="${p.rate ?? ""}" placeholder="default ${S.C.rules.hourRate}"></label><label class="f">Started<input class="in" type="date" id="started" value="${p.started || ""}"></label><label class="f">Licence class<input class="in" id="lc" value="${esc(p.licence_class || "")}"></label><label class="f">Licence expires<input class="in" type="date" id="le" value="${p.licence_expiry || ""}"></label><label class="f">DG expires<input class="in" type="date" id="dg" value="${p.dg_expiry || ""}"></label><label class="f">Notes<input class="in" id="notes" value="${esc(p.notes || "")}"></label>
       <div class="full"><div class="meta mono" style="margin-bottom:6px">STAFF AREAS</div><div class="list">${AREAS.map(a => `<label class="chk ${(p.perms || []).includes(a) ? "on" : ""}" style="border-radius:10px"><input type="checkbox" name="perm" value="${a}" ${(p.perms || []).includes(a) ? "checked" : ""} ${p.role === "owner" ? "disabled" : ""}>${esc(AREA_LABEL[a])}</label>`).join("")}</div></div>
@@ -266,8 +267,9 @@ function wirePeople() {
       bg.querySelectorAll(".chk input").forEach(i => i.onchange = () => i.parentElement.classList.toggle("on", i.checked));
       bg.querySelector("#pf").onsubmit = async e => { e.preventDefault(); const g = x => bg.querySelector("#" + x); const row = { id: id || g("pid").value.trim(), name: g("name").value.trim(), email: g("email").value.trim().toLowerCase() || null, phone: g("phone").value || null, role: g("role").value, perms: [...bg.querySelectorAll("input[name=perm]:checked")].map(i => i.value), rate: g("rate").value ? +g("rate").value : null, started: g("started").value || null, licence_class: g("lc").value || null, licence_expiry: g("le").value || null, dg_expiry: g("dg").value || null, notes: g("notes").value || null, active: g("active").checked, cleared: g("cleared").checked, pay_exclude: g("payx").checked };
         if (p.role === "owner") { row.role = "owner"; row.perms = p.perms || []; }
-        const { error } = await sb.from("people").upsert(row); if (error) return toast(error.message, "err"); close(); toast("Saved", "ok"); }; }); };
-  $$("[data-person]").forEach(b => b.onclick = () => edit(b.dataset.person)); $("#person-add")?.addEventListener("click", () => edit(""));
+        const { error } = await sb.from("people").upsert(row); if (error) return toast(error.message, "err"); close(); toast("Saved", "ok"); }; }); }
+function wirePeople() {
+  $("#person-add")?.addEventListener("click", () => editPerson(""));
   $("#sf").onsubmit = async e => { e.preventDefault(); const g = x => $("#" + x).value; await q(sb.from("settings").upsert([{ key: "links", value: { ...(S.set.links || {}), vault: g("vault") } }, { key: "rules", value: { ...(S.set.rules || {}), sodGrace: +g("sodGrace"), eodHours: +g("eodHours"), perEvent: +g("perEvent"), adminFloor: +g("adminFloor"), mistakePct: +g("mistakePct"), hourRate: +g("hourRate") } }, { key: "weights", value: { admin: +g("w_admin"), eff: +g("w_eff"), acc: +g("w_acc"), safe: +g("w_safe") } }])); toast("Saved", "ok"); };
   $("#log-load")?.addEventListener("click", async () => { const rows = await q(sb.from("activity_log").select("*").order("created_at", { ascending: false }).limit(100)); $("#log").innerHTML = `<div class="scroll"><table class="dt"><tr><th>When</th><th>Who</th><th>What</th></tr>${rows.map(r => `<tr><td class="mono">${fmtTs(r.created_at)}</td><td>${esc(r.actor ? nm(r.actor) : r.actor_email || "system")}</td><td><b>${esc(r.action)}</b> <span class="meta">${esc(r.detail || "")}</span></td></tr>`).join("")}</table></div>`; });
 }

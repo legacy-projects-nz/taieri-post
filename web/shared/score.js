@@ -84,11 +84,22 @@ export function itemNote(it) {
 }
 export const late = m => m >= 60 ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}` : `${m}m`;
 
+/* ---- Evidence: average EOD figures per run and weekday from recent EODs — the estimate used until a run's EOD is in ---- */
+let EVID = null; const EV_KEYS = ["parcels", "stops", "trays", "sort_min", "pickups", "pickup_parcels"];
+export function setEvidence(shifts, eods, weeks = 8) {
+  const byShift = Object.fromEntries(shifts.map(s => [s.id, s])); const since = addDays(today(), -7 * weeks); const acc = {};
+  for (const e of eods) { const s = byShift[e.shift_id]; if (!s || s.day < since || isSort(s.run) || !e.finish_time && e.parcels == null) continue; for (const scope of [dow(s.day), "all"]) { const o = (acc[s.run] ??= {})[scope] ??= { n: 0 }; o.n++; for (const k of EV_KEYS) if (e[k] != null) (o[k] ??= []).push(+e[k]); } }
+  EVID = {}; for (const [code, scopes] of Object.entries(acc)) { EVID[code] = {}; for (const [scope, o] of Object.entries(scopes)) { const out = { n: o.n }; for (const k of EV_KEYS) if (o[k]?.length) out[k] = Math.round(o[k].reduce((a, b) => a + b, 0) / o[k].length * 10) / 10; EVID[code][scope] = out; } }
+  return EVID;
+}
+export function evidenceFor(code, day) { if (!EVID?.[code]) return null; const d = EVID[code][dow(day)], a = EVID[code].all; return d && d.n >= 2 ? { ...d, scope: "weekday" } : a ? { ...a, scope: "all" } : null; }
+export const evidence = () => EVID;
+
 /* ---- Efficiency ---- */
 export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   const code = seg.shift.run, model = C.effSimple[code]; if (!model) return null;
-  const net = model.net || NET(code); const g = []; const parts = [];
-  const v = (k, fallback) => { if (ov && ov[k] != null) return { v: ov[k], src: "set by hand" }; if (eod && eod[k] != null) return { v: eod[k], src: "driver posted" }; if (fallback != null) { g.push(k); return { v: fallback, src: "best guess" }; } return { v: null, src: "missing" }; };
+  const net = model.net || NET(code); const g = []; const parts = []; const ev = evidenceFor(code, seg.shift.day);
+  const v = (k, fallback) => { if (ov && ov[k] != null) return { v: ov[k], src: "set by hand" }; if (eod && eod[k] != null) return { v: eod[k], src: "driver posted" }; if (ev && ev[k] != null) { g.push(k); return { v: ev[k], src: "average of past EODs" }; } if (fallback != null) { g.push(k); return { v: fallback, src: "best guess" }; } return { v: null, src: "missing" }; };
   const typ = C.typical[code] || 50; const est = C.estFig[code] || {};
   const parcels = v("parcels", est.parcels ?? typ), stops = v("stops", est.stops ?? Math.round((est.parcels ?? typ) * (net === "tge" ? 0.65 : 0.8)));
   const trays = v("trays", 1), pickups = v("pickups", 0), pup = v("pickup_parcels", 0);
@@ -101,7 +112,7 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   if (model.puparcel) add("Pick-up parcels", `${pup.v} × ${model.puparcel}`, pup.v * model.puparcel);
   // sorting
   const sortMin = ov?.sort_min ?? eod?.sort_min;
-  if (net === "tge") { const sm = sortMin ?? (g.push("sort_min"), C.rules.tgeSort || 75); add("Sorting", `${sm} min`, sm); }
+  if (net === "tge") { const sm = sortMin ?? (g.push("sort_min"), ev?.sort_min ?? (C.rules.tgeSort || 75)); add("Sorting", `${sm} min`, sm); }
   else {
     const sp = ov?.sorted_parcels ?? eod?.sorted_parcels, smail = ov?.sorted_mail ?? eod?.sorted_mail;
     if (sp == null && smail == null && ctx.sortRost) add("Sorting (rostered)", `${ctx.sortRost} min`, ctx.sortRost);
@@ -122,7 +133,7 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   let takenTrk = taken; if (ov?.train_day) takenTrk = 0; else if (ov?.train_min && taken) takenTrk = Math.max(0.01, taken - ov.train_min / 60);
   const need = []; if (!eod) need.push("EOD"); else { for (const k of ["parcels", "stops"]) if ((model[k === "parcels" ? "parcel" : "stop"] || 0) > 0 && eod[k] == null && ov?.[k] == null) need.push(k === "parcels" ? (net === "tge" ? "Delivery total" : "Total parcels") : (net === "tge" ? "Jobs" : "Stops")); if (net === "tge" && sortMin == null) need.push("Sorting time"); if (!eod.finish_time) need.push("Finish time"); }
   let perf = null; if (taken && takenTrk !== 0) perf = C.rules.effMethod === "tdt" ? (2 - takenTrk / (allowed / 60)) * 100 : (allowed / 60) / takenTrk * 100; if (perf != null) perf = Math.max(0, Math.min(150, perf));
-  return { code, net, allowed, parts, taken, takenTrk, perf, need, est: g.length > 0, guess: g, trainDay: !!ov?.train_day, start, end: endT, model };
+  return { code, net, allowed, parts, taken, takenTrk, perf, need, est: g.length > 0, guess: g, trainDay: !!ov?.train_day, start, end: endT, model, evid: ev ? ev.scope : null, evN: ev?.n || 0, noEod: !eod, figs: { parcels, stops, trays, pickups, pup } };
 }
 export function addName(k) { return ({ outram: "Outram Depot", pgg: "PGG", airport: "Airport", milton: "Milton", balclutha: "Balclutha", owaka: "Owaka", rose: "Roseneath receiver", sb: "Sawyers Bay receiver", fish: "Harbour Fish pick-up", pc: "Port Chalmers receiver", digi: "Digi Art pick-up", fonterra: "Fonterra pick-up", waihola: "Waihola Store" })[k] || k; }
 
@@ -154,9 +165,9 @@ export function scoreFor(driver, from, to, D, C) {
     const runs = d.segs.filter(x => !x.sort); if (!runs.length) continue;
     const sortRost = d.segs.filter(x => x.sort).reduce((a, x) => a + ((x.en ?? x.st) - x.st), 0);
     const sod = d.segs.map(x => D.sods.find(s => s.shift_id === x.shift.id)).find(Boolean);
-    const rows = runs.map((x, i) => effCalc(x, D.eods.find(e => e.shift_id === x.shift.id), D.ovs?.find(o => o.shift_id === x.shift.id), C, D.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? nzNow(new Date(sod.sent_at)).min : null })).filter(Boolean);
+    const rows = runs.map((x, i) => { const eod = D.eods.find(e => e.shift_id === x.shift.id), ov = D.ovs?.find(o => o.shift_id === x.shift.id); const c = effCalc(x, eod, ov, C, D.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? nzNow(new Date(sod.sent_at)).min : null }); if (c) { c.shift = x.shift; c.eod = eod; c.ov = ov; } return c; }).filter(Boolean);
     const live = rows.filter(r => !r.trainDay);
-    if (live.length && live.every(r => r.perf != null)) { const A = live.reduce((a, r) => a + r.allowed, 0) / 60, T = live.reduce((a, r) => a + r.takenTrk, 0); const v = Math.max(0, Math.min(150, C.rules.effMethod === "tdt" ? (2 - T / A) * 100 : A / T * 100)); effDays.push({ day: d.day, v, est: live.some(r => r.est), rows, allowed: A, taken: T }); }
+    if (live.length && live.every(r => r.perf != null && !r.need.length)) { const A = live.reduce((a, r) => a + r.allowed, 0) / 60, T = live.reduce((a, r) => a + r.takenTrk, 0); const v = Math.max(0, Math.min(150, C.rules.effMethod === "tdt" ? (2 - T / A) * 100 : A / T * 100)); effDays.push({ day: d.day, v, est: live.some(r => r.est), rows, allowed: A, taken: T }); }
     else if (d.day <= today()) effDays.push({ day: d.day, pending: true, need: rows.filter(r => r.need.length).map(r => `${r.code}: ${r.need.join(", ")}`).join("; "), rows });
   }
   const scored = effDays.filter(e => !e.pending); const eff = scored.length ? scored.reduce((a, e) => a + e.v, 0) / scored.length : null;

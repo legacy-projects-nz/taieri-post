@@ -83,6 +83,7 @@ label.f{display:flex;flex-direction:column;gap:4px;font:600 11px var(--fm);lette
 .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:50;display:flex;align-items:flex-end;justify-content:center}
 .sheet{background:var(--card);border:1px solid var(--line);border-radius:16px 16px 0 0;width:100%;max-width:560px;max-height:92vh;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
 @media (min-width:600px){.sheet-bg{align-items:center}.sheet{border-radius:16px}}
+.sheet>*{flex-shrink:0}
 .sheet h3{margin:0;font-size:18px}
 .sheet .x{position:absolute;right:14px;top:10px;background:none;border:0;color:var(--ink3);font-size:26px;line-height:1}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
@@ -121,3 +122,20 @@ pre.msg{background:var(--soft);border-radius:8px;padding:10px;white-space:pre-wr
 .ring span{position:relative}
 .map{height:420px;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#0b0e12}
 @media (max-width:600px){.map{height:320px}}
+
+/* drill-downs: anything with .clk opens its detail */
+button.tile{cursor:pointer;color:inherit;font:inherit;width:100%}
+button.tile:hover,button.tile:focus-visible{border-color:var(--accent)}
+.clk{cursor:pointer}
+tr.clk:hover td,td.clk:hover{background:rgba(92,192,220,.08)}
+.item.clk:hover,.chip.clk:hover{outline:1px solid var(--accent)}
+.sheet.wide{max-width:900px}
+.sheet h4{margin:6px 0 2px;font:600 11px var(--fm);letter-spacing:.08em;text-transform:uppercase;color:var(--ink2)}
+/* efficiency table: figures you can type over */
+td.ed{cursor:text;min-width:58px}
+td.ed:hover{box-shadow:inset 0 0 0 1px var(--accent);border-radius:4px}
+td.ed.ov{color:var(--accent);font-weight:700}
+td.ed.gs{color:var(--ink3)}
+td.ed input{width:72px;min-height:30px;padding:2px 6px;font:600 13px var(--fd);background:var(--card);border:1px solid var(--accent);border-radius:6px;color:var(--ink)}
+.tw-r.done{background:var(--ok-fill)}.tw-r.done .w{color:var(--ok)}
+.tw-r.miss{background:var(--crit-fill);outline:1px solid var(--crit)}.tw-r.miss .w{color:var(--crit)}

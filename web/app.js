@@ -2,7 +2,7 @@
 import { sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, longLabel, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, enablePush, pushState, nzToIso, settings as loadSettings, signOut } from "/shared/core.js";
 import { requireUser } from "/shared/auth.js";
 import { VAPID_PUBLIC } from "/shared/config.js";
-import { cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, NET, PICKUP_RUNS, LEG_RUNS, effCalc } from "/shared/score.js";
+import { cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, NET, PICKUP_RUNS, LEG_RUNS, effCalc, setEvidence } from "/shared/score.js";
 
 const app = $("#app");
 const S = { me: null, set: {}, C: null, runs: [], runsBy: {}, vans: {}, addons: [], rules: [], people: {}, shifts: [], sods: [], eods: [], marks: [], entries: [], feed: [], changes: [], acks: [], msgs: [], leave: [], alerts: [], loc: null, gotit: {} };
@@ -22,8 +22,8 @@ try { S.gotit = JSON.parse(localStorage.getItem("tp-gotit") || "{}"); } catch { 
 })();
 
 async function loadAll() {
-  const m = S.me.id; const t = today(); const from = addDays(monOf(t), -7), to = addDays(monOf(t), 13);
-  const [set, runs, vans, addons, rules, people, shifts, changes, acks, msgs, leave, alerts, entries, marks, feed] = await Promise.all([
+  const m = S.me.id; const t = today(); const from = addDays(monOf(t), -56), to = addDays(monOf(t), 13);
+  const [set, runs, vans, addons, rules, people, shifts, changes, acks, msgs, leave, alerts, entries, marks, feed, vchk] = await Promise.all([
     loadSettings(), q(sb.from("runs").select("*")), q(sb.from("vans").select("*")), q(sb.from("addons").select("*")), q(sb.from("timing_rules").select("*").eq("active", true)),
     q(sb.from("people").select("id,name,role")),
     q(sb.from("shifts").select("*").gte("day", from).lte("day", to).or(`driver.eq.${m},trainee.eq.${m}`)),
@@ -35,14 +35,16 @@ async function loadAll() {
     q(sb.from("entries").select("*").eq("driver", m).gte("day", from)),
     q(sb.from("marks").select("*").eq("driver", m)),
     q(sb.from("nzpost_feed").select("*").gte("day", from)),
+    q((S.viewer?.isStaff ? sb.from("vehicle_checks").select("*").eq("driver", m) : sb.from("vehicle_checks").select("*")).order("at", { ascending: false }).limit(12)),
   ]);
   S.set = set; S.C = cfg(set); S.runs = runs; S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vans = Object.fromEntries(vans.map(v => [v.plate, v])); S.addons = addons; S.rules = rules;
   S.people = Object.fromEntries(people.map(p => [p.id, p])); S.shifts = shifts.filter(s => s.driver === m); S.trainee = shifts.filter(s => s.trainee === m && s.driver !== m);
-  S.changes = changes; S.acks = acks; S.msgs = msgs; S.leave = leave; S.alerts = alerts; S.entries = entries; S.marks = marks; S.feed = feed;
+  S.changes = changes; S.acks = acks; S.msgs = msgs; S.leave = leave; S.alerts = alerts; S.entries = entries; S.marks = marks; S.feed = feed; S.vchk = vchk || [];
   const ids = S.shifts.map(s => s.id);
-  if (ids.length) { const [sods, eods] = await Promise.all([q(sb.from("sod").select("*").in("shift_id", ids)), q(sb.from("eod").select("*").in("shift_id", ids))]); S.sods = sods; S.eods = eods; } else { S.sods = []; S.eods = []; }
+  if (ids.length) { const [sods, eods, ovs] = await Promise.all([q(sb.from("sod").select("*").in("shift_id", ids)), q(sb.from("eod").select("*").in("shift_id", ids)), S.viewer?.isStaff ? q(sb.from("eff_overrides").select("*").in("shift_id", ids)) : sb.rpc("my_eff_overrides").then(r => r.data || [])]); S.sods = sods; S.eods = eods; S.ovs = ovs; } else { S.sods = []; S.eods = []; S.ovs = []; }
+  setEvidence(S.shifts, S.eods);
   S.days = dayShifts(S.shifts, S.runsBy, m);
-  for (const d of Object.values(S.days)) for (const x of d.segs) { x.sod = S.sods.find(s => s.shift_id === x.shift.id); x.eod = S.eods.find(e => e.shift_id === x.shift.id); }
+  for (const d of Object.values(S.days)) for (const x of d.segs) { x.sod = S.sods.find(s => s.shift_id === x.shift.id); x.eod = S.eods.find(e => e.shift_id === x.shift.id); x.ov = S.ovs.find(o => o.shift_id === x.shift.id); }
   locationTick();
 }
 
@@ -118,21 +120,25 @@ function rosterChanges(n) {
 }
 
 /* ---------- From Jeremy / alerts / messages ---------- */
+const ENTRY_K = { praise: ["ok", "Nice work 👏"], issue: ["warn", "Heads up"], note: ["accent", "Note"], mistake: ["crit", "Mistake recorded"], adjust: ["accent", "Admin points"], safety: ["warn", "Safety"], eff: ["accent", "Efficiency set"] };
 function fromJeremy() {
-  const list = S.entries.filter(e => e.show_driver).sort((a, b) => b.day.localeCompare(a.day)).slice(0, 6); if (!list.length) return "";
-  const K = { praise: ["ok", "Nice work 👏"], issue: ["warn", "Heads up"], note: ["accent", "Note"], mistake: ["crit", "Mistake recorded"] };
-  return `<div class="card"><h2>From Jeremy<span>${list.length}</span></h2><div class="list">${list.map(e => { const k = K[e.kind] || K.note; return `<div class="item ${k[0]}"><div class="m">${k[1]} · ${label(e.day)}</div><div>${esc(e.title)}${e.note ? `<div class="meta">${esc(e.note)}</div>` : ""}</div></div>`; }).join("")}</div></div>`;
+  const all = S.entries.filter(e => e.show_driver).sort((a, b) => (b.created_at || b.day).localeCompare(a.created_at || a.day)); if (!all.length) return "";
+  const fresh = all.filter(e => !e.seen_at), old = all.filter(e => e.seen_at).slice(0, 12);
+  const row = (e, seen) => { const k = ENTRY_K[e.kind] || ENTRY_K.note; return `<div class="item clk ${seen ? "" : k[0]}" data-entryv="${e.id}"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><div class="m">${k[1]} · ${label(e.day)}${e.run ? ` · ${esc(e.run)}` : ""}${seen ? ` · viewed ${fmtTs(e.seen_at)}` : ""}</div><div>${esc(e.title)}${e.note ? `<div class="meta">${esc(e.note)}</div>` : ""}</div></div>${seen || S.viewAs ? "" : `<button class="btn ghost sm" data-seen="${e.id}" style="flex:0">Viewed ✓</button>`}</div></div>`; };
+  if (!fresh.length && !old.length) return "";
+  return `<div class="card ${fresh.some(e => e.kind === "mistake") ? "hot" : fresh.length ? "warnc" : ""}"><h2>From Jeremy<span>${fresh.length ? `${fresh.length} new` : "nothing new"}</span></h2>${fresh.length ? `<div class="list">${fresh.map(e => row(e, false)).join("")}</div><p class="hint">Tap Viewed once you've read it and it moves to the list below. Jeremy sees when you've viewed it.</p>` : ""}
+    ${old.length ? `<details><summary>Viewed<span class="meta">${old.length}</span></summary><div class="list" style="margin-top:8px">${old.map(e => row(e, true)).join("")}</div></details>` : ""}</div>`;
 }
 function alertsCard() {
   if (!S.alerts.length) return "";
-  return `<div class="card hot"><h2>Needs attention<span>${S.alerts.length}</span></h2><div class="list">${S.alerts.map(a => `<div class="item ${a.kind.includes("missed") || a.kind === "sod_missing" ? "crit" : "warn"}"><b>${esc(a.title)}</b>${a.body ? `<div class="meta">${esc(a.body)}</div>` : ""}<div class="m">${ago(a.created_at)}</div></div>`).join("")}</div></div>`;
+  return `<div class="card hot"><h2>Needs attention<span>${S.alerts.length}</span></h2><div class="list">${S.alerts.map(a => `<div class="item clk ${a.kind.includes("missed") || a.kind === "sod_missing" ? "crit" : "warn"}" data-alertv="${a.id}"><b>${esc(a.title)}</b>${a.body ? `<div class="meta">${esc(a.body)}</div>` : ""}<div class="m">${ago(a.created_at)} · tap for what to do</div></div>`).join("")}</div></div>`;
 }
 function messagesCard() {
   const unread = S.msgs.filter(m => !m.read_at); const toConfirm = S.msgs.filter(m => m.messages.needs_confirm && !m.confirmed_at);
   const show = S.msgs.slice(0, 5); if (!show.length) return "";
   return `<div class="card ${toConfirm.length ? "warnc" : ""}" id="msgs"><h2>Messages<span>${toConfirm.length ? `${toConfirm.length} to confirm` : unread.length ? `${unread.length} new` : ""}</span></h2>
-    <div class="list">${show.map(m => `<div class="item ${m.messages.needs_confirm && !m.confirmed_at ? "warn" : m.read_at ? "" : "accent"}"><div class="m">${esc(first(S.people[m.messages.sender]?.name || "Jeremy"))} · ${fmtTs(m.messages.created_at)}${m.confirmed_at ? ` · <span class="c-ok">✓ confirmed</span>` : ""}</div><div style="white-space:pre-wrap">${esc(m.messages.body)}</div>${m.messages.needs_confirm && !m.confirmed_at ? `<button class="btn sm" data-confirm="${m.message_id}">Got it</button>` : ""}</div>`).join("")}</div>
-    ${S.msgs.length > 5 ? `<details><summary>Older messages</summary><div class="list" style="margin-top:8px">${S.msgs.slice(5).map(m => `<div class="item"><div class="m">${fmtTs(m.messages.created_at)}</div><div style="white-space:pre-wrap">${esc(m.messages.body)}</div></div>`).join("")}</div></details>` : ""}</div>`;
+    <div class="list">${show.map(m => `<div class="item clk ${m.messages.needs_confirm && !m.confirmed_at ? "warn" : m.read_at ? "" : "accent"}" data-msgv="${m.message_id}"><div class="m">${esc(first(S.people[m.messages.sender]?.name || "Jeremy"))} · ${fmtTs(m.messages.created_at)}${m.confirmed_at ? ` · <span class="c-ok">✓ confirmed</span>` : ""}</div><div style="white-space:pre-wrap">${esc(m.messages.body)}</div>${m.messages.needs_confirm && !m.confirmed_at ? `<button class="btn sm" data-confirm="${m.message_id}">Got it</button>` : ""}</div>`).join("")}</div>
+    ${S.msgs.length > 5 ? `<details><summary>Older messages</summary><div class="list" style="margin-top:8px">${S.msgs.slice(5).map(m => `<div class="item clk" data-msgv="${m.message_id}"><div class="m">${fmtTs(m.messages.created_at)}</div><div style="white-space:pre-wrap">${esc(m.messages.body)}</div></div>`).join("")}</div></details>` : ""}</div>`;
 }
 
 /* ---------- Today / next shift ---------- */
@@ -142,7 +148,7 @@ function segRow(x, day, n, isToday) {
   const tags = [x.shift.van ? `<span class="tag van">${esc(x.shift.van)}</span>` : "", x.shift.trainee ? `<span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : "", ...(x.shift.addons || []).map(a => `<span class="tag">+ ${esc(addName(a))}</span>`)].join("");
   const tw = x.sort ? "" : timingRows(x, day, isToday ? n.min : null);
   const act = isToday ? segActions(x, day, n) : "";
-  return `<div class="seg"><div class="tm">${fmtT(x.st)} – ${fmtT(x.en)}</div><div class="rn">${x.sort ? esc(r?.label || "Sort") : `${esc(code)}<span class="sub">${esc(runName(code))}</span>`}<div class="tags">${tags}</div>${tw}${act}</div></div>`;
+  return `<div class="seg clk" data-dayv="${day}" title="Tap for the full day"><div class="tm">${fmtT(x.st)} – ${fmtT(x.en)}</div><div class="rn">${x.sort ? esc(r?.label || "Sort") : `${esc(code)}<span class="sub">${esc(runName(code))}</span>`}<div class="tags">${tags}</div>${tw}${act}</div></div>`;
 }
 function rulesFor(x, day) {
   const code = x.shift.run; const d = dow(day) + 1; const out = [];
@@ -157,11 +163,17 @@ function rulesFor(x, day) {
   return out.sort((a, b) => (toMin(a.closes) ?? toMin(a.opens) ?? 0) - (toMin(b.closes) ?? toMin(b.opens) ?? 0));
 }
 function winTxt(r) { const f = toMin(r.opens), t = toMin(r.closes); return f != null && t != null ? `${fmtT(f)} – ${fmtT(t)}` : t != null ? `by ${fmtT(t)}` : f != null ? `from ${fmtT(f)}` : "any time"; }
+/** Every timed task on a run, each with its own Done button on the day (what Jeremy's Alerts and "Timings today" read). */
 function timingRows(x, day, nowMin) {
-  const rows = rulesFor(x, day).map(r => { const f = toMin(r.opens), t = toMin(r.closes); let tag = "", cls = "";
-    if (nowMin != null) { if (t != null && nowMin > t) return ""; if (f != null && nowMin >= f) { tag = "now"; cls = "now"; } else if (f == null && t != null && t - nowMin <= 60) { tag = "due soon"; cls = "now"; } }
-    return `<div class="tw-r ${cls}"><div class="w">${winTxt(r)}${tag ? `<span class="tw-tag">${tag}</span>` : ""}</div><div><span class="n">${esc(r.name)}</span>${r.note ? `<span class="x">${esc(r.note)}</span>` : ""}</div></div>`; }).filter(Boolean);
-  return rows.length ? `<div class="tw"><h4>Timing windows</h4>${rows.join("")}</div>` : "";
+  const isT = nowMin != null; const rules = rulesFor(x, day); if (!rules.length) return "";
+  const rows = rules.map(r => { const f = toMin(r.opens), t = toMin(r.closes); const key = r.addon; const done = key ? x.shift.done?.[key] : null; const gp = !!key?.startsWith("tw_") && /game plan/i.test(r.name); const planned = gp && Object.keys(x.shift.plan || {}).length > 0; let st = "", cls = "", tag = "";
+    if (done) { st = `✓ done ${fmtTime(done)}`; cls = "done"; }
+    else if (gp && planned) { st = "✓ game plan in"; cls = "done"; }
+    else if (isT) { if (t != null && nowMin > t) { st = `✗ not done by ${fmtT(t)}`; cls = "miss"; } else if (f != null && nowMin >= f) { tag = "now"; cls = "now"; } else if (t != null && t - nowMin <= 60) { tag = "due soon"; cls = "now"; } }
+    else if (day < today() && key) { st = `✗ not marked done`; cls = "miss"; }
+    const btn = isT && key && !done && !S.viewAs && !(gp && planned) ? `<button class="btn sm ${cls === "miss" ? "warn" : "ghost"}" data-done="${esc(key)}" data-shift="${x.shift.id}" style="flex:0 0 auto;min-height:34px">Done ✓</button>` : "";
+    return `<div class="tw-r ${cls}"><div class="w">${winTxt(r)}${tag ? `<span class="tw-tag">${tag}</span>` : ""}</div><div class="row" style="justify-content:space-between;align-items:center;gap:6px;flex-wrap:nowrap"><div style="flex:1 1 auto"><span class="n">${esc(r.name)}</span>${r.note ? `<span class="x">${esc(r.note)}</span>` : ""}${st ? `<span class="x ${cls === "miss" ? "c-crit" : "c-ok"}" style="font-weight:600">${st}</span>` : ""}${gp && !planned && !done && isT ? `<span class="x">Set your planned times in Add-ons &amp; tasks below (that counts as the game plan), or tap Done.</span>` : ""}</div>${btn}</div></div>`; });
+  return `<div class="tw"><h4>${isT ? "Timed tasks today · tap Done as you finish each one" : "Timed tasks"}</h4>${rows.join("")}${isT ? `<p class="hint" style="margin:4px 0 0">Jeremy sees each Done straight away; a window that passes without Done raises an alert for you both.</p>` : ""}</div>`;
 }
 function segActions(x, day, n) {
   if (x.sort) return x.eod ? `<div class="meta c-ok">✓ Sort finished ${fmtTime(x.eod.sent_at)}</div>` : "";
@@ -196,19 +208,21 @@ function vanCard(T, N) {
   const st = (d, soonDays = 14) => { if (!d) return ["unknown", "not on file"]; const n = Math.round((new Date(d) - new Date(today())) / 86400000); return n < 0 ? ["crit", "overdue"] : n <= soonDays ? ["warn", `due in ${n}d`] : ["ok", "✓"]; };
   return `<div class="card"><h2>My van<span>${src === T ? "Today" : `Next shift · ${label(src.day)}`}</span></h2>${plates.map(p => { const v = S.vans[p] || {}; const w = st(v.wof_due), r = st(v.rego_due); let ruc = ["unknown", "not on file"], rtxt = "";
     if (v.no_ruc) { ruc = ["ok", "✓"]; rtxt = "not needed (petrol)"; } else if (v.ruc_paid_to) { const left = v.odometer ? v.ruc_paid_to - v.odometer : null; rtxt = `paid to ${v.ruc_paid_to.toLocaleString()} km${left != null ? ` · ${left.toLocaleString()} km left` : ""}`; ruc = left == null ? ["ok", "✓"] : left <= 0 ? ["crit", "overdue"] : left <= (S.C.rules.rucSoonKm || 1000) ? ["warn", "low"] : ["ok", "✓"]; }
-    return `<div><span class="plate">${esc(p)}</span>${v.model ? ` <span class="meta">${esc(v.model)}</span>` : ""}<dl class="kv" style="margin-top:8px;grid-template-columns:56px 1fr"><dt>WOF</dt><dd>${v.wof_due ? label(v.wof_due, true) + " " : ""}${pill(w[1], w[0] === "unknown" ? "grey" : w[0])}</dd><dt>Rego</dt><dd>${v.rego_due ? label(v.rego_due, true) + " " : ""}${pill(r[1], r[0] === "unknown" ? "grey" : r[0])}</dd><dt>RUCs</dt><dd>${esc(rtxt)} ${pill(ruc[1], ruc[0] === "unknown" ? "grey" : ruc[0])}</dd></dl></div>`; }).join("")}
-    <p class="hint">Low or overdue? Tell Stu.</p></div>`;
+    return `<div><button class="plate clk" data-vanv="${esc(p)}" style="background:none;cursor:pointer" title="Tap for this van's history">${esc(p)}</button>${v.model ? ` <span class="meta">${esc(v.model)}</span>` : ""}<dl class="kv" style="margin-top:8px;grid-template-columns:56px 1fr"><dt>WOF</dt><dd>${v.wof_due ? label(v.wof_due, true) + " " : ""}${pill(w[1], w[0] === "unknown" ? "grey" : w[0])}</dd><dt>Rego</dt><dd>${v.rego_due ? label(v.rego_due, true) + " " : ""}${pill(r[1], r[0] === "unknown" ? "grey" : r[0])}</dd><dt>RUCs</dt><dd>${esc(rtxt)} ${pill(ruc[1], ruc[0] === "unknown" ? "grey" : ruc[0])}</dd></dl></div>`; }).join("")}
+    <p class="hint">Low or overdue? Tell Stu. Tap the plate for your checks and history with this van.</p></div>`;
 }
 function shiftsCard(t) {
   const mon = monOf(t); const nextMon = addDays(mon, 7);
   const row = d => { const D = S.days[d]; const hol = S.C.holidays[d]; const isT = d === t;
     const txt = hol ? esc(hol.name) : D ? D.segs.map(x => x.sort ? esc(S.runsBy[x.shift.run]?.label || "Sort") : `${esc(x.shift.run)}${x.shift.van ? ` · ${esc(x.shift.van)}` : ""}`).join(" → ") : "Off";
-    return `<div class="day ${D ? "" : "off"} ${isT ? "todayrow" : ""}"><div class="dl">${label(d).slice(0, 6)}</div><div>${txt}</div><div class="dh">${D ? `${fmtT(D.start)}–${fmtT(D.end)}` : ""}</div></div>`; };
+    return `<div class="day ${D ? "clk" : "off"} ${isT ? "todayrow" : ""}" ${D ? `data-dayv="${d}" title="Tap for the detail"` : ""}><div class="dl">${label(d).slice(0, 6)}</div><div>${txt}</div><div class="dh">${D ? `${fmtT(D.start)}–${fmtT(D.end)}` : ""}</div></div>`; };
   const thisW = []; for (let d = addDays(t, 1); d < nextMon; d = addDays(d, 1)) thisW.push(d);
   const nextW = []; for (let d = nextMon; d < addDays(nextMon, 7); d = addDays(d, 1)) nextW.push(d);
   const nShifts = nextW.filter(d => S.days[d]).length; const rosterOut = S.shifts.some(s => s.day >= nextMon) || nShifts > 0;
-  return `<div class="card"><h2>My shifts</h2><div class="meta mono">This week</div>${thisW.length ? thisW.map(row).join("") : `<div class="day off"><div class="dl"></div><div>Nothing left this week</div><div></div></div>`}
-    <details><summary>Next week<span class="meta">${rosterOut ? `${nShifts} shift${nShifts === 1 ? "" : "s"}` : "roster not out yet"}</span></summary>${nextW.map(row).join("")}</details></div>`;
+  const lastW = []; for (let d = addDays(mon, -7); d < mon; d = addDays(d, 1)) lastW.push(d); const earlier = []; for (let d = mon; d <= t; d = addDays(d, 1)) earlier.push(d);
+  return `<div class="card"><h2>My shifts<span>tap a day for posts, figures and your score that day</span></h2>${earlier.length ? `<details><summary>Earlier this week<span class="meta">${earlier.filter(d => S.days[d]).length} shift${earlier.filter(d => S.days[d]).length === 1 ? "" : "s"}</span></summary>${earlier.map(row).join("")}</details>` : ""}<div class="meta mono">This week</div>${thisW.length ? thisW.map(row).join("") : `<div class="day off"><div class="dl"></div><div>Nothing left this week</div><div></div></div>`}
+    <details><summary>Next week<span class="meta">${rosterOut ? `${nShifts} shift${nShifts === 1 ? "" : "s"}` : "roster not out yet"}</span></summary>${nextW.map(row).join("")}</details>
+    <details><summary>Last week<span class="meta">${lastW.filter(d => S.days[d]).length} shift${lastW.filter(d => S.days[d]).length === 1 ? "" : "s"}</span></summary>${lastW.map(row).join("")}</details></div>`;
 }
 
 /* ---------- Add-ons & tasks ---------- */
@@ -240,25 +254,33 @@ function addonsCard(T, N, n) {
 /* ---------- Scores ---------- */
 function scoresCard() {
   const F = fortnight(today()); const D = { shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, runsBy: S.runsBy };
-  const sc = scoreFor(S.me.id, F.from, F.to, D, S.C); S.sc = sc; S.F = F;
+  const sc = scoreFor(S.me.id, F.from, F.to, { ...D, ovs: S.ovs }, S.C); S.sc = sc; S.F = F;
   const tile = (k, l, v) => `<button class="tile ${S.scSel === k ? "sel" : ""}" data-sc="${k}"><div class="l">${l} ▾</div><div class="v c-${col(v)}">${pct(v)}</div><div class="bar"><i class="bg-${col(v)}" style="width:${Math.min(100, v || 0)}%"></i></div></button>`;
   const line = [`${sc.onTime} of ${sc.closed} posts on time`, sc.late ? `${sc.late} late` : "", sc.missing ? `${sc.missing} missing` : "", sc.nMist ? `${sc.nMist} mistake${sc.nMist === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
   return `<div class="card" id="scores"><h2>My scores<span>${label(F.from)} – ${label(F.to)}</span></h2>
     <div class="tiles" style="grid-template-columns:1fr 1fr">${tile("admin", "Admin", sc.admin)}${tile("eff", "Efficiency", sc.eff)}${tile("acc", "Accuracy", sc.acc)}${tile("safe", "Safety", sc.safe)}</div>
     <div class="meta">Overall <b class="c-${col(sc.overall)}">${pct(sc.overall)}</b> · ${line} · tap a score to see the figures</div>
-    ${S.scSel ? scoreDetail(sc, S.scSel) : ""}</div>`;
+    ${S.scSel ? scoreDetail(sc, S.scSel) : ""}
+    ${historyBlock()}</div>`;
+}
+function dataFor() { return { shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, runsBy: S.runsBy, ovs: S.ovs }; }
+function scoreAt(from, to) { return scoreFor(S.me.id, from, to, dataFor(), S.C); }
+function historyBlock() {
+  const t = today(); const weeks = Array.from({ length: 6 }, (_, i) => addDays(monOf(t), -7 * i)).map(w => ({ w, s: scoreAt(w, addDays(w, 6)) })).filter(x => x.s.closed || x.s.effDays.length || x.s.accDays.length);
+  if (!weeks.length) return "";
+  return `<details style="border-top:1px solid var(--line);padding-top:8px"><summary>History by week<span class="meta">tap a week</span></summary><div class="scroll"><table class="dt"><tr><th>Week of</th><th>On time</th><th>Admin</th><th>Eff</th><th>Acc</th><th>Overall</th></tr>${weeks.map(({ w, s }) => `<tr class="clk" data-weekv="${w}"><td>${label(w)}</td><td class="num">${s.closed ? `${s.onTime}/${s.closed}` : "—"}</td><td class="c-${col(s.admin)}">${pct(s.admin)}</td><td class="c-${col(s.eff)}">${pct(s.eff)}</td><td class="c-${col(s.acc)}">${pct(s.acc)}</td><td class="c-${col(s.overall)}"><b>${pct(s.overall)}</b></td></tr>`).join("")}</table></div></details>`;
 }
 function scoreDetail(sc, k) {
   const R = S.C.rules; const tbl = (head, rows) => rows.length ? `<div class="scroll"><table class="dt"><tr>${head.map(x => `<th>${x}</th>`).join("")}</tr>${rows.join("")}</table></div>` : "";
   let body = "";
-  if (k === "admin") { const rows = sc.items.filter(i => !["due", "over"].includes(i.st) || i.st === "over").sort((a, b) => a.day.localeCompare(b.day)).map(i => `<tr><td>${label(i.day)}</td><td>${esc(i.label)}<div class="meta">${itemNote(i)}</div></td><td>${pill(STATE_LABEL[i.st], i.st === "ok" ? "ok" : i.st === "miss" ? "crit" : i.st === "due" || i.st === "over" ? "grey" : "warn")}</td></tr>`);
-    body = `<p class="hint">Starts at 100%. Each late or missing post takes off ${R.perEvent}%. It never drops below ${R.adminFloor}%.</p>${tbl(["Day", "Post", "Result"], rows) || `<p class="empty">No posts counted for these days. Posts count from ${label(R.adminStart)}.</p>`}${sc.adj ? `<p class="meta">Adjustments from Jeremy: ${sc.entries.filter(e => e.admin_pts).map(e => `${label(e.day)} ${e.admin_pts > 0 ? "+" : ""}${e.admin_pts} (${esc(e.title)})`).join(", ")}</p>` : ""}`; }
-  if (k === "eff") { const rows = sc.effDays.filter(e => !e.pending).map(e => `<tr><td>${label(e.day)}</td><td>${e.manual ? "set by Jeremy" : e.rows.map(r => r.code).join(" + ")}</td><td class="num">${e.allowed ? (e.est ? "≈" : "") + e.allowed.toFixed(1) + " h" : ""}</td><td class="num">${e.taken ? e.taken.toFixed(1) + " h" : ""}</td><td class="c-${col(Math.min(100, e.v))}">${Math.round(e.v)}%${e.est ? " est" : ""}</td></tr>`);
+  if (k === "admin") { const rows = sc.items.filter(i => !["due", "over"].includes(i.st) || i.st === "over").sort((a, b) => a.day.localeCompare(b.day)).map(i => `<tr class="clk" data-postv="${esc(i.key)}"><td>${label(i.day)}</td><td>${esc(i.label)}<div class="meta">${itemNote(i)}</div></td><td>${pill(STATE_LABEL[i.st], i.st === "ok" ? "ok" : i.st === "miss" ? "crit" : i.st === "due" || i.st === "over" ? "grey" : "warn")}</td></tr>`);
+    body = `<p class="hint">Starts at 100%. Each late or missing post takes off ${R.perEvent}%. It never drops below ${R.adminFloor}%. Tap a post to see what was sent and when it was due.</p>${tbl(["Day", "Post", "Result"], rows) || `<p class="empty">No posts counted for these days. Posts count from ${label(R.adminStart)}.</p>`}${sc.adj ? `<p class="meta">Adjustments from Jeremy: ${sc.entries.filter(e => e.admin_pts).map(e => `${label(e.day)} ${e.admin_pts > 0 ? "+" : ""}${e.admin_pts} (${esc(e.title)})`).join(", ")}</p>` : ""}`; }
+  if (k === "eff") { const rows = sc.effDays.filter(e => !e.pending).map(e => `<tr class="clk" data-effv="${e.day}"><td>${label(e.day)}</td><td>${e.manual ? "set by Jeremy" : e.rows.map(r => r.code).join(" + ")}</td><td class="num">${e.allowed ? (e.est ? "≈" : "") + e.allowed.toFixed(1) + " h" : ""}</td><td class="num">${e.taken ? e.taken.toFixed(1) + " h" : ""}</td><td class="c-${col(Math.min(100, e.v))}">${Math.round(e.v)}%${e.est ? " est" : ""}</td></tr>`);
     const pend = sc.effDays.filter(e => e.pending);
-    body = `<p class="hint">Expected hours (sorting plus the run, worked out from your EOD figures) divided by the hours you actually took. 100% means right on the expected time.</p>${tbl(["Day", "Run", "Expected", "Actual", "Score"], rows) || `<p class="empty">No finished runs with full figures on these days.</p>`}${pend.length ? `<p class="meta">Waiting on figures: ${pend.map(e => `${label(e.day)} ${esc(e.need || "EOD")}`).join(" · ")}</p>` : ""}${sc.effDays.some(e => e.est) ? `<p class="meta">≈ means a best guess was used for a missing EOD figure.</p>` : ""}`; }
-  if (k === "acc") { const rows = sc.accDays.map(a => `<tr><td>${label(a.day)}</td><td>${esc(a.code)}</td><td class="num">${a.items}</td><td class="num">${a.compliant}</td><td class="c-${col(a.v)}">${a.v == null ? "—" : a.v.toFixed(1) + "%"}</td></tr>`);
-    body = `<p class="hint">From NZ Post's daily report: items scanned correctly ÷ items for delivery. Each mistake in the Driver Mistakes Record takes off ${R.mistakePct}%.</p>${tbl(["Day", "Run", "Items", "Correct", "%"], rows) || `<p class="empty">No NZ Post report figures for your runs on these days.</p>`}${sc.nMist ? `<p class="meta">Mistakes: ${sc.mistakes.map(m => `${label(m.day)} ${esc(m.title)}`).join(" · ")}</p>` : `<p class="meta">No mistakes logged. 👍</p>`}`; }
-  if (k === "safe") { const rows = sc.entries.filter(e => e.safety_pct != null).map(e => `<tr><td>${label(e.day)}</td><td class="num">${e.safety_pct}%</td><td>${esc(e.title)}</td></tr>`); body = `<p class="hint">Stays at 100% unless Jeremy records a safety issue.</p>${tbl(["Day", "Score", "Note"], rows) || `<p class="meta">Nothing recorded. 👍</p>`}`; }
+    body = `<p class="hint">Expected hours (sorting plus the run, worked out from your EOD figures) divided by the hours you actually took. 100% means right on the expected time. Tap a day to see the working.</p>${tbl(["Day", "Run", "Expected", "Actual", "Score"], rows) || `<p class="empty">No finished runs with full figures on these days.</p>`}${pend.length ? `<p class="meta">Waiting on figures: ${pend.map(e => `<button class="linkbtn" data-effv="${e.day}">${label(e.day)} ${esc(e.need || "EOD")}</button>`).join(" · ")}</p>` : ""}${sc.effDays.some(e => e.est) ? `<p class="meta">≈ means a best guess was used for a missing EOD figure.</p>` : ""}`; }
+  if (k === "acc") { const rows = sc.accDays.map(a => `<tr class="clk" data-accv="${a.day}|${esc(a.code)}"><td>${label(a.day)}</td><td>${esc(a.code)}</td><td class="num">${a.items}</td><td class="num">${a.compliant}</td><td class="c-${col(a.v)}">${a.v == null ? "—" : a.v.toFixed(1) + "%"}</td></tr>`);
+    body = `<p class="hint">From NZ Post's daily report: items scanned correctly ÷ items for delivery. Each mistake in the Driver Mistakes Record takes off ${R.mistakePct}%.</p>${tbl(["Day", "Run", "Items", "Correct", "%"], rows) || `<p class="empty">No NZ Post report figures for your runs on these days.</p>`}${sc.nMist ? `<p class="meta">Mistakes: ${sc.mistakes.map(m => `<button class="linkbtn" data-entryv="${m.id}">${label(m.day)} ${esc(m.title)}</button>`).join(" · ")}</p>` : `<p class="meta">No mistakes logged. 👍</p>`}`; }
+  if (k === "safe") { const rows = sc.entries.filter(e => e.safety_pct != null).map(e => `<tr class="clk" data-entryv="${e.id}"><td>${label(e.day)}</td><td class="num">${e.safety_pct}%</td><td>${esc(e.title)}</td></tr>`); body = `<p class="hint">Stays at 100% unless Jeremy records a safety issue.</p>${tbl(["Day", "Score", "Note"], rows) || `<p class="meta">Nothing recorded. 👍</p>`}`; }
   return `<div style="border-top:1px solid var(--line);padding-top:8px">${body}</div>`;
 }
 
@@ -268,8 +290,8 @@ function toFixCard(n) {
   const pend = (S.sc?.effDays || []).filter(e => e.pending && e.need && !e.need.includes("EOD"));
   if (!its.length && !pend.length) return "";
   return `<div class="card warnc"><h2>To fix<span>${its.length + pend.length} to check</span></h2><div class="list">
-    ${its.sort((a, b) => b.day.localeCompare(a.day)).map(i => `<div class="item warn"><div class="m c-warn">${label(i.day)}</div><div>${esc(i.label)}: ${itemNote(i)}</div>${!i.row ? `<button class="btn sm ${i.kind === "SOD" ? "" : "accent"}" data-${i.kind === "SOD" ? "sod-late" : "eod"}="${i.shift.id}" data-day="${i.day}">Post it now</button>` : ""}</div>`).join("")}
-    ${pend.map(e => `<div class="item warn"><div class="m c-warn">${label(e.day)}</div><div>EOD figures missing: ${esc(e.need)}</div><div class="meta">Ask Jeremy to add them, or include them next time.</div></div>`).join("")}</div></div>`;
+    ${its.sort((a, b) => b.day.localeCompare(a.day)).map(i => `<div class="item warn clk" data-postv="${esc(i.key)}"><div class="m c-warn">${label(i.day)}</div><div>${esc(i.label)}: ${itemNote(i)}</div>${!i.row ? `<button class="btn sm ${i.kind === "SOD" ? "" : "accent"}" data-${i.kind === "SOD" ? "sod-late" : "eod"}="${i.shift.id}" data-day="${i.day}">Post it now</button>` : ""}</div>`).join("")}
+    ${pend.map(e => `<div class="item warn clk" data-effv="${e.day}"><div class="m c-warn">${label(e.day)}</div><div>EOD figures missing: ${esc(e.need)}</div><div class="meta">Ask Jeremy to add them, or include them next time. Tap to see the working.</div></div>`).join("")}</div></div>`;
 }
 
 /* ---------- Leave ---------- */
@@ -277,7 +299,7 @@ const LEAVE_T = { annual: "Annual leave", sick: "Sick leave", unpaid: "Unpaid le
 function leaveCard() {
   const mine = S.leave; const st = s => pill(s, s === "approved" ? "ok" : s === "declined" ? "crit" : s === "pending" ? "warn" : "grey");
   return `<div class="card" id="leave"><h2>Leave<span>${mine.filter(l => l.status === "pending").length ? `${mine.filter(l => l.status === "pending").length} waiting` : ""}</span></h2>
-    ${mine.length ? `<div class="list">${mine.slice(0, 6).map(l => `<div class="item"><div class="row" style="justify-content:space-between"><b>${esc(LEAVE_T[l.type] || l.type)}</b>${st(l.status)}</div><div class="meta mono">${label(l.date_from)}${l.date_to !== l.date_from ? ` – ${label(l.date_to)}` : ""}${l.part !== "full" ? ` · ${l.part === "AM" ? "morning off" : "afternoon off"}` : ""}</div>${l.notes ? `<div class="meta">${esc(l.notes)}</div>` : ""}${l.reply ? `<div style="background:var(--card);border-radius:6px;padding:6px 8px;font-size:13px">${esc(l.reply)}</div>` : ""}</div>`).join("")}</div>` : ""}
+    ${mine.length ? `<div class="list">${mine.slice(0, 6).map(l => `<div class="item clk" data-leavev="${l.id}"><div class="row" style="justify-content:space-between"><b>${esc(LEAVE_T[l.type] || l.type)}</b>${st(l.status)}</div><div class="meta mono">${label(l.date_from)}${l.date_to !== l.date_from ? ` – ${label(l.date_to)}` : ""}${l.part !== "full" ? ` · ${l.part === "AM" ? "morning off" : "afternoon off"}` : ""}</div>${l.notes ? `<div class="meta">${esc(l.notes)}</div>` : ""}${l.reply ? `<div style="background:var(--card);border-radius:6px;padding:6px 8px;font-size:13px">${esc(l.reply)}</div>` : ""}</div>`).join("")}</div>` : ""}
     <button class="btn ghost" id="leave-new">Request leave</button></div>`;
 }
 
@@ -308,6 +330,7 @@ function wire() {
   $("#gotit")?.addEventListener("click", async e => { const ids = e.currentTarget.dataset.ids.split(","); for (const id of ids) S.gotit[id] = new Date().toISOString(); localStorage.setItem("tp-gotit", JSON.stringify(S.gotit)); render();
     const { error } = await sb.from("change_acks").update({ confirmed_at: new Date().toISOString(), seen_at: new Date().toISOString() }).in("item_id", ids).eq("driver", S.me.id); if (error) toast("Couldn't send. Try again.", "err"); else toast("Confirmed ✓", "ok"); });
   $("#gotit-again")?.addEventListener("click", () => { S.gotit = {}; localStorage.removeItem("tp-gotit"); render(); });
+  $$("[data-seen]").forEach(b => b.onclick = async e => { e.stopPropagation(); b.disabled = true; const { error } = await sb.rpc("entry_seen", { p_id: b.dataset.seen }); if (error) { toast(error.message, "err"); b.disabled = false; return; } const en = S.entries.find(x => x.id === b.dataset.seen); if (en) en.seen_at = new Date().toISOString(); toast("Marked as viewed", "ok"); render(); });
   $$("[data-confirm]").forEach(b => b.onclick = async () => { await q(sb.from("message_recipients").update({ confirmed_at: new Date().toISOString(), read_at: new Date().toISOString() }).eq("message_id", b.dataset.confirm).eq("person", S.me.id)); toast("Confirmed ✓", "ok"); });
   const unread = S.msgs.filter(m => !m.read_at).map(m => m.message_id); if (unread.length) sb.from("message_recipients").update({ read_at: new Date().toISOString() }).in("message_id", unread).eq("person", S.me.id).then(() => { });
   $("#sod")?.addEventListener("click", e => sendSod(e.currentTarget.dataset.shift));
@@ -322,14 +345,32 @@ function wire() {
   $("#leave-new")?.addEventListener("click", leaveForm);
   $("#prof-edit")?.addEventListener("click", profileForm);
   $("#vchk-btn")?.addEventListener("click", vehicleCheckForm);
+  bindDetail(app);
+}
+/* every tile, row and chip with a data-…v attribute opens the detail behind it */
+function bindDetail(root) {
+  const on = (sel, f) => root.querySelectorAll(sel).forEach(el => { if (el._bound) return; el._bound = true; el.addEventListener("click", e => { const inner = e.target.closest("button,input,select,textarea,a,summary,label"); if (inner && inner !== el && el.contains(inner)) return; e.stopPropagation(); f(el); }); });
+  on("[data-postv]", el => postSheet(el.dataset.postv));
+  on("[data-effv]", el => effDaySheet(el.dataset.effv));
+  on("[data-accv]", el => { const [day, code] = el.dataset.accv.split("|"); accSheet(day, code); });
+  on("[data-entryv]", el => { const e = S.entries.find(x => x.id === el.dataset.entryv); if (e) entrySheet(e); });
+  on("[data-weekv]", el => weekSheet(el.dataset.weekv));
+  on("[data-dayv]", el => daySheet(el.dataset.dayv));
+  on("[data-vanv]", el => vanSheet(el.dataset.vanv));
+  on("[data-alertv]", el => { const a = S.alerts.find(x => x.id === el.dataset.alertv); if (a) alertSheet(a); });
+  on("[data-leavev]", el => { const l = S.leave.find(x => x.id === el.dataset.leavev); if (l) leaveSheet(l); });
+  on("[data-msgv]", el => { const m = S.msgs.find(x => x.message_id === el.dataset.msgv); if (m) msgSheet(m); });
+  on("[data-eodv]", el => eodForm(el.dataset.eodv, !!el.dataset.sort));
+  on("[data-sodv]", el => sendSod(el.dataset.sodv, true));
 }
 
 /* ================= sheets ================= */
-function sheet(html, onOpen) {
-  const bg = h(`<div class="sheet-bg"><div class="sheet" role="dialog" aria-modal="true" style="position:relative"><button class="x" aria-label="Close">×</button>${html}</div></div>`);
-  const close = () => bg.remove(); bg.querySelector(".x").onclick = close; bg.addEventListener("click", e => { if (e.target === bg) close(); });
-  document.body.appendChild(bg); onOpen?.(bg, close); return { bg, close };
+function sheet(html, onOpen, opts = {}) {
+  const bg = h(`<div class="sheet-bg"><div class="sheet ${opts.wide ? "wide" : ""}" role="dialog" aria-modal="true" style="position:relative"><button class="x" aria-label="Close">×</button>${html}</div></div>`);
+  const close = () => bg.remove(); bg.querySelector(".x").onclick = close; bg.addEventListener("click", e => { if (e.target === bg) close(); }); bg._close = close;
+  document.body.appendChild(bg); onOpen?.(bg, close); bindDetail(bg); return { bg, close };
 }
+document.addEventListener("keydown", e => { if (e.key === "Escape") { const all = $$(".sheet-bg"); const top = all[all.length - 1]; if (top) (top._close || (() => top.remove()))(); } });
 const opt = (list, val) => list.map(([v, l]) => `<option value="${esc(v)}" ${v === val ? "selected" : ""}>${esc(l)}</option>`).join("");
 
 async function sendSod(shiftId, lateMode = false) {
@@ -407,6 +448,103 @@ function vehicleCheckForm() {
         const { error } = await sb.from("vehicle_checks").upsert({ van, driver: S.me.id, week_start: wk, odometer: +g("odo").value || null, rucs_left: g("ruc").value ? +g("ruc").value : null, washed: g("washed").checked, tyres_ok: g("tyres").checked, vault_ok: g("vault").checked, bodywork: g("body").value || null, service_due: g("service").value || null, notes: g("notes").value || null, photos: paths, at: new Date().toISOString() }, { onConflict: "van,week_start" }); if (error) throw error;
         close(); toast("Vehicle check sent ✓", "ok"); } catch (err) { toast(err.message, "err"); b.disabled = false; b.textContent = "Send check"; } };
   });
+}
+
+/* ================= detail sheets: what's behind each row and score ================= */
+const rawRow = row => row ? `<pre class="msg">${esc(Object.entries(row).filter(([k, v]) => v != null && v !== "" && !["shift_id", "driver", "id", "extra"].includes(k) && !(Array.isArray(v) && !v.length)).map(([k, v]) => `${({ sent_at: "sent", finish_time: "finish time", sort_min: "sorting (min)", parcels: "parcels / delivery total", stops: "stops / jobs", trays: "mail trays", pickups: "pick-up stops", pickup_parcels: "pick-up parcels", cycled: "next cycled", sorted_parcels: "sorted parcels", sorted_mail: "sorted mail", nzc_ph: "NZC/PH pick-up", legs: "legs done", newspapers: "newspapers done", run_id: "run ID", start_km: "start km", edited_at: "edited", van: "van", note: "note" })[k] || k}: ${Array.isArray(v) ? v.map(addName).join(", ") : /_at$/.test(k) ? fmtTs(v) : typeof v === "boolean" ? (v ? "Yes" : "No") : v}`).join("\n"))}</pre>` : "";
+function itemByKey(key) { const [day] = key.split("|"); return (S.sc?.items || []).find(i => i.key === key) || scoreAt(day, day).items.find(i => i.key === key); }
+function postSheet(key) {
+  const it = itemByKey(key); if (!it) return toast("That post isn't in your range any more", "err"); const R = S.C.rules; const t = today();
+  const due = fmtT(it.due % 1440); const canPost = !it.row && it.day <= t && !S.viewAs;
+  sheet(`<h3>${esc(it.label)} · ${label(it.day, true)}</h3><p class="meta">Due by ${due}${it.kind === "SOD" ? ` (rostered start + ${R.sodGrace} min)` : ` (${R.eodHours} h after the run finishes)`}</p>
+    <div class="tiles" style="grid-template-columns:1fr 1fr"><div class="tile"><div class="l">Result</div><div class="v" style="font-size:18px">${pill(STATE_LABEL[it.st], it.st === "ok" ? "ok" : it.st === "miss" ? "crit" : ["due", "over", "exc"].includes(it.st) ? "grey" : "warn")}</div><div class="s">${it.st === "ok" ? "no points off" : it.st === "late" || it.st === "miss" ? `−${R.perEvent}% Admin` : it.st === "exc" ? "excused — doesn't count" : "not closed yet"}</div></div><div class="tile"><div class="l">Posted</div><div class="v" style="font-size:18px">${it.at != null ? fmtT(it.at % 1440) : "—"}</div><div class="s">${it.late > 0 ? `late by ${Math.floor(it.late / 60) ? Math.floor(it.late / 60) + " h " : ""}${it.late % 60} min` : it.at != null ? "on time" : it.st === "due" ? "not due yet" : "not posted"}</div></div></div>
+    ${it.mark?.status ? `<p class="meta">Set by Jeremy: <b>${esc(STATE_LABEL[it.mark.status])}</b>${it.mark.note ? ` — ${esc(it.mark.note)}` : ""}</p>` : it.mark?.note ? `<p class="meta">Note from Jeremy: ${esc(it.mark.note)}</p>` : ""}
+    ${it.row ? `<h4>What you sent</h4>${rawRow(it.row)}` : `<p class="meta">Nothing was posted for this.</p>`}
+    ${canPost ? `<button class="btn ${it.kind === "SOD" ? "" : "accent"}" ${it.kind === "SOD" ? `data-sodv="${it.shift.id}"` : `data-eodv="${it.shift.id}" ${it.code ? "" : 'data-sort="1"'}`}>Post it now</button><p class="hint">It'll count as late, but late beats missing.</p>` : ""}
+    <div class="row"><button class="btn ghost sm" data-dayv="${it.day}">The whole day</button></div>`);
+}
+function effDaySheet(day) {
+  const s = (S.sc && day >= S.F.from && day <= S.F.to) ? S.sc : scoreAt(day, day); const e = s.effDays.find(x => x.day === day); const R = S.C.rules;
+  if (!e) return sheet(`<h3>Efficiency · ${label(day, true)}</h3><p class="meta">No run scored on this day${day < R.effStart ? ` (efficiency counts from ${label(R.effStart)})` : ""}.</p><div class="row"><button class="btn ghost sm" data-dayv="${day}">The whole day</button></div>`);
+  const src = (r, k) => r.ov?.[k] != null ? `<span class="c-accent">corrected by Jeremy</span>` : r.eod?.[k] != null ? "you posted" : r.guess.includes(k) ? `<span class="c-warn">${r.evid ? "average of past EODs" : "best guess"}</span>` : "";
+  const runs = (e.rows || []).map(r => `<div class="item"><div class="row" style="justify-content:space-between"><b>${esc(r.code)} <span class="meta">${esc(runName(r.code))}</span></b><span style="flex:0;white-space:nowrap">${r.trainDay ? pill("training day", "warn") : r.need.length ? pill("needs " + r.need.join(", "), "warn") : r.perf == null ? pill("—", "warn") : `<b class="c-${col(Math.min(100, r.perf))}">${Math.round(r.perf)}%</b>`}</span></div>
+      <div class="meta">Expected ${(r.allowed / 60).toFixed(1)} h · actual ${r.taken ? r.taken.toFixed(1) + " h" : "—"} (${r.start != null ? fmtT(r.start) : "?"} → ${r.end != null ? fmtT(r.end) : "?"})${r.ov?.train_min ? ` · ${r.ov.train_min} min training left out` : ""}</div>
+      <div class="scroll"><table class="dt"><tr><th>Part</th><th>Calculation</th><th>Min</th></tr>${r.parts.map(p => `<tr><td>${esc(p[0])}</td><td class="meta">${esc(p[1])}</td><td class="num">${p[2]}</td></tr>`).join("")}<tr><td><b>Expected</b></td><td></td><td class="num"><b>${Math.round(r.allowed)}</b></td></tr></table></div>
+      <div class="meta">Figures: ${["parcels", "stops", "trays", "sort_min", "pickups", "pickup_parcels"].filter(k => (r.ov?.[k] ?? r.eod?.[k]) != null || r.guess.includes(k)).map(k => `${({ parcels: r.net === "tge" ? "delivery total" : "parcels", stops: r.net === "tge" ? "jobs" : "stops", trays: "trays", sort_min: "sorting min", pickups: "pick-up stops", pickup_parcels: "pick-up parcels" })[k]} ${r.ov?.[k] ?? r.eod?.[k] ?? (r.figs?.[k === "pickup_parcels" ? "pup" : k]?.v ?? "?")} (${src(r, k)})`).join(" · ") || "none yet"}</div>
+      ${!r.eod && day <= today() && !S.viewAs ? `<button class="btn accent sm" data-eodv="${r.shift.id}">Post the EOD for ${esc(r.code)}</button>` : ""}</div>`).join("");
+  sheet(`<h3>Efficiency · ${label(day, true)}</h3><p class="meta">${e.pending ? `<span class="c-warn">Waiting on: ${esc(e.need || "EOD")}</span>` : e.manual ? `Set by Jeremy at ${Math.round(e.v)}% for the day` : `${e.taken.toFixed(1)} h actual vs ${e.est ? "≈" : ""}${e.allowed.toFixed(1)} h expected → <b class="c-${col(Math.min(100, e.v))}">${Math.round(e.v)}%</b>${e.est ? " (a best guess filled a missing figure)" : ""}`}</p>
+    <p class="hint">${R.effMethod === "tdt" ? "Score = (2 − actual ÷ expected) × 100." : "Score = expected ÷ actual."} Expected = base time + per parcel + per stop + sorting + pick-ups + legs, from the run formula.</p>${runs}
+    <div class="row"><button class="btn ghost sm" data-dayv="${day}">The whole day</button></div>`, null, { wide: true });
+}
+function accSheet(day, code) {
+  const s = scoreAt(day, day); const a = s.accDays.find(x => x.day === day && x.code === code); const fc = S.C.runCodes[code]; const mist = S.entries.filter(e => e.kind === "mistake" && e.day === day && e.show_driver);
+  sheet(`<h3>Accuracy · ${esc(code)} · ${label(day, true)}</h3><p class="meta">${esc(runName(code))}${fc ? ` · NZ Post run ${esc(fc)}` : ""}</p>
+    ${a ? `<div class="tiles" style="grid-template-columns:1fr 1fr 1fr"><div class="tile"><div class="l">Items</div><div class="v">${a.items}</div></div><div class="tile"><div class="l">Scanned right</div><div class="v">${a.compliant}</div></div><div class="tile"><div class="l">Compliance</div><div class="v c-${col(a.v)}">${a.v == null ? "—" : a.v.toFixed(1) + "%"}</div></div></div><p class="hint">From NZ Post's daily contract-owner report for this run: items scanned correctly ÷ items for delivery. ${a.read_at ? `Report read ${fmtTs(a.read_at)}.` : ""}</p>` : `<p class="meta">No NZ Post report figures for this run on this day.</p>`}
+    ${mist.length ? `<h4>Mistakes recorded this day</h4><div class="list">${mist.map(m => `<div class="item crit clk" data-entryv="${m.id}">${esc(m.title)}</div>`).join("")}</div>` : ""}
+    <div class="row"><button class="btn ghost sm" data-dayv="${day}">The whole day</button></div>`);
+}
+function entrySheet(e) {
+  const K = { praise: "Nice work 👏", issue: "Heads up", note: "Note from Jeremy", mistake: "Mistake recorded", adjust: "Admin points", safety: "Safety", eff: "Efficiency set" };
+  sheet(`<h3>${K[e.kind] || e.kind}</h3><p class="meta">${label(e.day, true)}${e.run ? ` · ${esc(e.run)}` : ""} · ${fmtTs(e.created_at)}</p><p><b>${esc(e.title)}</b></p>${e.note ? `<p>${esc(e.note)}</p>` : ""}
+    <dl class="kv">${e.kind === "mistake" && !e.excused ? `<dt>Effect</dt><dd>−${S.C.rules.mistakePct}% Accuracy for the fortnight it falls in</dd>` : ""}${e.excused ? `<dt>Status</dt><dd>${pill("removed — doesn't count", "grey")}</dd>` : ""}${e.admin_pts ? `<dt>Admin</dt><dd>${e.admin_pts > 0 ? "+" : ""}${e.admin_pts} points</dd>` : ""}${e.safety_pct != null ? `<dt>Safety</dt><dd>${e.safety_pct}%</dd>` : ""}${e.eff_pct != null ? `<dt>Efficiency</dt><dd>${e.eff_pct}% for that day</dd>` : ""}</dl>
+    <div class="row">${e.show_driver && !e.seen_at && !S.viewAs ? `<button class="btn sm" id="en-seen">Viewed ✓</button>` : ""}<button class="btn ghost sm" data-dayv="${e.day}">That day</button></div>${e.seen_at ? `<p class="meta">You viewed this ${fmtTs(e.seen_at)}.</p>` : ""}<p class="hint">Think it's wrong? Message Jeremy.</p>`, (bg, close) => { bg.querySelector("#en-seen")?.addEventListener("click", async () => { const { error } = await sb.rpc("entry_seen", { p_id: e.id }); if (error) return toast(error.message, "err"); e.seen_at = new Date().toISOString(); close(); toast("Marked as viewed", "ok"); render(); }); });
+}
+function weekSheet(w) {
+  const s = scoreAt(w, addDays(w, 6)); const days = Array.from({ length: 7 }, (_, i) => addDays(w, i));
+  const tile = (l, v, sub = "") => `<div class="tile"><div class="l">${l}</div><div class="v c-${col(v)}">${pct(v)}</div>${sub ? `<div class="s">${sub}</div>` : ""}</div>`;
+  sheet(`<h3>Week of ${label(w, true)}</h3><p class="meta">${s.onTime}/${s.closed} posts on time · ${Object.values(s.days).reduce((a, x) => a + x.hours, 0).toFixed(1)} h rostered</p>
+    <div class="tiles" style="grid-template-columns:1fr 1fr"><button class="tile" data-weekv="${addDays(w, -7)}" style="cursor:pointer"><div class="l">‹ week before</div><div class="s">${label(addDays(w, -7))}</div></button><button class="tile" data-weekv="${addDays(w, 7)}" style="cursor:pointer"><div class="l">week after ›</div><div class="s">${label(addDays(w, 7))}</div></button></div>
+    <div class="tiles" style="grid-template-columns:1fr 1fr">${tile("Admin", s.admin, `${s.late} late · ${s.missing} missing`)}${tile("Efficiency", s.eff, `${s.effDays.filter(e => !e.pending).length} days scored`)}${tile("Accuracy", s.acc, s.feedPct != null ? `${s.accComp}/${s.accItems} compliant` : "no feed figures")}${tile("Overall", s.overall)}</div>
+    <div class="scroll"><table class="dt"><tr><th>Day</th><th>Runs</th><th>Posts</th><th>Eff</th></tr>${days.map(d => { const D = s.days[d]; const e = s.effDays.find(x => x.day === d); return `<tr class="${D ? "clk" : ""}" ${D ? `data-dayv="${d}"` : ""}><td>${label(d).slice(0, 6)}</td><td class="meta">${D ? D.segs.map(x => x.sort ? (S.runsBy[x.shift.run]?.label || "Sort") : x.shift.run).join(" · ") : "off"}</td><td><span class="row" style="gap:3px">${s.items.filter(i => i.day === d).map(i => `<button class="chip ${i.st}" data-postv="${esc(i.key)}">${esc(i.label)}</button>`).join("")}</span></td><td>${e ? (e.pending ? `<span class="c-warn">waiting</span>` : `<b class="c-${col(Math.min(100, e.v))}">${Math.round(e.v)}%</b>`) : ""}</td></tr>`; }).join("")}</table></div>
+    ${s.entries.filter(e => e.show_driver).length ? `<h4>From Jeremy that week</h4><div class="list">${s.entries.filter(e => e.show_driver).map(e => `<div class="item clk ${e.kind === "mistake" && !e.excused ? "crit" : e.kind === "praise" ? "ok" : ""}" data-entryv="${e.id}">${label(e.day)} · ${esc(e.title)}</div>`).join("")}</div>` : ""}<p class="hint">Tap a day or a post for the detail.</p>`, null, { wide: true });
+}
+function daySheet(day) {
+  const n = nzNow(); const D = S.days[day]; const hol = S.C.holidays[day]; const isT = day === n.date; const past = day <= n.date;
+  const s = past && D ? scoreAt(day, day) : null; const e = s?.effDays.find(x => x.day === day);
+  const ackBy = Object.fromEntries(S.acks.map(a => [a.item_id, a])); const ch = S.changes.filter(i => i.day === day); const ents = S.entries.filter(x => x.day === day && x.show_driver); const lv = S.leave.filter(l => l.status === "approved" && day >= l.date_from && day <= l.date_to);
+  const segs = D ? D.segs.map(x => { const code = x.shift.run; const r = S.runsBy[code]; const win = x.sort ? "" : timingRows(x, day, isT ? n.min : null);
+    return `<div class="seg"><div class="tm">${fmtT(x.st)} – ${fmtT(x.en)}</div><div class="rn">${x.sort ? esc(r?.label || "Sort") : `${esc(code)}<span class="sub">${esc(runName(code))}</span>`}<div class="tags">${x.shift.van ? `<button class="tag van" data-vanv="${esc(x.shift.van)}" style="border:0;cursor:pointer">${esc(x.shift.van)}</button>` : ""}${x.shift.trainee ? `<span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : ""}${(x.shift.addons || []).map(a => `<span class="tag">+ ${esc(S.addons.find(z => z.id === a)?.name || addName(a))}${x.shift.done?.[a] ? ` ✓ ${fmtTime(x.shift.done[a])}` : x.shift.plan?.[a] ? ` ~${fmtT(toMin(x.shift.plan[a]))}` : ""}</span>`).join("")}</div>${x.shift.note ? `<div class="meta">${esc(x.shift.note)}</div>` : ""}${win}
+      ${past ? (x.sort ? (x.eod ? `<div class="meta c-ok">✓ sort finished ${fmtTime(x.eod.sent_at)}</div>` : "") : x.eod ? `<div class="meta c-ok">✓ EOD ${fmtTime(x.eod.sent_at)}${x.eod.finish_time ? ` · finished ${fmtT(toMin(x.eod.finish_time))}` : ""}${x.eod.parcels != null ? ` · ${x.eod.parcels} ${NET(code) === "tge" ? "deliveries" : "parcels"}` : ""}${x.eod.stops != null ? ` · ${x.eod.stops} ${NET(code) === "tge" ? "jobs" : "stops"}` : ""}</div>${rawRow(x.eod)}` : `<div class="meta c-crit">No EOD for this run</div>${!S.viewAs ? `<button class="btn accent sm" data-eodv="${x.shift.id}">Post it now</button>` : ""}`) : ""}</div></div>`; }).join("") : "";
+  const sodSeg = D?.segs.find(x => x.sod);
+  sheet(`<h3>${label(day, true)}${isT ? " · today" : ""}</h3><p class="meta">${hol ? `${esc(hol.name)} · ` : ""}${D ? `${fmtT(D.start)} – ${fmtT(D.end)} · ${D.hours} h rostered` : lv.length ? "On leave" : "Day off"}${e && !e.pending ? ` · efficiency <b class="c-${col(Math.min(100, e.v))}">${Math.round(e.v)}%</b>` : ""}</p>
+    ${D ? `<div class="row"><button class="btn ghost sm" data-dayv="${addDays(day, -1)}">‹ ${label(addDays(day, -1)).slice(0, 6)}</button>${past ? `<button class="btn ghost sm" data-effv="${day}">Efficiency working</button>` : ""}<button class="btn ghost sm" data-weekv="${monOf(day)}">Whole week</button><button class="btn ghost sm" data-dayv="${addDays(day, 1)}">${label(addDays(day, 1)).slice(0, 6)} ›</button></div>` : `<div class="row"><button class="btn ghost sm" data-dayv="${addDays(day, -1)}">‹ ${label(addDays(day, -1)).slice(0, 6)}</button><button class="btn ghost sm" data-dayv="${addDays(day, 1)}">${label(addDays(day, 1)).slice(0, 6)} ›</button></div>`}
+    ${past && D ? `<h4>Start of day</h4>${sodSeg ? `<div class="meta c-ok">✓ SOD ${fmtTime(sodSeg.sod.sent_at)}${sodSeg.sod.van ? ` · ${esc(sodSeg.sod.van)}` : ""}${sodSeg.sod.edited_at ? " · edited" : ""}</div>${sodSeg.sod.note ? `<div class="meta">${esc(sodSeg.sod.note)}</div>` : ""}` : `<div class="meta c-crit">No SOD posted</div>${!S.viewAs ? `<button class="btn sm" data-sodv="${D.segs[0].shift.id}">Post it now</button>` : ""}`}` : ""}
+    ${D ? `<h4>Shifts</h4>${segs}` : ""}
+    ${s && s.items.length ? `<h4>How the posts scored</h4><div class="row" style="gap:3px">${s.items.map(i => `<button class="chip ${i.st}" data-postv="${esc(i.key)}">${esc(i.label)} ${esc(itemNote(i).replace(/^posted /, ""))}</button>`).join("")}</div>` : ""}
+    ${s && s.accDays.length ? `<h4>Accuracy</h4><div class="row" style="gap:3px">${s.accDays.map(a => `<button class="chip ${col(a.v) === "ok" ? "ok" : col(a.v) === "grey" ? "due" : "late"}" data-accv="${a.day}|${esc(a.code)}">${esc(a.code)} ${a.v == null ? "—" : a.v.toFixed(0) + "%"}</button>`).join("")}</div>` : ""}
+    ${ch.length ? `<h4>Roster changes for this day</h4><div class="list">${ch.map(i => `<div class="item"><div>${esc(i.summary)}</div><div class="meta">sent ${fmtTs(i.roster_changes.sent_at)} · ${ackBy[i.id]?.confirmed_at ? `✓ you confirmed ${fmtTs(ackBy[i.id].confirmed_at)}` : "not confirmed yet"}</div></div>`).join("")}</div>` : ""}
+    ${ents.length ? `<h4>From Jeremy</h4><div class="list">${ents.map(x => `<div class="item clk ${x.kind === "mistake" && !x.excused ? "crit" : x.kind === "praise" ? "ok" : ""}" data-entryv="${x.id}">${esc(x.title)}</div>`).join("")}</div>` : ""}
+    ${lv.length ? `<h4>Leave</h4><div class="list">${lv.map(l => `<div class="item ok clk" data-leavev="${l.id}">${esc(LEAVE_T[l.type] || l.type)} · approved</div>`).join("")}</div>` : ""}`, null, { wide: true });
+}
+function vanSheet(plate) {
+  const v = S.vans[plate] || {}; const t = today(); const mine = S.vchk.filter(c => c.van === plate); const use = S.shifts.filter(s => s.van === plate).sort((a, b) => b.day.localeCompare(a.day)).slice(0, 14);
+  const dd = d => d ? Math.round((new Date(d) - new Date(t)) / 86400000) : null; const st = d => { const n = dd(d); return n == null ? pill("not on file", "grey") : n < 0 ? pill("overdue", "crit") : n <= 14 ? pill(`due in ${n}d`, "warn") : pill("✓", "ok"); };
+  const left = !v.no_ruc && v.ruc_paid_to && v.odometer ? v.ruc_paid_to - v.odometer : null;
+  sheet(`<h3><span class="plate">${esc(plate)}</span> ${esc(v.model || "")}</h3><p class="meta">${esc([v.make, v.colour].filter(Boolean).join(" · "))}</p>
+    <dl class="kv"><dt>WOF</dt><dd>${v.wof_due ? label(v.wof_due, true) + " " : ""}${v.wof_failed ? pill("failed", "crit") : st(v.wof_due)}</dd><dt>Rego</dt><dd>${v.rego_due ? label(v.rego_due, true) + " " : ""}${st(v.rego_due)}</dd><dt>RUCs</dt><dd>${v.no_ruc ? "not needed (petrol)" : v.ruc_paid_to ? `paid to ${v.ruc_paid_to.toLocaleString()} km${left != null ? ` · ${left.toLocaleString()} km left ${left <= 0 ? pill("overdue", "crit") : left <= (S.C.rules.rucSoonKm || 1000) ? pill("low", "warn") : pill("✓", "ok")}` : ""}` : pill("not on file", "grey")}</dd><dt>Odometer</dt><dd>${v.odometer ? `${v.odometer.toLocaleString()} km` : "—"}${v.odometer_at ? ` <span class="meta">(${label(v.odometer_at)})</span>` : ""}</dd></dl>
+    ${!S.viewAs ? `<button class="btn ghost" id="vchk-go">🚐 Do the weekly vehicle check</button>` : ""}
+    <h4>Your checks on this van</h4>${mine.length ? `<div class="scroll"><table class="dt"><tr><th>Week of</th><th>Sent</th><th>Odometer</th><th>RUCs left</th><th>Notes</th></tr>${mine.map(c => `<tr><td>${label(c.week_start)}</td><td class="mono">${fmtTs(c.at)}</td><td class="num">${c.odometer?.toLocaleString() || "—"}</td><td class="num">${c.rucs_left?.toLocaleString() || "—"}</td><td class="meta">${esc([c.washed ? "washed" : "not washed", c.tyres_ok ? "" : "tyres", c.vault_ok ? "" : "vault", c.bodywork, c.notes].filter(Boolean).join(" · "))}</td></tr>`).join("")}</table></div>` : `<p class="meta">None yet.</p>`}
+    <h4>Your shifts with it</h4><div class="scroll"><table class="dt"><tr><th>Day</th><th>Run</th><th>Times</th></tr>${use.map(s => { const D = S.days[s.day]; const x = D?.segs.find(y => y.shift.id === s.id); return `<tr class="clk" data-dayv="${s.day}"><td>${label(s.day)}</td><td>${esc(s.run)}</td><td class="mono">${x ? `${fmtT(x.st)}–${fmtT(x.en)}` : ""}</td></tr>`; }).join("") || `<tr><td colspan="3" class="meta">—</td></tr>`}</table></div><p class="hint">Low or overdue? Tell Stu.</p>`,
+    (bg, close) => { bg.querySelector("#vchk-go")?.addEventListener("click", () => { close(); vehicleCheckForm(); }); }, { wide: true });
+}
+function alertSheet(a) {
+  const sh = a.shift_id ? S.shifts.find(x => x.id === a.shift_id) : null; const day = sh?.day || nzNow(new Date(a.created_at)).date; const rule = a.rule_id ? S.rules.find(r => r.id === a.rule_id) : null;
+  const what = ({ sod_late: "Your SOD wasn't in by the time it was due. Post it now — late beats missing.", sod_missing: "No SOD was posted for this shift. Post it now so the day can be scored.", eod_late: "Your EOD for this run wasn't in on time. Post it now with the figures from the run.", timing_missed: "A timed task on your run passed its window without being marked done. If you did it, tap Done in Add-ons & tasks; otherwise let Jeremy know.", timing_due: "A timed task on your run is due soon.", vchk_due: "The weekly vehicle check is due. Open More → Weekly vehicle check.", change_unconfirmed: "A roster change is waiting for your Got it." })[a.kind] || "";
+  sheet(`<h3>${esc(a.title)}</h3><p class="meta">${esc(String(a.kind).replace(/_/g, " "))} · ${fmtTs(a.created_at)}</p>${a.body ? `<p>${esc(a.body)}</p>` : ""}${what ? `<p class="hint">${what}</p>` : ""}
+    ${sh ? `<dl class="kv"><dt>Shift</dt><dd>${esc(sh.run)} · ${label(sh.day)}</dd>${rule ? `<dt>Window</dt><dd>${esc(rule.name)} · ${winTxt(rule)}</dd>` : ""}</dl>` : ""}
+    <div class="row">${sh && !S.viewAs && (a.kind === "sod_late" || a.kind === "sod_missing") && !S.sods.some(x => x.shift_id === sh.id) ? `<button class="btn sm" data-sodv="${sh.id}">Post SOD now</button>` : ""}${sh && !S.viewAs && a.kind === "eod_late" && !S.eods.some(x => x.shift_id === sh.id) ? `<button class="btn accent sm" data-eodv="${sh.id}">Post EOD now</button>` : ""}${a.kind === "vchk_due" && !S.viewAs ? `<button class="btn ghost sm" id="al-vchk">Vehicle check</button>` : ""}<button class="btn ghost sm" data-dayv="${day}">That day</button></div>`,
+    (bg, close) => { bg.querySelector("#al-vchk")?.addEventListener("click", () => { close(); vehicleCheckForm(); }); });
+}
+function leaveSheet(l) {
+  const days = []; for (let d = l.date_from; d <= l.date_to && days.length < 31; d = addDays(d, 1)) days.push(d); const clash = days.filter(d => S.days[d]);
+  sheet(`<h3>${esc(LEAVE_T[l.type] || l.type)}</h3><p class="meta">${label(l.date_from, true)}${l.date_to !== l.date_from ? ` – ${label(l.date_to, true)}` : ""}${l.part !== "full" ? ` · ${l.part === "AM" ? "morning off" : "afternoon off"}` : ""} · asked ${fmtTs(l.created_at)}</p>
+    <dl class="kv"><dt>Status</dt><dd>${pill(l.status, l.status === "approved" ? "ok" : l.status === "declined" ? "crit" : l.status === "pending" ? "warn" : "grey")}${l.decided_at ? ` <span class="meta">${fmtTs(l.decided_at)}</span>` : ""}</dd>${l.notes ? `<dt>Your note</dt><dd>${esc(l.notes)}</dd>` : ""}${l.reply ? `<dt>Reply</dt><dd>${esc(l.reply)}</dd>` : ""}<dt>Received email</dt><dd>${l.acked_email_at ? "sent " + fmtTs(l.acked_email_at) : "on its way"}</dd></dl>
+    ${clash.length ? `<p class="meta">${l.status === "approved" ? "You're still showing on the roster for" : "You're currently rostered on"} ${clash.map(d => `<button class="linkbtn" data-dayv="${d}">${label(d)}</button>`).join(", ")}${l.status === "approved" ? " — check with Jeremy." : "."}</p>` : ""}
+    <p class="hint">${l.status === "pending" ? "Jeremy will say yes or no by email. Nothing is approved until then." : l.status === "approved" ? "It's on the roster as leave. Enjoy the time off." : l.status === "declined" ? "If you'd like to talk about it, give Jeremy a call." : ""}</p>`);
+}
+function msgSheet(m) {
+  sheet(`<h3>Message from ${esc(first(S.people[m.messages.sender]?.name || "Jeremy"))}</h3><p class="meta">${fmtTs(m.messages.created_at)}${m.read_at ? ` · read ${fmtTs(m.read_at)}` : ""}${m.confirmed_at ? ` · <span class="c-ok">✓ confirmed ${fmtTs(m.confirmed_at)}</span>` : ""}</p><pre class="msg" style="font-family:var(--fd);font-size:15px">${esc(m.messages.body)}</pre>
+    ${m.messages.needs_confirm && !m.confirmed_at && !S.viewAs ? `<button class="btn" id="m-ok">Got it</button>` : ""}`, (bg, close) => { bg.querySelector("#m-ok")?.addEventListener("click", async () => { await q(sb.from("message_recipients").update({ confirmed_at: new Date().toISOString(), read_at: new Date().toISOString() }).eq("message_id", m.message_id).eq("person", S.me.id)); close(); toast("Confirmed ✓", "ok"); }); });
 }
 
 /* ================= location (between SOD and EOD, while the app is open) ================= */
