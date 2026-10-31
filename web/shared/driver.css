@@ -1,0 +1,65 @@
+/* ===== Design pass: readable, daylight-proof, one memorable moment (Today card) ===== */
+body{font-size:16px;line-height:1.5;font-variant-numeric:tabular-nums;background:var(--bg)}
+.wrap{gap:14px;padding-top:20px}
+.brand{font:700 14px var(--fd);letter-spacing:.01em;text-transform:none;color:var(--brand)}
+h1{font:800 32px/1.1 var(--fd);font-stretch:112%;letter-spacing:-.015em;margin-top:4px}
+.upd{font:500 13px var(--fd)}
+.card{background:var(--card);border-radius:18px;padding:16px;gap:12px;box-shadow:var(--shadow);animation:none}
+.card h2{font:700 16px var(--fd);letter-spacing:0;text-transform:none;color:var(--ink)}
+.card h2 span{font:500 14px var(--fd);color:var(--ink2)}
+.card.today{background:var(--card);border:1px solid var(--line);border-left:7px solid var(--accent)}
+.card.hot{background:var(--crit-fill);border:1px solid var(--crit);border-left:7px solid var(--crit)}
+.card.warnc{border-color:var(--line);border-left:7px solid var(--warn)}
+.big{font:800 24px/1.2 var(--fd);font-stretch:108%}
+.big small{font:600 15px var(--fd);font-stretch:100%;color:var(--ink2)}
+.hint,.meta{font-size:14px;color:var(--ink2)}
+.seg{padding:10px 0}
+.seg .tm{font:700 15px var(--fd);color:var(--ink);min-width:124px}
+.seg .rn{font-size:16px}.seg .rn .sub{font-size:14px;color:var(--ink2)}
+.tag{font:600 13px var(--fd);padding:2px 9px;color:var(--ink)}
+.tag.van{font:800 16px var(--fd);padding:4px 11px 4px 8px}.tag.van svg{color:var(--ink2)}
+.pill{font:700 13px var(--fd);padding:2px 10px}
+.pill.grey{color:var(--ink2)}
+.btn{font:800 17px var(--fd);min-height:52px;border-radius:14px}
+.btn.ghost{font-size:15px;min-height:46px}
+.btn.sm{min-height:42px;font-size:14px}
+label.f{font:700 14px var(--fd);letter-spacing:0;text-transform:none;color:var(--ink)}
+.f input,.f select,.f textarea,input.in,select.in,textarea.in{min-height:48px;border-radius:10px;font:500 16px var(--fd);border-color:var(--line)}
+.chk{font-size:15px;min-height:46px}
+.seg-btns button,.nav button{font-size:15px;min-height:44px;padding:8px 16px}
+.nav button.on,.seg-btns button.on{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.nav button .b.warn,.tw-tag{color:var(--on-warn)}
+.kv{font-size:16px;grid-template-columns:120px 1fr}
+.kv dt{font:600 14px var(--fd);letter-spacing:0;text-transform:none;color:var(--ink2);padding-top:1px}
+.day{font-size:16px;grid-template-columns:92px 1fr auto;padding:11px 0}
+.day .dh{font:600 14px var(--fd);color:var(--ink2)}
+.item{font-size:15px;padding:12px 14px;border-radius:12px}
+.item .m{font:500 13px var(--fd);color:var(--ink2)}
+.foot{font-size:14px}
+.sheet{border-radius:20px 20px 0 0;padding:18px}.sheet h3{font:800 20px var(--fd);font-stretch:108%}
+.sheet h4,.tw h4{font:700 14px var(--fd);letter-spacing:0;text-transform:none;color:var(--ink)}
+.tile{border-radius:14px;padding:12px}
+.tile .v{font:800 28px var(--fd);font-stretch:108%}
+.tile .l{font:700 14px var(--fd);letter-spacing:0;text-transform:none;color:var(--ink2)}
+.tile .s{font-size:13.5px;color:var(--ink2)}
+.tile .half .v{font-size:23px}
+table.dt{font-size:15px}
+table.dt th{font:700 13.5px var(--fd);letter-spacing:0;text-transform:none;color:var(--ink2)}
+.tw-r{grid-template-columns:104px 1fr;font-size:15px}.tw-r .w{font:700 14px var(--fd);color:var(--ink)}.tw-r .x{font-size:14px;color:var(--ink2)}
+.ab{min-height:58px;border-radius:14px}.ab b{font-size:16px}.ab small{font:500 13.5px var(--fd);color:var(--ink2)}
+.abmore summary{font-size:14.5px;color:var(--ink2)}
+.qb{min-height:68px;border-radius:16px}.qb b{font:800 20px var(--fd);font-stretch:108%}.qb small{font:600 13.5px var(--fd);opacity:1}
+.tk{padding:10px 12px;border-radius:12px}
+.tk .t{font-size:16px}.tk .d{font-size:14px;color:var(--ink)}.tk .w{font:700 14px var(--fd);color:var(--ink2)}
+details summary{font-size:16px;min-height:44px}
+#toast{font-size:15px;padding:12px 18px}
+
+/* phones: Next shift and Today's tasks stack so the time and the van fit on one big line */
+@media (max-width:719px){
+  .wrap{padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}
+  h1{font-size:30px}
+  .bigrow{grid-template-columns:1fr auto}
+  .card.today .big{font-size:24px}
+  .tk{gap:10px}
+}
+@media (prefers-reduced-motion:no-preference){.card.today{animation:in .4s ease}}
