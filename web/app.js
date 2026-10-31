@@ -151,9 +151,11 @@ function reviewSheet(id) {
     bg.querySelector("#rv").onsubmit = async ev => { ev.preventDefault(); const { error } = await sb.rpc("entry_review", { p_id: id, p_note: bg.querySelector("#rv-note").value }); if (error) return toast(error.message, "err"); close(); toast("Review request sent", "ok"); await loadAll(); render(); };
   });
 }
+const ALERT_WHAT = { sod_late: "Your start of day wasn't posted on time. Post it now. Late is better than missing.", sod_missing: "No start of day was posted for this shift. Post it now so the day can be scored.", eod_late: "Your end of day wasn't posted on time. Post it now with your run figures.", timing_missed: "A timed task ran past its window. If you did it, tap Done on it under Today's tasks. If not, let Jeremy know.", timing_due: "A timed task on your run is due soon.", vchk_due: "Your weekly vehicle check is due.", change_unconfirmed: "A roster change is waiting for you." };
+const myAlerts = () => S.alerts.filter(a => !String(a.dedupe_key || "").startsWith("review|"));
 function alertsCard() {
-  if (!S.alerts.length) return "";
-  return `<div class="card hot"><h2>Needs attention<span>${S.alerts.length}</span></h2><div class="list">${S.alerts.map(a => `<div class="item clk ${a.kind.includes("missed") || a.kind === "sod_missing" ? "crit" : "warn"}" data-alertv="${a.id}"><b>${esc(a.title)}</b>${a.body ? `<div class="meta">${esc(a.body)}</div>` : ""}<div class="m">${ago(a.created_at)} · tap for what to do</div></div>`).join("")}</div></div>`;
+  const list = myAlerts(); if (!list.length) return "";
+  return `<div class="card hot"><h2>Admin tasks<span>${list.length}</span></h2><div class="list">${list.map(a => `<div class="item ${a.kind.includes("missed") || a.kind === "sod_missing" ? "crit" : "warn"}"><b>${esc(a.title)}</b>${a.body ? `<div class="meta">${esc(a.body)}</div>` : ""}<div class="m">${ago(a.created_at)}</div><div class="row" style="margin-top:6px"><button class="btn sm" data-alertv="${a.id}">What to do</button>${S.viewAs ? "" : `<button class="btn ghost sm" data-gotit-alert="${a.id}">Got it</button>`}</div></div>`).join("")}</div></div>`;
 }
 function messagesCard() {
   const unread = S.msgs.filter(m => !m.read_at); const toConfirm = S.msgs.filter(m => m.messages.needs_confirm && !m.confirmed_at);
@@ -403,6 +405,7 @@ function bindDetail(root) {
   on("[data-weekv]", el => weekSheet(el.dataset.weekv));
   on("[data-dayv]", el => daySheet(el.dataset.dayv));
   on("[data-vanv]", el => vanSheet(el.dataset.vanv));
+  $$("[data-gotit-alert]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; gotItAlert(b.dataset.gotitAlert); });
   on("[data-alertv]", el => { const a = S.alerts.find(x => x.id === el.dataset.alertv); if (a) alertSheet(a); });
   on("[data-leavev]", el => { const l = S.leave.find(x => x.id === el.dataset.leavev); if (l) leaveSheet(l); });
   on("[data-msgv]", el => { const m = S.msgs.find(x => x.message_id === el.dataset.msgv); if (m) msgSheet(m); });
@@ -582,13 +585,13 @@ function vanSheet(plate) {
     (bg, close) => { bg.querySelector("#vchk-go")?.addEventListener("click", () => { close(); vehicleCheckForm(); }); }, { wide: true });
 }
 function alertSheet(a) {
-  const sh = a.shift_id ? S.shifts.find(x => x.id === a.shift_id) : null; const day = sh?.day || nzNow(new Date(a.created_at)).date; const rule = a.rule_id ? S.rules.find(r => r.id === a.rule_id) : null;
-  const what = ({ sod_late: "Your SOD wasn't in by the time it was due. Post it now — late beats missing.", sod_missing: "No SOD was posted for this shift. Post it now so the day can be scored.", eod_late: "Your EOD for this run wasn't in on time. Post it now with the figures from the run.", timing_missed: "A timed task on your run passed its window without being marked done. If you did it, tap Done on it under Today; otherwise let Jeremy know.", timing_due: "A timed task on your run is due soon.", vchk_due: "The weekly vehicle check is due. Open More → Weekly vehicle check.", change_unconfirmed: "A roster change is waiting for your Got it." })[a.kind] || "";
-  sheet(`<h3>${esc(a.title)}</h3><p class="meta">${esc(String(a.kind).replace(/_/g, " "))} · ${fmtTs(a.created_at)}</p>${a.body ? `<p>${esc(a.body)}</p>` : ""}${what ? `<p class="hint">${what}</p>` : ""}
-    ${sh ? `<dl class="kv"><dt>Shift</dt><dd>${esc(sh.run)} · ${label(sh.day)}</dd>${rule ? `<dt>Window</dt><dd>${esc(rule.name)} · ${winTxt(rule)}</dd>` : ""}</dl>` : ""}
-    <div class="row">${sh && !S.viewAs && (a.kind === "sod_late" || a.kind === "sod_missing") && !S.sods.some(x => x.shift_id === sh.id) ? `<button class="btn sm" data-sodv="${sh.id}">Post SOD now</button>` : ""}${sh && !S.viewAs && a.kind === "eod_late" && !S.eods.some(x => x.shift_id === sh.id) ? `<button class="btn accent sm" data-eodv="${sh.id}">Post EOD now</button>` : ""}${a.kind === "vchk_due" && !S.viewAs ? `<button class="btn ghost sm" id="al-vchk">Vehicle check</button>` : ""}<button class="btn ghost sm" data-dayv="${day}">That day</button></div>`,
-    (bg, close) => { bg.querySelector("#al-vchk")?.addEventListener("click", () => { close(); vehicleCheckForm(); }); });
+  const sh = a.shift_id ? S.shifts.find(x => x.id === a.shift_id) : null; const rule = a.rule_id ? S.rules.find(r => r.id === a.rule_id) : null; const what = ALERT_WHAT[a.kind] || "";
+  const act = !S.viewAs && sh && ((a.kind === "sod_late" || a.kind === "sod_missing") && !S.sods.some(x => x.shift_id === sh.id) ? `<button class="btn" data-sodv="${sh.id}">Post start of day now</button>` : a.kind === "eod_late" && !S.eods.some(x => x.shift_id === sh.id) ? `<button class="btn accent" data-eodv="${sh.id}">Post end of day now</button>` : "") || (a.kind === "vchk_due" && !S.viewAs ? `<button class="btn accent" id="al-vchk">Do the vehicle check</button>` : "");
+  sheet(`<h3>${esc(a.title)}</h3>${a.body ? `<p>${esc(a.body)}</p>` : ""}${what ? `<p class="hint">${what}</p>` : ""}${sh ? `<p class="meta">${esc(sh.run)} · ${label(sh.day)}${rule ? ` · ${esc(rule.name)} ${winTxt(rule)}` : ""}</p>` : ""}
+    ${act}${S.viewAs ? "" : `<button class="btn ghost" id="al-got">Got it</button>`}`,
+    (bg, close) => { bg.querySelector("#al-vchk")?.addEventListener("click", () => { close(); vehicleCheckForm(); }); bg.querySelector("#al-got")?.addEventListener("click", () => { close(); gotItAlert(a.id); }); });
 }
+async function gotItAlert(id) { const { error } = await sb.rpc("alert_ack", { p_id: id }); if (error) return toast(error.message, "err"); S.alerts = S.alerts.filter(x => x.id !== id); toast("Got it ✓", "ok"); render(); }
 function leaveSheet(l) {
   const days = []; for (let d = l.date_from; d <= l.date_to && days.length < 31; d = addDays(d, 1)) days.push(d); const clash = days.filter(d => S.days[d]);
   sheet(`<h3>${esc(LEAVE_T[l.type] || l.type)}</h3><p class="meta">${label(l.date_from, true)}${l.date_to !== l.date_from ? ` – ${label(l.date_to, true)}` : ""}${l.part !== "full" ? ` · ${l.part === "AM" ? "morning off" : "afternoon off"}` : ""} · asked ${fmtTs(l.created_at)}</p>
