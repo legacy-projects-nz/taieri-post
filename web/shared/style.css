@@ -184,7 +184,7 @@ button.qb:disabled{opacity:.4}
 /* driver app: keep lines whole in the Today / Next shift box */
 .card.today .seg .tm{white-space:nowrap}.card.today .seg .rn{min-width:0}.card.today .seg .rn .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card.today .big{white-space:nowrap}.card.today .tags{margin-top:6px}
-.bigrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.bigrow>span{white-space:nowrap}
+.bigrow{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;min-width:0}.bigrow>span{white-space:nowrap;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis}.bigrow .tag.van{flex:0 0 auto}
 .card.today .seg .rn{font-size:15px}
 @media (max-width:719px){.pair .card.today .big{font-size:17px}.pair .card.today .big small{font-size:11.5px}.pair .tag.van{font-size:14px}.pair .card.today .seg .rn{font-size:14px}}
 
@@ -207,3 +207,5 @@ button.qb:disabled{opacity:.4}
   .pair .hint,.pair .meta{font-size:11.5px}.pair details summary{font-size:13px}
   .pair .tiles{grid-template-columns:1fr}
 }
+@media (max-width:719px){.pair .card.today .big{font-size:15px}.pair .tag.van{font-size:12.5px;padding:2px 7px 2px 5px;gap:4px}.pair .tag.van svg{width:15px;height:15px}}
+@media (max-width:379px){.pair .card.today .big{font-size:13.5px}.pair .tag.van{font-size:11.5px}}

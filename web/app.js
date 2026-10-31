@@ -216,13 +216,13 @@ function todayCard(T, N, n) {
       const sodBtn = !sodSeg ? `<p class="hint">No SOD yet — tap <b>SOD</b> at the top when you start.</p>`
         : `<div class="row"><div class="meta c-ok">✓ SOD ${fmtTime(sodSeg.sod.sent_at)}${sodSeg.sod.van ? ` · ${esc(sodSeg.sod.van)}` : ""}${sodSeg.sod.edited_at ? " (edited)" : ""}</div>${allEod ? "" : `<button class="btn ghost sm" id="sod-edit" data-shift="${sodSeg.shift.id}">Edit SOD</button>`}</div>`;
       const sortOnly = !T.segs.some(x => !x.sort) && sodSeg && !allEod;
-      return `<div class="card today"><h2>Today<span>${label(T.day)}</span></h2><div class="big bigrow"><span>${fmtT((left[0] || T.segs[0]).st)} – ${fmtT(T.end)}${left.length === T.segs.length ? ` <small>· ${T.hours} h</small>` : ""}</span>${vanChips(T)}</div>
+      return `<div class="card today"><h2>Today<span>${label(T.day)}</span></h2><div class="big bigrow"><span>${fmtT((left[0] || T.segs[0]).st)} – ${fmtT(T.end)}</span>${vanChips(T)}</div>${left.length === T.segs.length ? `<div class="meta" style="margin-top:-4px">${T.hours} h rostered</div>` : ""}
         ${sodBtn}${(left.length ? left : T.segs).map(x => segRow(x, T.day, n, true, false)).join("")}
         ${S.locOn ? `<p class="hint">📍 Sharing your location with the depot until your EOD.</p>` : ""}</div>`;
     }
   }
   const lead = !T ? (hol ? `<p class="hint">Today: ${esc(hol.name)}</p>` : `<p class="hint">Day off today</p>`) : "";
-  if (N) return `<div class="card today"><h2>Next shift<span>${label(N.day)}</span></h2>${lead}<div class="big bigrow"><span>${fmtT(N.start)} – ${fmtT(N.end)} <small>· ${N.hours} h</small></span>${vanChips(N)}</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}</div>`;
+  if (N) return `<div class="card today"><h2>Next shift<span>${label(N.day)}</span></h2>${lead}<div class="big bigrow"><span>${fmtT(N.start)} – ${fmtT(N.end)}</span>${vanChips(N)}</div><div class="meta" style="margin-top:-4px">${N.hours} h rostered</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}</div>`;
   return `<div class="card today"><h2>Next shift</h2>${lead}<div class="big">Not on the roster yet</div><p class="hint">Your next shift shows here once the roster is out.</p></div>`;
 }
 function vanCard(T, N) {
