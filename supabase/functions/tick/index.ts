@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
         const closes = toMin(r.closes); if (closes == null) continue;
         const kd = `timing_due|${t}|${drv}|${r.id}`, km = `timing_missed|${t}|${drv}|${r.id}`;
         if (done) { for (const a of alertsOpen) if (a.dedupe_key === kd || a.dedupe_key === km) resolve.push(a.id); continue; }
-        if (!done && now.min >= closes - 15 && now.min < closes) raise({ kind: "timing_due", driver: drv, shift_id: x.s.id, rule_id: r.id, title: `${name}: ${r.name} due by ${fmtT(closes)}`, body: `${x.s.run} · ${r.note || ""}`.trim(), dedupe_key: kd, _push: { to: [drv], title: `${r.name} by ${fmtT(closes)}`, body: `${r.note || "Tap Done in the app when it's sorted."}` } });
+        if (!done && now.min >= closes - 10 && now.min < closes) raise({ kind: "timing_due", driver: drv, shift_id: x.s.id, rule_id: r.id, title: `${name}: ${r.name} due by ${fmtT(closes)}`, body: `${x.s.run} · ${r.note || ""}`.trim(), dedupe_key: kd, _push: { to: [drv], title: `${r.name} by ${fmtT(closes)}`, body: `${r.note || "Tap Done in the app when it's sorted."}` } });
         if (!done && now.min >= closes && now.min < closes + 240) raise({ kind: "timing_missed", driver: drv, shift_id: x.s.id, rule_id: r.id, title: `${name}: ${r.name} not done by ${fmtT(closes)}`, body: `${x.s.run}`, dedupe_key: km, _push: { to: [drv], title: `${r.name} was due by ${fmtT(closes)}`, body: "If it's done, tap Done in the app. Otherwise let Jeremy know." }, _email: "timing", _rule: r });
       }
     }
