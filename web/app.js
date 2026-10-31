@@ -255,23 +255,25 @@ function addonsCard(T, N, n) {
 }
 
 /* ---------- Scores ---------- */
-function scoreRange() { // this week (Mon–Sun) or this month
-  const t = today(); S.scRange ??= "week";
-  if (S.scRange === "month") { const first = t.slice(0, 8) + "01"; const d = new Date(first + "T12:00:00Z"); d.setUTCMonth(d.getUTCMonth() + 1); d.setUTCDate(0); return { from: first, to: d.toISOString().slice(0, 10) }; }
-  const mon = monOf(t); return { from: mon, to: addDays(mon, 6) };
+function scoreRanges() { // this week (Mon–Sun) and this month, side by side
+  const t = today(); const mon = monOf(t);
+  const first = t.slice(0, 8) + "01"; const d = new Date(first + "T12:00:00Z"); d.setUTCMonth(d.getUTCMonth() + 1); d.setUTCDate(0);
+  return { week: { from: mon, to: addDays(mon, 6), l: "This week" }, month: { from: first, to: d.toISOString().slice(0, 10), l: "This month" } };
 }
 function scoresCard() {
-  const F = scoreRange(); const D = { shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, runsBy: S.runsBy };
-  const sc = scoreFor(S.me.id, F.from, F.to, { ...D, ovs: S.ovs }, S.C); S.sc = sc; S.F = F;
-  const tile = (k, l, v) => `<button class="tile ${S.scSel === k ? "sel" : ""}" data-sc="${k}"><div class="l">${l} ▾</div><div class="v c-${col(v)}">${pct(v)}</div><div class="bar"><i class="bg-${col(v)}" style="width:${Math.min(100, v || 0)}%"></i></div></button>`;
-  const line = [`${sc.onTime} of ${sc.closed} posts on time`, sc.late ? `${sc.late} late` : "", sc.missing ? `${sc.missing} missing` : "", sc.nMist ? `${sc.nMist} mistake${sc.nMist === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
-  const fresh = F.to < S.C.rules.startDate || (!sc.closed && !sc.effDays.length && !sc.accDays.length && F.from < S.C.rules.startDate);
-  return `<div class="card" id="scores"><h2>My scores<span>${label(F.from)} – ${label(F.to)}</span></h2>
-    <div class="seg-btns"><button data-scrange="week" class="${S.scRange === "week" ? "on" : ""}">This week</button><button data-scrange="month" class="${S.scRange === "month" ? "on" : ""}">This month</button></div>
+  const RG = scoreRanges(); const D = { shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, runsBy: S.runsBy, ovs: S.ovs };
+  const SC = { week: scoreFor(S.me.id, RG.week.from, RG.week.to, D, S.C), month: scoreFor(S.me.id, RG.month.from, RG.month.to, D, S.C) };
+  S.sc = SC.month; S.F = RG.month; S.SC = SC; S.RG = RG;                       // To fix and the day sheets read the month (it covers the week)
+  const [selK, selR] = (S.scSel || "").split("|");
+  const half = (k, r) => { const v = SC[r][k]; return `<button class="half ${selK === k && selR === r ? "sel" : ""}" data-sc="${k}|${r}"><div class="l">${RG[r].l}</div><div class="v c-${col(v)}">${pct(v)}</div><div class="bar"><i class="bg-${col(v)}" style="width:${Math.min(100, v || 0)}%"></i></div></button>`; };
+  const tile = (k, l) => `<div class="tile dual"><div class="l">${l} ▾</div><div class="halves">${half(k, "week")}${half(k, "month")}</div></div>`;
+  const sc = SC.week; const line = [`${sc.onTime} of ${sc.closed} posts on time this week`, sc.late ? `${sc.late} late` : "", sc.missing ? `${sc.missing} missing` : "", sc.nMist ? `${sc.nMist} mistake${sc.nMist === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
+  const fresh = !SC.month.closed && !SC.month.effDays.length && !SC.month.accDays.length && RG.week.from < S.C.rules.startDate;
+  return `<div class="card" id="scores"><h2>My scores<span>week of ${label(RG.week.from)} · ${new Date(RG.month.from + "T12:00:00Z").toLocaleString("en-NZ", { month: "long", timeZone: "UTC" })}</span></h2>
     ${fresh ? `<p class="hint">Scores count from ${label(S.C.rules.startDate)}. Your first scored shifts will show here.</p>` : ""}
-    <div class="tiles" style="grid-template-columns:1fr 1fr">${tile("admin", "Admin", sc.admin)}${tile("eff", "Efficiency", sc.eff)}${tile("acc", "Accuracy", sc.acc)}${tile("safe", "Safety", sc.safe)}</div>
-    <div class="meta">Overall <b class="c-${col(sc.overall)}">${pct(sc.overall)}</b> · ${line} · tap a score to see the figures</div>
-    ${S.scSel ? scoreDetail(sc, S.scSel) : ""}
+    <div class="tiles" style="grid-template-columns:1fr 1fr">${tile("admin", "Admin")}${tile("eff", "Efficiency")}${tile("acc", "Accuracy")}${tile("safe", "Safety")}</div>
+    <div class="meta">Overall <b class="c-${col(SC.week.overall)}">${pct(SC.week.overall)}</b> this week · <b class="c-${col(SC.month.overall)}">${pct(SC.month.overall)}</b> this month · ${line} · tap a score to see the figures</div>
+    ${selK && SC[selR] ? `<div class="meta mono" style="text-transform:uppercase">${RG[selR].l} · ${label(RG[selR].from)} – ${label(RG[selR].to)}</div>${scoreDetail(SC[selR], selK)}` : ""}
     ${historyBlock()}</div>`;
 }
 function dataFor() { return { shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, runsBy: S.runsBy, ovs: S.ovs }; }
@@ -354,7 +356,6 @@ function wire() {
   $$("[data-plan]").forEach(i => i.onchange = async () => { const shift = S.shifts.find(s => s.id === i.dataset.shift); const plan = { ...(shift.plan || {}), [i.dataset.plan]: i.value }; const { error } = await sb.rpc("set_my_plan", { p_shift: shift.id, p_plan: plan }); if (error) toast(error.message, "err"); else { shift.plan = plan; toast("Saved", "ok"); } });
   $$("[data-done]").forEach(b => b.onclick = async () => { const { error } = await sb.rpc("task_done", { p_shift: b.dataset.shift, p_addon: b.dataset.done }); if (error) toast(error.message, "err"); else { toast("Marked done ✓", "ok"); await loadAll(); render(); } });
   $$("[data-sc]").forEach(b => b.onclick = () => { S.scSel = S.scSel === b.dataset.sc ? null : b.dataset.sc; render(); setTimeout(() => $("#scores")?.scrollIntoView({ block: "nearest" }), 0); });
-  $$("[data-scrange]").forEach(b => b.onclick = () => { S.scRange = b.dataset.scrange; render(); setTimeout(() => $("#scores")?.scrollIntoView({ block: "nearest" }), 0); });
   $("#leave-new")?.addEventListener("click", leaveForm);
   $("#prof-edit")?.addEventListener("click", profileForm);
   $("#vchk-btn")?.addEventListener("click", vehicleCheckForm);
