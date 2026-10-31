@@ -135,10 +135,11 @@ export function driverDay(drv, d) {
   const complete = sod && (runSegs.length ? eods.length === runSegs.length : D.segs.some(x => S.eodBy[x.shift.id]));
   const anyE = runSegs.length ? eods : D.segs.map(x => S.eodBy[x.shift.id]).filter(Boolean); const lastE = anyE[anyE.length - 1];
   const endOf = e => e.finish_time ? toMin(e.finish_time) : nzNow(new Date(e.sent_at)).min;
-  let act = null; if (complete) { const sm = nzNow(new Date(sod.sent_at)).min, em = endOf(lastE); act = Math.max(0, (em - sm) / 60); }
+  let act = null, badTimes = false; if (complete) { const sm = nzNow(new Date(sod.sent_at)).min, em = endOf(lastE); if (em > sm) act = (em - sm) / 60; else badTimes = true; } // SOD posted after the finish (e.g. both posts sent together at the end) → not a measured day
   // estimated actual when the SOD and/or EODs are not in: what is in + the roster for the rest; nothing at all → the expected hours
   let actEst = act, actHow = "SOD → EOD"; if (act == null) { const n = nzNow(); const over = d < n.date || (d === n.date && n.min >= D.end);
-    if (!sod && !anyE.length) { actEst = exp + train; actHow = over ? "no SOD or EOD · = expected" + (train ? " + training" : "") : "to come · = expected" + (train ? " + training" : ""); }
+    if (badTimes) { actEst = exp + train; actHow = "SOD time is after the EOD finish · = expected · fix the times"; }
+    else if (!sod && !anyE.length) { actEst = exp + train; actHow = over ? "no SOD or EOD · = expected" + (train ? " + training" : "") : "to come · = expected" + (train ? " + training" : ""); }
     else { const sm = sod ? nzNow(new Date(sod.sent_at)).min : D.start; const em = (complete || (anyE.length && (!runSegs.length || eods.length === runSegs.length))) ? endOf(lastE) : (lastE && over ? Math.max(endOf(lastE), D.end) : D.end); actEst = Math.max(0, (em - sm) / 60); actHow = `${sod ? "SOD" : "roster start"} → ${anyE.length === (runSegs.length || 1) ? "EOD" : "roster end"}`; } }
   return { d, drv, hol, D, exp, est, act, actEst, actIsEst: act == null, actHow, train, spend: (actEst ?? exp) * rate, rate, runs: runSegs.length, done: eods.length, sod, eods, runSegs, effRows, trk: act != null && exp ? ((act - train) - exp) / exp * 100 : null };
 }
