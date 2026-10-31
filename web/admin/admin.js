@@ -48,22 +48,22 @@ export async function loadAll() {
   S.sodBy = Object.fromEntries(S.sods.map(s => [s.shift_id, s])); S.eodBy = Object.fromEntries(S.eods.map(e => [e.shift_id, e]));
 }
 
-const TABS = [["live", "Live", "alerts"], ["runboard", "Run Board", "roster"], ["classic", "Run Board (classic)", "roster"], ["scorecard", "Scorecard", "scorecard"], ["comms", "Alerts & messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"]];
+const TABS = [["live", "Live", "alerts"], ["runboard", "Run Board", "roster"], ["classic", "Run Board (classic)", "roster"], ["scorecard", "Scorecard", "scorecard"], ["alerts", "Alerts", "alerts"], ["messages", "Messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"]];
 export function render(soft = false) {
   if (soft && (document.activeElement?.matches("input,textarea,select") || $(".sheet-bg"))) return;
   const n = nzNow(); const tabs = TABS.filter(([, , a]) => S.me.can(a));
   if (!tabs.some(([k]) => k === S.tab)) S.tab = tabs[0][0];
-  const badge = { live: S.alerts.filter(a => !a.resolved_at).length, leave: S.leave.filter(l => l.status === "pending").length, runboard: S.items.filter(i => i.roster_changes.status === "awaiting_approval").length, comms: S.alerts.filter(a => !a.resolved_at).length };
+  const badge = { live: S.alerts.filter(a => !a.resolved_at).length, leave: S.leave.filter(l => l.status === "pending").length, runboard: S.items.filter(i => i.roster_changes.status === "awaiting_approval").length, alerts: S.alerts.filter(a => !a.resolved_at).length };
   app.innerHTML = `<div class="wrap">
-    <div class="top"><div><div class="brand">Taieri Ops</div><h1>${({ live: "Live board", runboard: "Run Board", classic: "Run Board (classic)", scorecard: "Driver Scorecard", comms: "Alerts & messages", leave: "Leave", fleet: "Fleet", timing: "Timing rules", people: "People & settings" })[S.tab]}</h1></div>
+    <div class="top"><div><div class="brand">Taieri Ops</div><h1>${({ live: "Live board", runboard: "Run Board", classic: "Run Board (classic)", scorecard: "Driver Scorecard", alerts: "Alerts & timings", messages: "Messages", leave: "Leave", fleet: "Fleet", timing: "Timing rules", people: "People & settings" })[S.tab]}</h1></div>
       <div class="upd"><span class="dot live"></span>live · ${fmtT(n.min)}<br>${esc(first(S.me.name))} · <button class="linkbtn" id="signout">sign out</button></div></div>
     <nav class="nav">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? "on" : ""}">${l}${badge[k] ? `<span class="b ${k === "runboard" ? "warn" : ""}">${badge[k]}</span>` : ""}</button>`).join("")}</nav>
-    <div id="view">${({ live: liveTab2, runboard: runBoardTab, classic: classicTab, scorecard: scorecardTab, comms: () => messagesTab() + alertsTab(), leave: leaveTab, fleet: fleetTab, timing: timingTab, people: peopleTab })[S.tab]()}</div>
+    <div id="view">${({ live: liveTab2, runboard: runBoardTab, classic: classicTab, scorecard: scorecardTab, alerts: alertsTab, messages: messagesTab, leave: leaveTab, fleet: fleetTab, timing: timingTab, people: peopleTab })[S.tab]()}</div>
     <p class="foot">Safe. Sharp. Swift. · <a href="/">driver portal</a></p></div>`;
   $("#signout").onclick = signOut;
   $$("[data-tab]").forEach(b => b.onclick = () => { S.tab = b.dataset.tab; location.hash = S.tab; render(); });
   if (S.tab !== "live") { /* the live board draws its own map */ }
-  ({ live: wireLive2, runboard: wireRunBoard, classic: () => { }, scorecard: wireScorecard, comms: () => { wireMessages(); wireAlerts(); }, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople })[S.tab]?.();
+  ({ live: wireLive2, runboard: wireRunBoard, classic: () => { }, scorecard: wireScorecard, alerts: wireAlerts, messages: wireMessages, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople })[S.tab]?.();
 }
 
 /* ================= shared helpers ================= */
@@ -132,10 +132,21 @@ function classicTab() {
 }
 
 /* ================= ALERTS ================= */
+function timingsToday() {
+  const n = nzNow(); const t = n.date; const rows = [];
+  for (const s of S.shifts.filter(x => x.day === t && x.driver && !isSort(x.run))) for (const r of S.rules) { if (!r.active || !r.days.includes(dow(t) + 1)) continue; const all = r.runs.includes("ALL"); if (!all && !r.runs.includes(s.run)) continue;
+    const ad = r.addon ? S.addons.find(a => a.id === r.addon) : null; if (ad && ad.runs.includes(s.run)) { if (!(s.addons || []).includes(r.addon)) continue; } else if (!all && r.runs.length > 1) continue;
+    const done = s.done?.[r.addon] || (r.addon?.startsWith("tw_") && /game plan/i.test(r.name) && Object.keys(s.plan || {}).length ? (s.plan && Object.values(s.plan)[0] ? "plan" : null) : null);
+    const f = toMin(r.opens), c = toMin(r.closes); const win = f != null && c != null ? `${fmtT(f)}–${fmtT(c)}` : c != null ? `by ${fmtT(c)}` : f != null ? `from ${fmtT(f)}` : "any time";
+    let st, cls; if (done) { st = done === "plan" ? "game plan in" : `done ${fmtTime(done)}`; cls = "ok"; } else if (c != null && n.min > c) { st = `PASSED · due ${fmtT(c)}`; cls = "miss"; } else if (c != null && c - n.min <= 60) { st = `due soon · ${fmtT(c)}`; cls = "late"; } else if (f != null && n.min >= f) { st = "window open"; cls = "due"; } else { st = "later"; cls = "due"; }
+    rows.push({ sort: c ?? f ?? 0, html: `<tr><td class="mono">${win}</td><td><b>${esc(r.name)}</b>${r.note ? `<div class="meta">${esc(r.note)}</div>` : ""}</td><td>${esc(s.run)} · ${esc(fnm(s.driver))}</td><td><span class="chip ${cls}">${st}</span></td></tr>` }); }
+  rows.sort((a, b) => a.sort - b.sort);
+  return `<div class="card"><h2>Timings today<span>${label(t)} · red = passed without being done</span></h2>${rows.length ? `<div class="scroll"><table class="dt"><tr><th>Window</th><th>What</th><th>Who</th><th>Status</th></tr>${rows.map(r => r.html).join("")}</table></div>` : `<p class="empty">No timed tasks on today's runs.</p>`}<p class="hint">Drivers tap Done in their app as each one is finished. A passed window raises an alert here and pings you and the driver.</p></div>`;
+}
 function alertsTab() {
   const open = S.alerts.filter(a => !a.resolved_at), done = S.alerts.filter(a => a.resolved_at);
   const rem = S.set.reminders || {};
-  return `<div class="card"><h2>Open alerts<span>${open.length}</span></h2>${open.length ? `<div class="list">${open.map(alertRow).join("")}</div><button class="btn ghost sm" id="resolve-all">Resolve all</button>` : `<p class="empty">✓ Nothing open</p>`}</div>
+  return `${timingsToday()}<div class="card"><h2>Open alerts<span>${open.length}</span></h2>${open.length ? `<div class="list">${open.map(alertRow).join("")}</div><button class="btn ghost sm" id="resolve-all">Resolve all</button>` : `<p class="empty">✓ Nothing open</p>`}</div>
     <div class="card"><h2>How alerts work</h2><p class="hint">Every minute the system checks: SOD not in by rostered start + ${S.C.rules.sodGrace} min · EOD not in ${S.C.rules.eodHours} h after a run finishes · timing windows due soon or missed · roster changes not confirmed before the run starts · vehicle checks due Thursday 5pm. Each alert appears here, pings the driver's phone, and (when email chasing is on) emails the driver once.</p>
       <label class="chk ${rem.enabled ? "on" : ""}"><input type="checkbox" id="rem-on" ${rem.enabled ? "checked" : ""} ${S.me.can("people") ? "" : "disabled"}>Email drivers automatically when a post is late (between ${esc(rem.from || "07:00")} and ${esc(rem.to || "20:00")})</label></div>
     <div class="card"><h2>Resolved recently<span>${done.length}</span></h2>${done.length ? `<div class="list">${done.slice(0, 30).map(alertRow).join("")}</div>` : `<p class="empty">Nothing yet</p>`}</div>`;
