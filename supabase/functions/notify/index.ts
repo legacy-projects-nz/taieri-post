@@ -10,7 +10,7 @@ Deno.serve(async (req) => {
   const auth = req.headers.get("Authorization") || "";
   const user = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } }, auth: { persistSession: false } });
   const { data: who } = await user.auth.getUser(); if (!who?.user) return json({ error: "sign in" }, 401);
-  const sb = admin(); const { data: caller } = await sb.from("people").select("*").eq("user_id", who.user.id).maybeSingle();
+  const sb = admin(); const { data: pid } = await sb.rpc("person_for_user", { p_uid: who.user.id }); const { data: caller } = pid ? await sb.from("people").select("*").eq("id", pid).maybeSingle() : { data: null };
   if (!caller) return json({ error: "not on the list" }, 403);
   const can = (a: string) => caller.role === "owner" || (caller.perms || []).includes(a);
   const body = await req.json().catch(() => ({})); const sec = await secrets(sb); const set = await settings(sb);
