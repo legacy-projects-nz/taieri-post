@@ -100,7 +100,7 @@ function render() {
 
 /* ---------- SOD / EOD quick bar: always under the greeting on a work day ---------- */
 function quickBar(T, n) {
-  if (!T || S.viewAs) return "";
+  if (!T || S.viewAs) return `<div class="qbar"><div class="qb off"><b>▶ SOD</b><small>${S.viewAs ? "only " + esc(first(S.viewAs.name)) + " can tap this" : "no shift today"}</small></div><div class="qb off"><b>■ EOD</b><small>${S.viewAs ? "only " + esc(first(S.viewAs.name)) + " can tap this" : "no shift today"}</small></div></div>`;
   const runs = T.segs.filter(x => !x.sort); const sodSeg = T.segs.find(x => x.sod); const sod = sodSeg?.sod;
   const sortOnly = !runs.length; const eodOf = x => x.eod;
   const sodBtn = sod ? `<div class="qb done"><b>✓ SOD</b><small>${fmtTime(sod.sent_at)}${sod.van ? ` · ${esc(sod.van)}` : ""}</small></div>` : `<button class="btn qb" id="sod" data-shift="${T.segs[0].shift.id}"><b>▶ SOD</b><small>start of day</small></button>`;
@@ -158,10 +158,10 @@ function messagesCard() {
 
 /* ---------- Today / next shift ---------- */
 function runName(code) { const r = S.runsBy[code]; const fc = S.C.runCodes[code]; return r ? `${r.name}${fc ? ` (${fc})` : ""}` : code; }
-function segRow(x, day, n, isToday) {
+function segRow(x, day, n, isToday, tasks = true) {
   const code = x.shift.run; const r = S.runsBy[code];
-  const tags = [x.shift.van ? `<span class="tag van">${esc(x.shift.van)}</span>` : "", x.shift.trainee ? `<span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : "", ...(x.shift.addons || []).map(a => `<span class="tag">+ ${esc(addName(a))}</span>`)].join("");
-  const tw = x.sort ? "" : timingRows(x, day, isToday ? n.min : null);
+  const tags = [x.shift.van ? `<span class="tag van">${esc(x.shift.van)}</span>` : "", x.shift.trainee ? `<span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : "", ...(tasks ? (x.shift.addons || []).map(a => `<span class="tag">+ ${esc(addName(a))}</span>`) : [])].join("");
+  const tw = x.sort || !tasks ? "" : timingRows(x, day, isToday ? n.min : null);
   const act = isToday ? segActions(x, day, n) : "";
   return `<div class="seg clk" data-dayv="${day}" title="Tap for the full day"><div class="tm">${fmtT(x.st)} – ${fmtT(x.en)}</div><div class="rn">${x.sort ? esc(r?.label || "Sort") : `${esc(code)}<span class="sub">${esc(runName(code))}</span>`}<div class="tags">${tags}</div>${tw}${act}</div></div>`;
 }
@@ -187,7 +187,7 @@ function timingRows(x, day, nowMin) {
     else if (isT) { if (t != null && nowMin > t) { st = `✗ not done by ${fmtT(t)}`; cls = "miss"; } else if (f != null && nowMin >= f) { tag = "now"; cls = "now"; } else if (t != null && t - nowMin <= 60) { tag = "due soon"; cls = "now"; } }
     else if (day < today() && key) { st = `✗ not marked done`; cls = "miss"; }
     const btn = isT && key && !done && !S.viewAs && !(gp && planned) ? `<button class="btn sm ${cls === "miss" ? "warn" : "ghost"}" data-done="${esc(key)}" data-shift="${x.shift.id}" style="flex:0 0 auto;min-height:34px">Done ✓</button>` : "";
-    return `<div class="tw-r ${cls}"><div class="w">${winTxt(r)}${tag ? `<span class="tw-tag">${tag}</span>` : ""}</div><div class="row" style="justify-content:space-between;align-items:center;gap:6px;flex-wrap:nowrap"><div style="flex:1 1 auto"><span class="n">${esc(r.name)}</span>${r.note ? `<span class="x">${esc(r.note)}</span>` : ""}${st ? `<span class="x ${cls === "miss" ? "c-crit" : "c-ok"}" style="font-weight:600">${st}</span>` : ""}${gp && !planned && !done && isT ? `<span class="x">Set your planned times under Add-ons → Change what&#39;s on this run (that counts as the game plan), or tap Done.</span>` : ""}</div>${btn}</div></div>`; });
+    return `<div class="tw-r ${cls}"><div class="w">${winTxt(r)}${tag ? `<span class="tw-tag">${tag}</span>` : ""}</div><div class="row" style="justify-content:space-between;align-items:center;gap:6px;flex-wrap:nowrap"><div style="flex:1 1 auto"><span class="n">${esc(r.name)}</span>${r.note ? `<span class="x">${esc(r.note)}</span>` : ""}${st ? `<span class="x ${cls === "miss" ? "c-crit" : "c-ok"}" style="font-weight:600">${st}</span>` : ""}${gp && !planned && !done && isT ? `<span class="x">Set your planned times under Change what&#39;s on this run (that counts as the game plan), or tap Done.</span>` : ""}</div>${btn}</div></div>`; });
   return `<div class="tw"><h4>${isT ? "Timed tasks today · tap Done as you finish each one" : "Timed tasks"}</h4>${rows.join("")}${isT ? `<p class="hint" style="margin:4px 0 0">Jeremy sees each Done straight away; a window that passes without Done raises an alert for you both.</p>` : ""}</div>`;
 }
 const canEditEod = day => !S.viewAs && day >= addDays(today(), -1) && day <= today();
@@ -195,9 +195,7 @@ function segActions(x, day, n) {
   if (x.sort) return x.eod ? `<div class="meta c-ok">✓ Sort finished ${fmtTime(x.eod.sent_at)}</div>` : "";
   const T = S.days[day]; const sodDone = T.segs.some(s => s.sod);
   if (x.eod) return `<div class="row" style="margin-top:6px;align-items:center"><div class="meta c-ok">✓ EOD sent ${fmtTime(x.eod.sent_at)}${x.eod.finish_time ? ` · finished ${fmtT(toMin(x.eod.finish_time))}` : ""}${x.eod.edited_at ? " · edited" : ""}</div>${canEditEod(day) ? `<button class="btn ghost sm" data-eodedit="${x.shift.id}">Edit EOD</button>` : ""}</div>`;
-  if (!sodDone) return "";
-  const due = (x.en ?? x.st) + S.C.rules.eodHours * 60; const lateNow = n.min > due;
-  return `<button class="btn ${lateNow ? "warn" : "accent"} sm" style="margin-top:8px" data-eod="${x.shift.id}">EOD for ${esc(x.shift.run)}${lateNow ? " (overdue)" : ""}</button>`;
+  return "";                                                          // the EOD button is in the bar at the top
 }
 function todayCard(T, N, n) {
   const hol = S.C.holidays[n.date];
@@ -209,12 +207,12 @@ function todayCard(T, N, n) {
         : `<div class="row"><div class="meta c-ok">✓ SOD ${fmtTime(sodSeg.sod.sent_at)}${sodSeg.sod.van ? ` · ${esc(sodSeg.sod.van)}` : ""}${sodSeg.sod.edited_at ? " (edited)" : ""}</div>${allEod ? "" : `<button class="btn ghost sm" id="sod-edit" data-shift="${sodSeg.shift.id}">Edit SOD</button>`}</div>`;
       const sortOnly = !T.segs.some(x => !x.sort) && sodSeg && !allEod;
       return `<div class="card today"><h2>Today<span>${label(T.day)}</span></h2><div class="big">${fmtT((left[0] || T.segs[0]).st)} – ${fmtT(T.end)}${left.length === T.segs.length ? ` <small>· ${T.hours} h</small>` : ""}</div>
-        ${sodBtn}${(left.length ? left : T.segs).map(x => segRow(x, T.day, n, true)).join("")}
+        ${sodBtn}${(left.length ? left : T.segs).map(x => segRow(x, T.day, n, true, false)).join("")}
         ${S.locOn ? `<p class="hint">📍 Sharing your location with the depot until your EOD.</p>` : ""}</div>`;
     }
   }
   const lead = !T ? (hol ? `<p class="hint">Today: ${esc(hol.name)}</p>` : `<p class="hint">Day off today</p>`) : "";
-  if (N) return `<div class="card today"><h2>Next shift<span>${label(N.day)}</span></h2>${lead}<div class="big">${fmtT(N.start)} – ${fmtT(N.end)} <small>· ${N.hours} h</small></div>${N.segs.map(x => segRow(x, N.day, n, false)).join("")}</div>`;
+  if (N) return `<div class="card today"><h2>Next shift<span>${label(N.day)}</span></h2>${lead}<div class="big">${fmtT(N.start)} – ${fmtT(N.end)} <small>· ${N.hours} h</small></div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}</div>`;
   return `<div class="card today"><h2>Next shift</h2>${lead}<div class="big">Not on the roster yet</div><p class="hint">Your next shift shows here once the roster is out.</p></div>`;
 }
 function vanCard(T, N) {
@@ -242,11 +240,11 @@ function shiftsCard(t) {
 
 /* ---------- Add-ons (beside the shift: one button per add-on, tap = done) ---------- */
 function addonsCard(T, N, n) {
-  const runSeg = D => D && D.segs.filter(x => !x.sort && (S.addons.some(a => a.runs.includes(x.shift.run)) || x.shift.addons?.length));
+  const runSeg = D => D && D.segs.filter(x => !x.sort && (S.addons.some(a => a.runs.includes(x.shift.run)) || x.shift.addons?.length || rulesFor(x, D.day).length));
   const thisDone = !T || !runSeg(T)?.length || n.min >= Math.max(...runSeg(T).map(x => x.en ?? x.st));
   const nextDays = Object.values(S.days).filter(d => d.day > n.date && runSeg(d)?.length).sort((a, b) => a.day < b.day ? -1 : 1)[0];
   const showThis = !thisDone && runSeg(T)?.length, showNext = nextDays && runSeg(nextDays)?.length;
-  if (!showThis && !showNext) return `<div class="card"><h2>Add-ons</h2><p class="hint">No add-ons on your next shift.</p></div>`;
+  if (!showThis && !showNext) return `<div class="card"><h2>Today's tasks</h2><p class="hint">No add-ons or timed tasks on your next shift.</p></div>`;
   S.addTab ??= showThis ? "this" : "next"; if (S.addTab === "this" && !showThis) S.addTab = "next"; if (S.addTab === "next" && !showNext) S.addTab = "this";
   const D = S.addTab === "this" ? T : nextDays; const isT = D.day === n.date;
   const sat = dayName(D.day) === "Sat";
@@ -258,16 +256,18 @@ function addonsCard(T, N, n) {
       if (done[o.id]) return `<div class="ab done"><b>✓ ${esc(o.name)}</b><small>done ${fmtTime(done[o.id])}</small></div>`;
       if (isT && !S.viewAs) return `<button class="ab" data-done="${o.id}" data-shift="${x.shift.id}"><b>${esc(o.name)}</b><small>${esc(when || "tap when done")}</small></button>`;
       return `<div class="ab plain"><b>${esc(o.name)}</b>${when ? `<small>${esc(when)}</small>` : ""}</div>`; };
-    return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${fmtT(x.st)} – ${fmtT(x.en)}${x.shift.van ? ` · ${esc(x.shift.van)}` : ""}${mine.length && isT ? ` · ${nDone}/${mine.length} done` : ""}</span></div>
-      ${mine.length ? `<div class="abs">${mine.map(btn).join("")}</div>` : `<p class="meta" style="margin:4px 0 0">No add-ons on this run.</p>`}
+    return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${fmtT(x.st)} – ${fmtT(x.en)}${mine.length && isT ? ` · ${nDone}/${mine.length} add-ons done` : ""}</span></div>
+      ${mine.length ? `<div class="abs">${mine.map(btn).join("")}</div>` : ""}
+      ${timingRows(x, D.day, isT ? n.min : null)}
+      ${!mine.length && !rulesFor(x, D.day).length ? `<p class="meta" style="margin:4px 0 0">Nothing extra on this run.</p>` : ""}
       <details class="abmore"><summary>Change what's on this run${mine.some(o => o.task) ? " · planned times" : ""}</summary><div class="list" style="margin-top:6px">${opts.map(o => { const isOn = on.has(o.id); const rule = S.rules.find(r => r.addon === o.id);
         return `<div class="row" style="align-items:center"><label class="chk ${isOn ? "on" : ""}" style="flex:1 1 60%"><input type="checkbox" data-addon="${o.id}" data-shift="${x.shift.id}" ${isOn ? "checked" : ""}>${esc(o.name)}${rule ? `<span class="meta" style="margin-left:auto">${winTxt(rule)}</span>` : ""}</label>
           ${o.task && isOn ? `<input class="in" type="time" step="900" style="flex:0 0 120px;min-height:40px" value="${esc(plan[o.id] || "")}" data-plan="${o.id}" data-shift="${x.shift.id}" aria-label="Planned time for ${esc(o.name)}">` : ""}</div>`; }).join("")}</div>
         <p class="hint" style="margin:6px 0 0">Ticks and times save straight away and show on the Run Board${mine.some(o => o.task) ? " (your planned times are your game plan)" : ""}.</p></details></div>`;
   }).join("");
-  return `<div class="card"><h2>Add-ons<span>${isT ? "today" : label(D.day)}${nextDays && S.addTab === "this" ? ` · next: ${label(nextDays.day)}` : ""}</span></h2>
+  return `<div class="card"><h2>${isT ? "Today's tasks" : "Tasks"}<span>${isT ? "add-ons + timed tasks" : label(D.day)}${nextDays && S.addTab === "this" ? ` · next: ${label(nextDays.day)}` : ""}</span></h2>
     ${showThis && showNext ? `<div class="seg-btns"><button data-tab="this" class="${S.addTab === "this" ? "on" : ""}">This shift</button><button data-tab="next" class="${S.addTab === "next" ? "on" : ""}">Next shift</button></div>` : ""}
-    ${blocks}${isT ? `<p class="hint" style="margin:0">One tap marks an add-on done. Jeremy sees it straight away.</p>` : ""}</div>`;
+    ${blocks}${isT ? `<p class="hint" style="margin:0">One tap marks each one done. Jeremy sees it straight away.</p>` : ""}</div>`;
 }
 
 /* ---------- Scores ---------- */
