@@ -2,7 +2,7 @@
 import { toMin, fmtT, dow, addDays, label, today, nzNow, isSort } from "./core.js";
 
 const DEF = {
-  rules: { sodGrace: 15, eodHours: 2, perEvent: 2, mistakePct: 10, adminFloor: 80, stopRatio: 0.8, hourRate: 28, startDate: "2026-10-26", adminStart: "2026-10-28", effStart: "2026-10-28", effMethod: "sheet", tgeSort: 75, vchkDay: 4, vchkTime: "17:00" },
+  rules: { sodGrace: 15, eodHours: 2, perEvent: 2, partEvent: 1, mistakePct: 10, adminFloor: 80, holidayCap: 8, stopRatio: 0.8, hourRate: 28, startDate: "2026-10-26", adminStart: "2026-10-28", effStart: "2026-10-28", effMethod: "sheet", tgeSort: 75, vchkDay: 4, vchkTime: "17:00" },
   weights: { admin: 25, eff: 30, acc: 25, safe: 20 },
   sortF: { pBase: 45, pIncl: 80, pRate: 0.35, mailTray: 20, nzcph: 30 },
   addMin: { outram: 10, pgg: 10, airport: 30, milton: 90, balclutha: 90, owaka: 90 },
@@ -145,9 +145,10 @@ export function scoreFor(driver, from, to, D, C) {
   const closed = items.filter(i => !["due", "over", "exc"].includes(i.st));
   const onTime = closed.filter(i => i.st === "ok" || i.st === "part").length;
   const events = closed.filter(i => i.st === "late" || i.st === "miss").length;
+  const nPart = closed.filter(i => i.st === "part").length;
   const ents = D.entries.filter(e => e.driver === driver && e.day >= from && e.day <= to);
   const adj = ents.filter(e => e.admin_pts).reduce((a, e) => a + (+e.admin_pts), 0);
-  const admin = closed.length || adj ? Math.max(C.rules.adminFloor, Math.min(100, 100 - events * C.rules.perEvent + adj)) : null;
+  const admin = closed.length || adj ? Math.max(C.rules.adminFloor, Math.min(100, 100 - events * C.rules.perEvent - nPart * (C.rules.partEvent ?? 0) + adj)) : null;
   // accuracy
   const mist = ents.filter(e => e.kind === "mistake" && !e.excused);
   let items_ = 0, comp = 0; const accDays = [];

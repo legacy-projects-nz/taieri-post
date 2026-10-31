@@ -50,22 +50,22 @@ export async function loadAll() {
   setEvidence(S.shifts, S.eods);   // average figures per run & weekday → the estimate used until each EOD is in
 }
 
-const TABS = [["live", "Live", "alerts"], ["runboard", "Run Board", "roster"], ["classic", "Run Board (classic)", "roster"], ["scorecard", "Scorecard", "scorecard"], ["alerts", "Alerts", "alerts"], ["messages", "Messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"]];
+const TABS = [["live", "Live", "alerts"], ["runboard", "Run Board", "roster"], ["classic", "Run Board (classic)", "roster"], ["scorecard", "Scorecard", "scorecard"], ["alerts", "Alerts", "alerts"], ["messages", "Messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"], ["pay", "Penalties & pay", "people"]];
 export function render(soft = false) {
   if (soft && (document.activeElement?.matches("input,textarea,select") || $(".sheet-bg"))) return;
   const n = nzNow(); const tabs = TABS.filter(([, , a]) => S.me.can(a));
   if (!tabs.some(([k]) => k === S.tab)) S.tab = tabs[0][0];
   const badge = { live: S.alerts.filter(a => !a.resolved_at).length, leave: S.leave.filter(l => l.status === "pending").length, runboard: S.items.filter(i => i.roster_changes.status === "awaiting_approval").length, alerts: S.alerts.filter(a => !a.resolved_at).length };
   app.innerHTML = `<div class="wrap">
-    <div class="top"><div><div class="brand">Taieri Ops</div><h1>${({ live: "Live board", runboard: "Run Board", classic: "Run Board (classic)", scorecard: "Driver Scorecard", alerts: "Alerts & timings", messages: "Messages", leave: "Leave", fleet: "Fleet", timing: "Timing rules", people: "People & settings" })[S.tab]}</h1></div>
+    <div class="top"><div><div class="brand">Taieri Ops</div><h1>${({ live: "Live board", runboard: "Run Board", classic: "Run Board (classic)", scorecard: "Driver Scorecard", alerts: "Alerts & timings", messages: "Messages", leave: "Leave", fleet: "Fleet", timing: "Timing rules", people: "People & settings", pay: "Penalties & pay" })[S.tab]}</h1></div>
       <div class="upd"><span class="dot live"></span>live · ${fmtT(n.min)}<br>${esc(first(S.me.name))} · <button class="linkbtn" id="signout">sign out</button></div></div>
     <nav class="nav">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? "on" : ""}">${l}${badge[k] ? `<span class="b ${k === "runboard" ? "warn" : ""}">${badge[k]}</span>` : ""}</button>`).join("")}</nav>
-    <div id="view">${({ live: liveTab2, runboard: runBoardTab, classic: classicTab, scorecard: scorecardTab, alerts: alertsTab, messages: messagesTab, leave: leaveTab, fleet: fleetTab, timing: timingTab, people: peopleTab })[S.tab]()}</div>
+    <div id="view">${({ live: liveTab2, runboard: runBoardTab, classic: classicTab, scorecard: scorecardTab, alerts: alertsTab, messages: messagesTab, leave: leaveTab, fleet: fleetTab, timing: timingTab, people: peopleTab, pay: payTab })[S.tab]()}</div>
     <p class="foot">Safe. Sharp. Swift. · <a href="/">driver portal</a></p></div>`;
   $("#signout").onclick = signOut;
   $$("[data-tab]").forEach(b => b.onclick = () => { S.tab = b.dataset.tab; location.hash = S.tab; render(); });
   if (S.tab !== "live") { /* the live board draws its own map */ }
-  ({ live: wireLive2, runboard: wireRunBoard, classic: () => { }, scorecard: wireScorecard, alerts: wireAlerts, messages: wireMessages, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople })[S.tab]?.();
+  ({ live: wireLive2, runboard: wireRunBoard, classic: () => { }, scorecard: wireScorecard, alerts: wireAlerts, messages: wireMessages, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople, pay: wirePay })[S.tab]?.();
   bind($("#view"));   // every tile, row and chip with a data-… attribute opens its detail sheet
 }
 
@@ -118,7 +118,7 @@ function taskLine(D, t, n) {
   for (const x of D.segs) if (!x.sort) for (const a of (x.shift.addons || [])) { const ad = S.addons.find(z => z.id === a); if (!ad?.task) continue; const done = x.shift.done?.[a]; const plan = x.shift.plan?.[a]; out.push(`<span class="chip ${done ? "ok" : plan ? "due" : "over"}">${esc(ad.short || ad.name)}${done ? ` ✓ ${fmtTime(done)}` : plan ? ` ~${fmtT(toMin(plan))}` : " no plan"}</span>`); }
   return out.length ? `<div class="row" style="gap:3px">${out.join("")}</div>` : "";
 }
-export function alertRow(a) { return `<div class="item clk ${a.kind.includes("miss") ? "crit" : "warn"}" data-alert="${a.id}" title="Tap for the detail"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><b>${esc(a.title)}</b>${a.body ? `<div class="meta">${esc(a.body)}</div>` : ""}<div class="m">${a.driver ? esc(nm(a.driver)) + " · " : ""}${ago(a.created_at)}</div></div>${a.resolved_at ? pill("resolved", "grey") : S.me.can("alerts") ? `<button class="btn ghost sm" data-resolve="${a.id}">Resolve</button>` : ""}</div></div>`; }
+export function alertRow(a) { return `<div class="item clk ${a.resolved_at ? "done" : a.kind.includes("miss") ? "crit" : "warn"}" data-alert="${a.id}" title="Tap for the detail"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><b>${esc(a.title)}</b>${a.body ? `<div class="meta">${esc(a.body)}</div>` : ""}<div class="m">${a.driver ? esc(nm(a.driver)) + " · " : ""}${ago(a.created_at)}</div></div>${a.resolved_at ? pill("resolved", "grey") : S.me.can("alerts") ? `<button class="btn ghost sm" data-resolve="${a.id}">Resolve</button>` : ""}</div></div>`; }
 function wireLive() {
   $$("[data-resolve]").forEach(b => b.onclick = async () => { await q(sb.from("alerts").update({ resolved_at: new Date().toISOString(), resolved_by: S.me.id }).eq("id", b.dataset.resolve)); });
   const el = $("#map"); if (!el || !window.L) return;
@@ -168,7 +168,7 @@ function messagesTab() {
     <label class="f full">Message<textarea class="in" id="body" rows="3" required placeholder="e.g. Depot reminder: no parking past the bike shed."></textarea></label>
     <label class="chk full"><input type="checkbox" id="confirm">Ask each driver to tap "Got it"</label><label class="chk full"><input type="checkbox" id="push" checked>Also send a phone notification</label><button class="btn full" type="submit">Send</button></form></div>
     <div class="card"><h2>Sent<span>${S.msgs.length}</span></h2><div class="list">${S.msgs.map(m => { const rs = rec[m.id] || []; const read = rs.filter(r => r.read_at).length, conf = rs.filter(r => r.confirmed_at).length;
-      return `<div class="item clk" data-msgof="${m.id}" title="Tap for who has read it"><div class="m">${fmtTs(m.created_at)} · ${esc(fnm(m.sender))} → ${rs.length === S.drivers.length ? "everyone" : rs.map(r => fnm(r.person)).join(", ")}</div><div style="white-space:pre-wrap">${esc(m.body)}</div>
+      return `<div class="item clk ${rs.length && rs.every(r => m.needs_confirm ? r.confirmed_at : r.read_at) ? "done" : ""}" data-msgof="${m.id}" title="Tap for who has read it"><div class="m">${fmtTs(m.created_at)} · ${esc(fnm(m.sender))} → ${rs.length === S.drivers.length ? "everyone" : rs.map(r => fnm(r.person)).join(", ")}</div><div style="white-space:pre-wrap">${esc(m.body)}</div>
         <div class="row" style="gap:3px">${rs.map(r => `<span class="chip ${r.confirmed_at ? "ok" : r.read_at ? "due" : "over"}" title="${r.read_at ? "read " + fmtTs(r.read_at) : "not read yet"}">${esc(fnm(r.person))} ${r.confirmed_at ? "✓✓" : r.read_at ? "✓" : "·"}</span>`).join("")}</div>
         <div class="meta">${read} of ${rs.length} read${m.needs_confirm ? ` · ${conf} confirmed` : ""} · ✓ read · ✓✓ confirmed</div></div>`; }).join("") || `<p class="empty">Nothing sent yet</p>`}</div></div>`;
 }
@@ -185,7 +185,7 @@ function wireMessages() {
 const LEAVE_T = { annual: "Annual leave", sick: "Sick leave", unpaid: "Unpaid leave", bereave: "Bereavement leave", dayoff: "Day off request", other: "Other" };
 function leaveTab() {
   const pend = S.leave.filter(l => l.status === "pending"), rest = S.leave.filter(l => l.status !== "pending");
-  const row = l => `<div class="item clk ${l.status === "pending" ? "warn" : l.status === "approved" ? "ok" : l.status === "declined" ? "crit" : ""}" data-leaveof="${l.id}"><div class="row" style="justify-content:space-between"><b>${esc(nm(l.driver))} · ${esc(LEAVE_T[l.type] || l.type)}</b>${pill(l.status, l.status === "approved" ? "ok" : l.status === "declined" ? "crit" : l.status === "pending" ? "warn" : "grey")}</div>
+  const row = l => `<div class="item clk ${l.status === "pending" ? "warn" : l.status === "approved" ? "ok done" : l.status === "declined" ? "crit done" : "done"}" data-leaveof="${l.id}"><div class="row" style="justify-content:space-between"><b>${esc(nm(l.driver))} · ${esc(LEAVE_T[l.type] || l.type)}</b>${pill(l.status, l.status === "approved" ? "ok" : l.status === "declined" ? "crit" : l.status === "pending" ? "warn" : "grey")}</div>
     <div class="meta mono">${label(l.date_from, true)}${l.date_to !== l.date_from ? ` – ${label(l.date_to, true)}` : ""}${l.part !== "full" ? ` · ${l.part === "AM" ? "morning off" : "afternoon off"}` : ""} · asked ${fmtTs(l.created_at)}${l.acked_email_at ? " · received email sent" : ""}</div>${l.notes ? `<div>${esc(l.notes)}</div>` : ""}
     ${l.status === "pending" ? `<div class="row"><input class="in" placeholder="Reply to the driver (optional)" data-reply="${l.id}" style="flex:1 1 200px"><button class="btn sm" data-decide="approved" data-id="${l.id}">Approve</button><button class="btn sm crit" data-decide="declined" data-id="${l.id}">Decline</button></div>` : l.reply ? `<div class="meta">Reply: ${esc(l.reply)}${l.decided_by ? ` · by ${esc(fnm(l.decided_by))}` : ""}</div>` : ""}</div>`;
   return `<div class="card"><h2>Waiting<span>${pend.length}</span></h2>${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : `<p class="empty">✓ Nothing waiting</p>`}<p class="hint">Approving sends the driver an email and a notification, and blocks them on the Run Board for those days.</p></div>
@@ -248,6 +248,51 @@ function wireTiming() {
   $$("[data-rule]").forEach(b => b.onclick = () => edit(b.dataset.rule)); $("#rule-add")?.addEventListener("click", () => edit(""));
 }
 
+
+/* ================= PENALTIES & PAY ================= */
+function payTab() {
+  const R = S.C.rules, W = S.C.weights; const num = (id, v, step = "any") => `<input class="in" id="${id}" type="number" step="${step}" value="${v ?? ""}">`;
+  const line = (lbl, inp, how) => `<label class="f full" style="display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:4px 12px;align-items:center"><span><b>${lbl}</b><div class="meta">${how}</div></span>${inp}</label>`;
+  const ex = (() => { const ev = R.perEvent, pt = R.partEvent ?? 0; return `Example: 2 late posts and 1 incomplete one in a fortnight → 100 − ${ev} − ${ev} − ${pt} = <b>${Math.max(R.adminFloor, 100 - 2 * ev - pt)}%</b> Admin.`; })();
+  const pay = S.people.filter(p => p.active && !p.cleared && (p.role === "driver" || p.role === "owner")).sort((a, b) => (a.role === "owner" ? 1 : 0) - (b.role === "owner" ? 1 : 0) || a.name.localeCompare(b.name));
+  return `<div class="card"><h2>Penalties<span>how late and missing posts, mistakes and safety notes take points off · changes recalculate every score straight away</span></h2>
+    <form class="frm" id="penf">
+      <div class="full meta mono" style="margin-top:4px">ADMIN · POSTS</div>
+      ${line("SOD grace (minutes)", num("sodGrace", R.sodGrace, 1), "A SOD posted within this many minutes of the rostered start is on time.")}
+      ${line("EOD due (hours after the run's end)", num("eodHours", R.eodHours, 0.25), "An EOD posted later than this is late; after that window closes it counts as missing.")}
+      ${line("Late or missing post · % off", num("perEvent", R.perEvent, 0.5), "Taken off the Admin score for every late or missing SOD / EOD in the range.")}
+      ${line("Incomplete post · % off", num("partEvent", R.partEvent ?? 1, 0.5), "For a post you've marked incomplete (figures missing). 0 = no penalty.")}
+      ${line("Admin floor %", num("adminFloor", R.adminFloor, 1), "Admin never drops below this.")}
+      <div class="full meta mono" style="margin-top:10px">ACCURACY &amp; SAFETY</div>
+      ${line("Mistake · % off Accuracy", num("mistakePct", R.mistakePct, 1), "Each entry in the Driver Mistakes Record (not excused) takes this off the fortnight's Accuracy.")}
+      ${line("Safety default", `<span class="meta" style="text-align:right">100%</span>`, "Safety stays at 100 unless you record a safety note with a % on it; the notes are averaged.")}
+      <div class="full meta mono" style="margin-top:10px">OVERALL SCORE WEIGHTS</div>
+      <div class="full" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px"><label class="f">Admin ${num("w_admin", W.admin, 1)}</label><label class="f">Efficiency ${num("w_eff", W.eff, 1)}</label><label class="f">Accuracy ${num("w_acc", W.acc, 1)}</label><label class="f">Safety ${num("w_safe", W.safe, 1)}</label></div>
+      <p class="hint full" id="w-sum"></p>
+      <div class="full meta mono" style="margin-top:10px">WHEN SCORING STARTED</div>
+      ${line("Posts count from", `<input class="in" id="adminStart" type="date" value="${R.adminStart}">`, "Earlier posts show as excused.")}
+      ${line("Efficiency counts from", `<input class="in" id="effStart" type="date" value="${R.effStart}">`, "Earlier runs are kept for the averages but not scored.")}
+      <p class="hint full">${ex}</p>
+      <button class="btn full" type="submit">Save penalties</button></form></div>
+    <div class="card"><h2>Pay rates<span>used for every $ figure in Labour · blank = the default rate</span></h2>
+      <form class="frm" id="payf"><label class="f">Default wage $/h${num("hourRate", R.hourRate, 0.5)}</label><label class="f">Public holiday · paid hours cap${num("holidayCap", R.holidayCap ?? 8, 0.5)}</label>
+      <div class="full scroll"><table class="dt payt"><tr><th>Driver</th><th>$/h</th><th>Band (from Efficiency)</th><th>In labour figures</th></tr>${pay.map(p => `<tr class="clk" data-personof="${p.id}"><td><b>${esc(p.name)}</b>${p.role === "owner" ? ` <span class="meta">(owner)</span>` : ""}</td><td><input class="in" data-rate="${p.id}" type="number" step="0.5" inputmode="decimal" value="${p.rate ?? ""}" placeholder="${R.hourRate}"></td><td class="meta">${Object.keys(S.C.bands || {}).length ? "bands: " + Object.entries(S.C.bands).map(([k, v]) => `${k} ${esc(v)}`).join(" · ") : "—"}</td><td><label class="chk ${p.pay_exclude ? "" : "on"}"><input type="checkbox" data-payin="${p.id}" ${p.pay_exclude ? "" : "checked"}>counted</label></td></tr>`).join("")}</table></div>
+      <button class="btn full" type="submit">Save pay rates</button></form><p class="hint">Rates are also on each person's sheet (People → Edit). Labour spend = actual hours (≈ estimated where the SOD/EOD isn't in) × that driver's rate.</p></div>`;
+}
+function wirePay() {
+  const sum = () => { const t = ["w_admin", "w_eff", "w_acc", "w_safe"].reduce((a, k) => a + (+$("#" + k).value || 0), 0); $("#w-sum").innerHTML = t === 100 ? "Weights add up to 100 ✓" : `<span class="c-warn">Weights add up to ${t} — they're used as proportions, so that still works, but 100 is easiest to read.</span>`; };
+  ["w_admin", "w_eff", "w_acc", "w_safe"].forEach(k => $("#" + k).addEventListener("input", sum)); sum();
+  $("#penf").onsubmit = async e => { e.preventDefault(); const g = x => $("#" + x).value;
+    const rules = { ...(S.set.rules || {}), sodGrace: +g("sodGrace"), eodHours: +g("eodHours"), perEvent: +g("perEvent"), partEvent: +g("partEvent"), adminFloor: +g("adminFloor"), mistakePct: +g("mistakePct"), adminStart: g("adminStart") || S.C.rules.adminStart, effStart: g("effStart") || S.C.rules.effStart };
+    const { error } = await sb.from("settings").upsert([{ key: "rules", value: rules }, { key: "weights", value: { admin: +g("w_admin"), eff: +g("w_eff"), acc: +g("w_acc"), safe: +g("w_safe") } }]); if (error) return toast(error.message, "err"); toast("Penalties saved · scores recalculate straight away", "ok"); };
+  $("#payf").onsubmit = async e => { e.preventDefault(); const g = x => $("#" + x).value;
+    const { error } = await sb.from("settings").upsert({ key: "rules", value: { ...(S.set.rules || {}), hourRate: +g("hourRate"), holidayCap: +g("holidayCap") } }); if (error) return toast(error.message, "err");
+    const ups = []; $$("[data-rate]").forEach(i => { const p = S.peopleBy[i.dataset.rate]; const v = i.value === "" ? null : +i.value; const inc = $(`[data-payin="${p.id}"]`).checked; if ((p.rate ?? null) !== v || !!p.pay_exclude === inc) ups.push(sb.from("people").update({ rate: v, pay_exclude: !inc }).eq("id", p.id)); });
+    for (const u of ups) { const { error } = await u; if (error) return toast(error.message, "err"); }
+    toast(`Pay rates saved${ups.length ? ` · ${ups.length} driver${ups.length === 1 ? "" : "s"} changed` : ""}`, "ok"); };
+  $$("[data-payin]").forEach(i => i.onchange = () => i.parentElement.classList.toggle("on", i.checked));
+}
+
 /* ================= PEOPLE & SETTINGS ================= */
 function peopleTab() {
   const staff = S.people.filter(p => p.role !== "driver" || (p.perms || []).length), drivers = S.people.filter(p => p.role === "driver" && !(p.perms || []).length);
@@ -255,8 +300,7 @@ function peopleTab() {
   const L = S.set.links || {};
   return `<div class="card"><h2>Staff<span>${staff.length}</span></h2><div class="scroll"><table class="dt"><tr><th>Name</th><th>Role</th><th>Areas</th><th></th></tr>${staff.map(row).join("")}</table></div></div>
     <div class="card"><h2>Drivers<span>${drivers.length}</span></h2><div class="scroll"><table class="dt"><tr><th>Name</th><th>Status</th><th></th><th></th></tr>${drivers.map(row).join("")}</table></div><button class="btn ghost sm" id="person-add">+ Add a person</button><p class="hint">A new person signs in with the email you enter here. Tick areas to make someone staff (they'll be asked to set up two-factor on first sign-in). Tap a name for their sheet and history.</p></div>
-    <div class="card"><h2>Settings</h2><form class="frm" id="sf"><label class="f full">Vault (Damstra) link shown to drivers<input class="in" id="vault" value="${esc(L.vault || "")}"></label><label class="f">SOD grace (min)<input class="in" id="sodGrace" inputmode="numeric" value="${S.C.rules.sodGrace}"></label><label class="f">EOD due (hours after finish)<input class="in" id="eodHours" inputmode="decimal" value="${S.C.rules.eodHours}"></label><label class="f">Admin: % off per late/missing post<input class="in" id="perEvent" inputmode="decimal" value="${S.C.rules.perEvent}"></label><label class="f">Admin floor %<input class="in" id="adminFloor" inputmode="numeric" value="${S.C.rules.adminFloor}"></label><label class="f">Mistake: % off Accuracy<input class="in" id="mistakePct" inputmode="numeric" value="${S.C.rules.mistakePct}"></label><label class="f">Default wage $/h<input class="in" id="hourRate" inputmode="decimal" value="${S.C.rules.hourRate}"></label>
-      <label class="f">Weights: Admin<input class="in" id="w_admin" value="${S.C.weights.admin}"></label><label class="f">Efficiency<input class="in" id="w_eff" value="${S.C.weights.eff}"></label><label class="f">Accuracy<input class="in" id="w_acc" value="${S.C.weights.acc}"></label><label class="f">Safety<input class="in" id="w_safe" value="${S.C.weights.safe}"></label><button class="btn full" type="submit">Save settings</button></form></div>
+    <div class="card"><h2>Settings</h2><form class="frm" id="sf"><label class="f full">Vault (Damstra) link shown to drivers<input class="in" id="vault" value="${esc(L.vault || "")}"></label><button class="btn full" type="submit">Save</button></form><p class="hint">Penalties, score weights and wage rates live under <button class="linkbtn" data-gotab="pay">Penalties &amp; pay</button>.</p></div>
     <div class="card"><h2>Activity log</h2><button class="btn ghost sm" id="log-load">Show the last 100 changes</button><div id="log"></div></div>`;
 }
 export function editPerson(id) { const p = S.peopleBy[id] || { id: "", name: "", email: "", role: "driver", perms: [], active: true, cleared: false };
@@ -270,6 +314,7 @@ export function editPerson(id) { const p = S.peopleBy[id] || { id: "", name: "",
         const { error } = await sb.from("people").upsert(row); if (error) return toast(error.message, "err"); close(); toast("Saved", "ok"); }; }); }
 function wirePeople() {
   $("#person-add")?.addEventListener("click", () => editPerson(""));
-  $("#sf").onsubmit = async e => { e.preventDefault(); const g = x => $("#" + x).value; await q(sb.from("settings").upsert([{ key: "links", value: { ...(S.set.links || {}), vault: g("vault") } }, { key: "rules", value: { ...(S.set.rules || {}), sodGrace: +g("sodGrace"), eodHours: +g("eodHours"), perEvent: +g("perEvent"), adminFloor: +g("adminFloor"), mistakePct: +g("mistakePct"), hourRate: +g("hourRate") } }, { key: "weights", value: { admin: +g("w_admin"), eff: +g("w_eff"), acc: +g("w_acc"), safe: +g("w_safe") } }])); toast("Saved", "ok"); };
+  $("#sf").onsubmit = async e => { e.preventDefault(); await q(sb.from("settings").upsert({ key: "links", value: { ...(S.set.links || {}), vault: $("#vault").value } })); toast("Saved", "ok"); };
+  $("[data-gotab]")?.addEventListener("click", e => { S.tab = e.target.dataset.gotab; location.hash = S.tab; render(); });
   $("#log-load")?.addEventListener("click", async () => { const rows = await q(sb.from("activity_log").select("*").order("created_at", { ascending: false }).limit(100)); $("#log").innerHTML = `<div class="scroll"><table class="dt"><tr><th>When</th><th>Who</th><th>What</th></tr>${rows.map(r => `<tr><td class="mono">${fmtTs(r.created_at)}</td><td>${esc(r.actor ? nm(r.actor) : r.actor_email || "system")}</td><td><b>${esc(r.action)}</b> <span class="meta">${esc(r.detail || "")}</span></td></tr>`).join("")}</table></div>`; });
 }
