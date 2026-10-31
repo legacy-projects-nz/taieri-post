@@ -11,8 +11,10 @@ try { S.gotit = JSON.parse(localStorage.getItem("tp-gotit") || "{}"); } catch { 
 /* ================= boot ================= */
 (async () => {
   try { S.me = await requireUser(app); } catch { return; }
+  await viewAs();
   await loadAll();
   render();
+  window.addEventListener("hashchange", async () => { await viewAs(); await loadAll(); render(); });
   live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons"], debounce(async () => { await loadAll(); render(); }, 400), "drv");
   setInterval(render, 60000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadAll().then(render); } });
@@ -44,6 +46,30 @@ async function loadAll() {
   locationTick();
 }
 
+/* ================= staff "view as" ================= */
+async function viewAs() {
+  const id = (location.hash.match(/as=([A-Za-z0-9_-]+)/) || [])[1];
+  if (!S.viewer) S.viewer = S.me; else S.me = S.viewer;
+  S.viewAs = null;
+  if (id && S.viewer.isStaff && id !== S.viewer.id) {
+    const p = await q(sb.from("people").select("*").eq("id", id).maybeSingle());
+    if (p) { S.viewAs = p; S.me = { ...p, isOwner: false, isStaff: false, can: () => false }; }
+  }
+  S.drivers = S.viewer.isStaff ? await q(sb.from("people").select("id,name,role").eq("active", true).eq("cleared", false).order("name")) : [];
+}
+function viewBar() {
+  if (!S.viewer?.isStaff) return "";
+  const list = S.drivers.filter(d => d.id !== S.viewer.id);
+  const i = S.viewAs ? list.findIndex(d => d.id === S.viewAs.id) : -1;
+  const prev = i > 0 ? list[i - 1] : null, next = i >= 0 && i < list.length - 1 ? list[i + 1] : null;
+  return `<div class="card" style="position:sticky;top:6px;z-index:5;border:2px solid var(--accent);background:var(--accent-fill);padding:8px 12px;gap:6px">
+    <div class="row" style="align-items:center"><span class="mono" style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);flex:0">${S.viewAs ? "Viewing as" : "View as"}</span>
+      <select class="in" id="view-as" style="min-height:38px;font-size:14px;flex:1 1 140px"><option value="">— me (${esc(first(S.viewer.name))}) —</option>${list.map(d => `<option value="${d.id}" ${S.viewAs?.id === d.id ? "selected" : ""}>${esc(d.name)}${d.role !== "driver" ? ` (${d.role})` : ""}</option>`).join("")}</select>
+      <button class="btn ghost sm" id="va-prev" ${prev ? `data-id="${prev.id}"` : "disabled"} style="flex:0">‹</button><button class="btn ghost sm" id="va-next" ${next ? `data-id="${next.id}"` : "disabled"} style="flex:0">›</button>
+      <a class="btn ghost sm" href="/admin/" style="flex:0;text-decoration:none">Owner portal</a></div>
+    ${S.viewAs ? `<div class="hint">This is exactly what ${esc(first(S.viewAs.name))} sees. You can post a SOD or EOD on their behalf; the other buttons are theirs alone.</div>` : ""}</div>`;
+}
+
 /* ================= render ================= */
 function render() {
   const n = nzNow(); const t = n.date; const name = first(S.me.name);
@@ -51,7 +77,8 @@ function render() {
   const T = S.days[t];
   const nextDay = Object.values(S.days).filter(d => d.day > t).sort((a, b) => a.day < b.day ? -1 : 1)[0];
   app.innerHTML = `<div class="wrap">
-    <div class="top"><div><div class="brand">Taieri Post · driver portal</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
+    ${viewBar()}
+    <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
     ${rosterChanges(n)}
     ${fromJeremy()}
     ${alertsCard()}
@@ -63,7 +90,7 @@ function render() {
     ${leaveCard()}
     ${detailsCard()}
     ${moreCard()}
-    <p class="foot">Shift or score looks wrong? Message Jeremy.<br>Signed in as ${esc(S.me.email || "")}</p>
+    <p class="foot">Shift or score looks wrong? Message Jeremy.<br>Signed in as ${esc((S.viewer || S.me).email || "")}</p>
   </div>`;
   wire();
 }
@@ -273,6 +300,9 @@ function moreCard() {
 /* ================= wiring ================= */
 function wire() {
   $("#signout")?.addEventListener("click", signOut);
+  $("#view-as")?.addEventListener("change", e => { location.hash = e.target.value ? "as=" + e.target.value : ""; });
+  $$("#va-prev,#va-next").forEach(b => b.onclick = () => { if (b.dataset.id) location.hash = "as=" + b.dataset.id; });
+  if (S.viewAs) { $$("#gotit,#gotit-again,[data-confirm],[data-addon],[data-plan],[data-done],#leave-new,#prof-edit,#push-btn,#vchk-btn").forEach(el => { el.disabled = true; el.title = "Only " + first(S.viewAs.name) + " can do this"; el.style.opacity = ".5"; }); }
   pushState().then(s => { const el = $("#push-state"); if (el) el.textContent = s === "on" ? "on" : s === "denied" ? "blocked in phone settings" : s === "unsupported" ? "add to Home Screen first" : "off, tap to turn on"; });
   $("#push-btn")?.addEventListener("click", async () => { const r = await enablePush(S.me.id, VAPID_PUBLIC); toast(r.ok ? "Notifications are on" : r.why, r.ok ? "ok" : "err"); render(); });
   $("#gotit")?.addEventListener("click", async e => { const ids = e.currentTarget.dataset.ids.split(","); for (const id of ids) S.gotit[id] = new Date().toISOString(); localStorage.setItem("tp-gotit", JSON.stringify(S.gotit)); render();
@@ -382,6 +412,7 @@ function vehicleCheckForm() {
 /* ================= location (between SOD and EOD, while the app is open) ================= */
 let locWatch = null, lastSent = 0, lastPos = null;
 function locationTick() {
+  if (S.viewAs) return;
   const n = nzNow(); const T = S.days[n.date];
   const sodSeg = T && T.segs.find(x => x.sod); const runs = T ? T.segs.filter(x => !x.sort) : [];
   const finished = T && (runs.length ? runs.every(x => x.eod) : T.segs.some(x => x.eod));
