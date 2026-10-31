@@ -86,7 +86,9 @@ function render() {
     ${fromJeremy()}
     ${alertsCard()}
     ${messagesCard()}
-    <div class="grid2">${todayCard(T, nextDay, n)}${addonsCard(T, nextDay, n)}<div class="span">${scoresCard()}</div>${vanCard(T, nextDay)}<div class="span">${shiftsCard(t)}</div></div>
+    <div class="pair">${todayCard(T, nextDay, n)}${addonsCard(T, nextDay, n)}</div>
+    ${scoresCard()}
+    <div class="grid2">${vanCard(T, nextDay)}<div class="span">${shiftsCard(t)}</div></div>
     ${toFixCard(n)}
     ${leaveCard()}
     ${detailsCard()}
