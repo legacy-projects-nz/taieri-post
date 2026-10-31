@@ -44,7 +44,8 @@ export async function loadAll() {
   ]);
   Object.assign(S, { set, runs, vans, addons, rules, people, shifts, items, acks, sent, msgs, recips, leave, alerts, entries, marks, feed, ovs, locs, skills, notes, vchk });
   S.C = cfg(set); S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vansBy = Object.fromEntries(vans.map(v => [v.plate, v])); S.peopleBy = Object.fromEntries(people.map(p => [p.id, p]));
-  S.drivers = people.filter(p => p.role === "driver" && p.active && !p.cleared);
+  const onRoster = new Set(shifts.map(s => s.driver)); // anyone who drives: drivers, Jeremy (owner, tracked separately), or whoever is on the roster
+  S.drivers = people.filter(p => p.active && !p.cleared && (p.role === "driver" || p.role === "owner" || onRoster.has(p.id)));
   const ids = shifts.map(s => s.id);
   if (ids.length) { const [sods, eods] = await Promise.all([q(sb.from("sod").select("*").in("shift_id", ids)), q(sb.from("eod").select("*").in("shift_id", ids))]); S.sods = sods; S.eods = eods; } else { S.sods = []; S.eods = []; }
   S.sodBy = Object.fromEntries(S.sods.map(s => [s.shift_id, s])); S.eodBy = Object.fromEntries(S.eods.map(e => [e.shift_id, e]));
