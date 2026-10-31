@@ -25,7 +25,7 @@ async function loadAll() {
   const m = S.me.id; const t = today(); const from = addDays(monOf(t), -56), to = addDays(monOf(t), 13);
   const [set, runs, vans, addons, rules, people, shifts, changes, acks, msgs, leave, alerts, entries, marks, feed, vchk] = await Promise.all([
     loadSettings(), q(sb.from("runs").select("*")), q(sb.from("vans").select("*")), q(sb.from("addons").select("*")), q(sb.from("timing_rules").select("*").eq("active", true)),
-    q(sb.from("people").select("id,name,role")),
+    q(sb.from("people_public").select("id,name,role")),
     q(sb.from("shifts").select("*").gte("day", from).lte("day", to).or(`driver.eq.${m},trainee.eq.${m}`)),
     q(sb.from("roster_change_items").select("*, roster_changes!inner(status, sent_at, created_by)").contains("affects", [m]).eq("roster_changes.status", "sent").gte("day", addDays(t, -7))),
     q(sb.from("change_acks").select("*").eq("driver", m)),
@@ -81,6 +81,7 @@ function render() {
   app.innerHTML = `<div class="wrap">
     ${viewBar()}
     <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
+    ${quickBar(T, n)}
     ${rosterChanges(n)}
     ${fromJeremy()}
     ${alertsCard()}
@@ -93,6 +94,20 @@ function render() {
     <p class="foot">Shift or score looks wrong? Message Jeremy.<br>Signed in as ${esc((S.viewer || S.me).email || "")}</p>
   </div>`;
   wire();
+}
+
+/* ---------- SOD / EOD quick bar: always under the greeting on a work day ---------- */
+function quickBar(T, n) {
+  if (!T || S.viewAs) return "";
+  const runs = T.segs.filter(x => !x.sort); const sodSeg = T.segs.find(x => x.sod); const sod = sodSeg?.sod;
+  const sortOnly = !runs.length; const eodOf = x => x.eod;
+  const sodBtn = sod ? `<div class="qb done"><b>✓ SOD</b><small>${fmtTime(sod.sent_at)}${sod.van ? ` · ${esc(sod.van)}` : ""}</small></div>` : `<button class="btn qb" id="sod" data-shift="${T.segs[0].shift.id}"><b>▶ SOD</b><small>start of day</small></button>`;
+  const eodBtns = sortOnly
+    ? (T.segs.some(eodOf) ? `<div class="qb done"><b>✓ EOD</b><small>sorting finished ${fmtTime(T.segs.find(eodOf).eod.sent_at)}</small></div>` : `<button class="btn qb accent" data-eod="${T.segs[T.segs.length - 1].shift.id}" data-sort="1" ${sod ? "" : "disabled"}><b>■ EOD</b><small>${sod ? "finished sorting" : "after your SOD"}</small></button>`)
+    : runs.map(x => { const due = (x.en ?? x.st) + S.C.rules.eodHours * 60; const late = sod && !x.eod && n.min > due;
+        return x.eod ? `<div class="qb done"><b>✓ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${fmtTime(x.eod.sent_at)}${x.eod.finish_time ? ` · finished ${fmtT(toMin(x.eod.finish_time))}` : ""}</small></div>`
+          : `<button class="btn qb ${late ? "warn" : "accent"}" data-eod="${x.shift.id}" ${sod ? "" : "disabled"}><b>■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${!sod ? "after your SOD" : late ? "overdue" : "end of run"}</small></button>`; }).join("");
+  return `<div class="qbar">${sodBtn}${eodBtns}</div>`;
 }
 
 /* ---------- Roster changes ---------- */
@@ -188,12 +203,11 @@ function todayCard(T, N, n) {
     const left = T.segs.filter(x => n.min < (x.en ?? x.st));
     const sodSeg = T.segs.find(x => x.sod); const allEod = T.segs.filter(x => !x.sort).length ? T.segs.filter(x => !x.sort).every(x => x.eod) : T.segs.some(x => x.eod);
     if (left.length || (!allEod && sodSeg)) {
-      const sodBtn = !sodSeg ? `<button class="btn" id="sod" data-shift="${T.segs[0].shift.id}">▶ Start of day · SOD</button><p class="hint">One tap sends your SOD with the time, run${T.segs.filter(x => !x.sort).length > 1 ? "s" : ""} and van. You can edit it until your EOD.</p>`
+      const sodBtn = !sodSeg ? `<p class="hint">No SOD yet — tap <b>SOD</b> at the top when you start.</p>`
         : `<div class="row"><div class="meta c-ok">✓ SOD ${fmtTime(sodSeg.sod.sent_at)}${sodSeg.sod.van ? ` · ${esc(sodSeg.sod.van)}` : ""}${sodSeg.sod.edited_at ? " (edited)" : ""}</div>${allEod ? "" : `<button class="btn ghost sm" id="sod-edit" data-shift="${sodSeg.shift.id}">Edit SOD</button>`}</div>`;
       const sortOnly = !T.segs.some(x => !x.sort) && sodSeg && !allEod;
       return `<div class="card today"><h2>Today<span>${label(T.day)}</span></h2><div class="big">${fmtT((left[0] || T.segs[0]).st)} – ${fmtT(T.end)}${left.length === T.segs.length ? ` <small>· ${T.hours} h</small>` : ""}</div>
         ${sodBtn}${(left.length ? left : T.segs).map(x => segRow(x, T.day, n, true)).join("")}
-        ${sortOnly ? `<button class="btn accent sm" data-eod="${T.segs[T.segs.length - 1].shift.id}" data-sort="1">Finished sorting · EOD</button>` : ""}
         ${S.locOn ? `<p class="hint">📍 Sharing your location with the depot until your EOD.</p>` : ""}</div>`;
     }
   }
