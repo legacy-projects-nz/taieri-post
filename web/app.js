@@ -85,9 +85,7 @@ function render() {
     ${fromJeremy()}
     ${alertsCard()}
     ${messagesCard()}
-    <div class="grid2">${todayCard(T, nextDay, n)}${vanCard(T, nextDay)}<div class="span">${shiftsCard(t)}</div></div>
-    ${addonsCard(T, nextDay, n)}
-    ${scoresCard()}
+    <div class="grid2">${todayCard(T, nextDay, n)}${addonsCard(T, nextDay, n)}<div class="span">${scoresCard()}</div>${vanCard(T, nextDay)}<div class="span">${shiftsCard(t)}</div></div>
     ${toFixCard(n)}
     ${leaveCard()}
     ${detailsCard()}
@@ -172,7 +170,7 @@ function timingRows(x, day, nowMin) {
     else if (isT) { if (t != null && nowMin > t) { st = `✗ not done by ${fmtT(t)}`; cls = "miss"; } else if (f != null && nowMin >= f) { tag = "now"; cls = "now"; } else if (t != null && t - nowMin <= 60) { tag = "due soon"; cls = "now"; } }
     else if (day < today() && key) { st = `✗ not marked done`; cls = "miss"; }
     const btn = isT && key && !done && !S.viewAs && !(gp && planned) ? `<button class="btn sm ${cls === "miss" ? "warn" : "ghost"}" data-done="${esc(key)}" data-shift="${x.shift.id}" style="flex:0 0 auto;min-height:34px">Done ✓</button>` : "";
-    return `<div class="tw-r ${cls}"><div class="w">${winTxt(r)}${tag ? `<span class="tw-tag">${tag}</span>` : ""}</div><div class="row" style="justify-content:space-between;align-items:center;gap:6px;flex-wrap:nowrap"><div style="flex:1 1 auto"><span class="n">${esc(r.name)}</span>${r.note ? `<span class="x">${esc(r.note)}</span>` : ""}${st ? `<span class="x ${cls === "miss" ? "c-crit" : "c-ok"}" style="font-weight:600">${st}</span>` : ""}${gp && !planned && !done && isT ? `<span class="x">Set your planned times in Add-ons &amp; tasks below (that counts as the game plan), or tap Done.</span>` : ""}</div>${btn}</div></div>`; });
+    return `<div class="tw-r ${cls}"><div class="w">${winTxt(r)}${tag ? `<span class="tw-tag">${tag}</span>` : ""}</div><div class="row" style="justify-content:space-between;align-items:center;gap:6px;flex-wrap:nowrap"><div style="flex:1 1 auto"><span class="n">${esc(r.name)}</span>${r.note ? `<span class="x">${esc(r.note)}</span>` : ""}${st ? `<span class="x ${cls === "miss" ? "c-crit" : "c-ok"}" style="font-weight:600">${st}</span>` : ""}${gp && !planned && !done && isT ? `<span class="x">Set your planned times under Add-ons → Change what&#39;s on this run (that counts as the game plan), or tap Done.</span>` : ""}</div>${btn}</div></div>`; });
   return `<div class="tw"><h4>${isT ? "Timed tasks today · tap Done as you finish each one" : "Timed tasks"}</h4>${rows.join("")}${isT ? `<p class="hint" style="margin:4px 0 0">Jeremy sees each Done straight away; a window that passes without Done raises an alert for you both.</p>` : ""}</div>`;
 }
 const canEditEod = day => !S.viewAs && day >= addDays(today(), -1) && day <= today();
@@ -226,30 +224,34 @@ function shiftsCard(t) {
     <details><summary>Last week<span class="meta">${lastW.filter(d => S.days[d]).length} shift${lastW.filter(d => S.days[d]).length === 1 ? "" : "s"}</span></summary>${lastW.map(row).join("")}</details></div>`;
 }
 
-/* ---------- Add-ons & tasks ---------- */
+/* ---------- Add-ons (beside the shift: one button per add-on, tap = done) ---------- */
 function addonsCard(T, N, n) {
   const runSeg = D => D && D.segs.filter(x => !x.sort && (S.addons.some(a => a.runs.includes(x.shift.run)) || x.shift.addons?.length));
   const thisDone = !T || !runSeg(T)?.length || n.min >= Math.max(...runSeg(T).map(x => x.en ?? x.st));
   const nextDays = Object.values(S.days).filter(d => d.day > n.date && runSeg(d)?.length).sort((a, b) => a.day < b.day ? -1 : 1)[0];
   const showThis = !thisDone && runSeg(T)?.length, showNext = nextDays && runSeg(nextDays)?.length;
-  if (!showThis && !showNext) return "";
+  if (!showThis && !showNext) return `<div class="card"><h2>Add-ons</h2><p class="hint">No add-ons on your next shift.</p></div>`;
   S.addTab ??= showThis ? "this" : "next"; if (S.addTab === "this" && !showThis) S.addTab = "next"; if (S.addTab === "next" && !showNext) S.addTab = "this";
   const D = S.addTab === "this" ? T : nextDays; const isT = D.day === n.date;
   const sat = dayName(D.day) === "Sat";
   const blocks = runSeg(D).map(x => {
     const code = x.shift.run; const opts = S.addons.filter(a => a.runs.includes(code) && !(sat && a.no_saturday) && !a.id.startsWith("tw_"));
     const on = new Set(x.shift.addons || []); const plan = x.shift.plan || {}; const done = x.shift.done || {};
-    const tasks = opts.filter(o => o.task);
-    return `<div style="border-top:1px solid var(--line);padding-top:8px"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${fmtT(x.st)} – ${fmtT(x.en)}${x.shift.van ? ` · ${esc(x.shift.van)}` : ""}</span></div>
-      <div class="list" style="margin-top:6px">${opts.map(o => { const isOn = on.has(o.id); const rule = S.rules.find(r => r.addon === o.id);
+    const mine = opts.filter(o => on.has(o.id)); const nDone = mine.filter(o => done[o.id]).length;
+    const btn = o => { const rule = S.rules.find(r => r.addon === o.id); const when = rule ? winTxt(rule) : plan[o.id] ? `planned ${fmtT(toMin(plan[o.id]))}` : "";
+      if (done[o.id]) return `<div class="ab done"><b>✓ ${esc(o.name)}</b><small>done ${fmtTime(done[o.id])}</small></div>`;
+      if (isT && !S.viewAs) return `<button class="ab" data-done="${o.id}" data-shift="${x.shift.id}"><b>${esc(o.name)}</b><small>${esc(when || "tap when done")}</small></button>`;
+      return `<div class="ab plain"><b>${esc(o.name)}</b>${when ? `<small>${esc(when)}</small>` : ""}</div>`; };
+    return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${fmtT(x.st)} – ${fmtT(x.en)}${x.shift.van ? ` · ${esc(x.shift.van)}` : ""}${mine.length && isT ? ` · ${nDone}/${mine.length} done` : ""}</span></div>
+      ${mine.length ? `<div class="abs">${mine.map(btn).join("")}</div>` : `<p class="meta" style="margin:4px 0 0">No add-ons on this run.</p>`}
+      <details class="abmore"><summary>Change what's on this run${mine.some(o => o.task) ? " · planned times" : ""}</summary><div class="list" style="margin-top:6px">${opts.map(o => { const isOn = on.has(o.id); const rule = S.rules.find(r => r.addon === o.id);
         return `<div class="row" style="align-items:center"><label class="chk ${isOn ? "on" : ""}" style="flex:1 1 60%"><input type="checkbox" data-addon="${o.id}" data-shift="${x.shift.id}" ${isOn ? "checked" : ""}>${esc(o.name)}${rule ? `<span class="meta" style="margin-left:auto">${winTxt(rule)}</span>` : ""}</label>
-          ${o.task && isOn ? `<input class="in" type="time" step="900" style="flex:0 0 120px;min-height:40px" value="${esc(plan[o.id] || "")}" data-plan="${o.id}" data-shift="${x.shift.id}" aria-label="Planned time for ${esc(o.name)}">` : ""}
-          ${o.task && isOn && isT ? (done[o.id] ? `<span class="pill ok">✓ done ${fmtTime(done[o.id])}</span>` : `<button class="btn sm ghost" data-done="${o.id}" data-shift="${x.shift.id}">Done</button>`) : ""}</div>`; }).join("")}</div>
-      ${tasks.length ? `<p class="hint" style="margin:6px 0 0">Tick what you're doing and set a rough time for each: that's your game plan, Jeremy sees it live. Tap <b>Done</b> as you finish each one.</p>` : `<p class="hint" style="margin:6px 0 0">Changes save straight away and show on the Run Board.</p>`}</div>`;
+          ${o.task && isOn ? `<input class="in" type="time" step="900" style="flex:0 0 120px;min-height:40px" value="${esc(plan[o.id] || "")}" data-plan="${o.id}" data-shift="${x.shift.id}" aria-label="Planned time for ${esc(o.name)}">` : ""}</div>`; }).join("")}</div>
+        <p class="hint" style="margin:6px 0 0">Ticks and times save straight away and show on the Run Board${mine.some(o => o.task) ? " (your planned times are your game plan)" : ""}.</p></details></div>`;
   }).join("");
-  return `<div class="card"><h2>Add-ons &amp; tasks<span>${nextDays && S.addTab === "this" ? `next: ${label(nextDays.day)}` : ""}</span></h2>
+  return `<div class="card"><h2>Add-ons<span>${isT ? "today" : label(D.day)}${nextDays && S.addTab === "this" ? ` · next: ${label(nextDays.day)}` : ""}</span></h2>
     ${showThis && showNext ? `<div class="seg-btns"><button data-tab="this" class="${S.addTab === "this" ? "on" : ""}">This shift</button><button data-tab="next" class="${S.addTab === "next" ? "on" : ""}">Next shift</button></div>` : ""}
-    <div class="meta mono" style="text-transform:uppercase">${label(D.day)}${isT ? " · today" : ""}</div>${blocks}</div>`;
+    ${blocks}${isT ? `<p class="hint" style="margin:0">One tap marks an add-on done. Jeremy sees it straight away.</p>` : ""}</div>`;
 }
 
 /* ---------- Scores ---------- */
@@ -535,7 +537,7 @@ function vanSheet(plate) {
 }
 function alertSheet(a) {
   const sh = a.shift_id ? S.shifts.find(x => x.id === a.shift_id) : null; const day = sh?.day || nzNow(new Date(a.created_at)).date; const rule = a.rule_id ? S.rules.find(r => r.id === a.rule_id) : null;
-  const what = ({ sod_late: "Your SOD wasn't in by the time it was due. Post it now — late beats missing.", sod_missing: "No SOD was posted for this shift. Post it now so the day can be scored.", eod_late: "Your EOD for this run wasn't in on time. Post it now with the figures from the run.", timing_missed: "A timed task on your run passed its window without being marked done. If you did it, tap Done in Add-ons & tasks; otherwise let Jeremy know.", timing_due: "A timed task on your run is due soon.", vchk_due: "The weekly vehicle check is due. Open More → Weekly vehicle check.", change_unconfirmed: "A roster change is waiting for your Got it." })[a.kind] || "";
+  const what = ({ sod_late: "Your SOD wasn't in by the time it was due. Post it now — late beats missing.", sod_missing: "No SOD was posted for this shift. Post it now so the day can be scored.", eod_late: "Your EOD for this run wasn't in on time. Post it now with the figures from the run.", timing_missed: "A timed task on your run passed its window without being marked done. If you did it, tap Done on it under Today; otherwise let Jeremy know.", timing_due: "A timed task on your run is due soon.", vchk_due: "The weekly vehicle check is due. Open More → Weekly vehicle check.", change_unconfirmed: "A roster change is waiting for your Got it." })[a.kind] || "";
   sheet(`<h3>${esc(a.title)}</h3><p class="meta">${esc(String(a.kind).replace(/_/g, " "))} · ${fmtTs(a.created_at)}</p>${a.body ? `<p>${esc(a.body)}</p>` : ""}${what ? `<p class="hint">${what}</p>` : ""}
     ${sh ? `<dl class="kv"><dt>Shift</dt><dd>${esc(sh.run)} · ${label(sh.day)}</dd>${rule ? `<dt>Window</dt><dd>${esc(rule.name)} · ${winTxt(rule)}</dd>` : ""}</dl>` : ""}
     <div class="row">${sh && !S.viewAs && (a.kind === "sod_late" || a.kind === "sod_missing") && !S.sods.some(x => x.shift_id === sh.id) ? `<button class="btn sm" data-sodv="${sh.id}">Post SOD now</button>` : ""}${sh && !S.viewAs && a.kind === "eod_late" && !S.eods.some(x => x.shift_id === sh.id) ? `<button class="btn accent sm" data-eodv="${sh.id}">Post EOD now</button>` : ""}${a.kind === "vchk_due" && !S.viewAs ? `<button class="btn ghost sm" id="al-vchk">Vehicle check</button>` : ""}<button class="btn ghost sm" data-dayv="${day}">That day</button></div>`,
