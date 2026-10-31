@@ -88,8 +88,8 @@ function render() {
     ${messagesCard()}
     ${pair(todayCard(T, nextDay, n), addonsCard(T, nextDay, n))}
     ${scoresCard()}
-    ${pair(nextShiftCard(nextDay, n), nextTasksCard(nextDay, n))}
-    ${pair(vanCard(T, nextDay), shiftsCard(t))}
+    ${nextShiftCard(nextDay, n)}
+    ${pair(vanCard(T, null), shiftsCard(t))}
     ${pair(toFixCard(n), fromJeremy())}
     ${pair(leaveCard(), detailsCard())}
     ${moreCard()}
@@ -228,18 +228,25 @@ function todayCard(T, N, n) {
   return `<div class="card"><h2>Today<span>${label(n.date)}</span></h2><p class="hint" style="font-size:15px">${why}</p></div>`;
 }
 const dayTag = d => `${d === addDays(today(), 1) ? "Tomorrow · " : ""}${label(d)}`;
-function nextShiftCard(N, n) {
-  if (!N) return `<div class="card nextc"><h2>Next shift</h2><div class="big">Not on the roster yet</div><p class="hint">Your next shift shows here once the roster is out.</p></div>`;
-  return `<div class="card nextc"><h2>Next shift<span>${dayTag(N.day)}</span></h2><div class="big bigrow"><span>${fmtT(N.start)}–${fmtT(N.end)}</span>${vanChips(N)}</div><div class="meta" style="margin-top:-4px">${N.hours} h rostered</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}</div>`;
+function nextShiftCard(N, n) {   // one box: shift, tasks, vehicle, split by grey lines
+  if (!N) return `<div class="card nextc"><h2>Next shift</h2><div class="big">Not on the roster yet</div><p class="hint">Your next shift, tasks and van show here once the roster is out.</p></div>`;
+  return `<div class="card nextc"><h2>Next shift<span>${dayTag(N.day)}</span></h2>
+    <div class="big bigrow"><span>${fmtT(N.start)}–${fmtT(N.end)}</span>${vanChips(N)}</div><div class="meta" style="margin-top:-4px">${N.hours} h rostered</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}
+    <hr class="gl">${tasksCard(N, n, true, true)}
+    <hr class="gl"><h3 class="sub">Vehicle</h3>${vanInner(N)}</div>`;
 }
 function vanCard(T, N) {
   const src = T && T.segs.some(x => x.shift.van) ? T : N && N.segs.some(x => x.shift.van) ? N : null; if (!src) return "";
+  return `<div class="card"><h2>My van<span>${src === T ? "Today" : `Next shift · ${label(src.day)}`}</span></h2>${vanInner(src)}</div>`;
+}
+function vanInner(src) {
+  if (!src || !src.segs.some(x => x.shift.van)) return `<p class="hint">No van rostered yet.</p>`;
   const plates = [...new Set(src.segs.map(x => x.shift.van).filter(Boolean))];
   const st = (d, soonDays = 14) => { if (!d) return ["unknown", "not on file"]; const n = Math.round((new Date(d) - new Date(today())) / 86400000); return n < 0 ? ["crit", "overdue"] : n <= soonDays ? ["warn", `due in ${n}d`] : ["ok", "✓"]; };
-  return `<div class="card"><h2>My van<span>${src === T ? "Today" : `Next shift · ${label(src.day)}`}</span></h2>${plates.map(p => { const v = S.vans[p] || {}; const w = st(v.wof_due), r = st(v.rego_due); let ruc = ["unknown", "not on file"], rtxt = "";
+  return `${plates.map(p => { const v = S.vans[p] || {}; const w = st(v.wof_due), r = st(v.rego_due); let ruc = ["unknown", "not on file"], rtxt = "";
     if (v.no_ruc) { ruc = ["ok", "✓"]; rtxt = "not needed (petrol)"; } else if (v.ruc_paid_to) { const left = v.odometer ? v.ruc_paid_to - v.odometer : null; rtxt = `paid to ${v.ruc_paid_to.toLocaleString()} km${left != null ? ` · ${left.toLocaleString()} km left` : ""}`; ruc = left == null ? ["ok", "✓"] : left <= 0 ? ["crit", "overdue"] : left <= (S.C.rules.rucSoonKm || 1000) ? ["warn", "low"] : ["ok", "✓"]; }
     return `<div><button class="plate clk" data-vanv="${esc(p)}" style="background:none;cursor:pointer" title="Tap for this van's history">${esc(p)}</button>${v.model ? ` <span class="meta">${esc(v.model)}</span>` : ""}<dl class="kv" style="margin-top:8px;grid-template-columns:56px 1fr"><dt>WOF</dt><dd>${v.wof_due ? label(v.wof_due, true) + " " : ""}${pill(w[1], w[0] === "unknown" ? "grey" : w[0])}</dd><dt>Rego</dt><dd>${v.rego_due ? label(v.rego_due, true) + " " : ""}${pill(r[1], r[0] === "unknown" ? "grey" : r[0])}</dd><dt>RUCs</dt><dd>${esc(rtxt)} ${pill(ruc[1], ruc[0] === "unknown" ? "grey" : ruc[0])}</dd></dl></div>`; }).join("")}
-    <p class="hint">Low or overdue? Tell Stu. Tap the plate for your checks and history with this van.</p></div>`;
+    <p class="hint">Low or overdue? Tell Stu. Tap the plate for your checks and history with this van.</p>`;
 }
 function shiftsCard(t) {
   const mon = monOf(t); const nextMon = addDays(mon, 7);
@@ -265,7 +272,7 @@ function nextTasksCard(N, n) {   // tasks for the next shift (tomorrow when rost
   if (!N) return `<div class="card nextc"><h2>Next tasks</h2><p class="hint">Your tasks show here once your next shift is on the roster.</p></div>`;
   return tasksCard(N, n, true);
 }
-function tasksCard(D, n, next) {
+function tasksCard(D, n, next, bare = false) {
   const isT = !next && D.day === n.date;
   const sat = dayName(D.day) === "Sat";
   const blocks = (runSegOf(D) || []).map(x => {
@@ -290,6 +297,7 @@ function tasksCard(D, n, next) {
           ${o.task && isOn ? `<input class="in" type="time" step="900" style="flex:0 0 120px;min-height:40px" value="${esc(plan[o.id] || "")}" data-plan="${o.id}" data-shift="${x.shift.id}" aria-label="Planned time for ${esc(o.name)}">` : ""}</div>`; }).join("")}</div>
         <p class="hint" style="margin:6px 0 0">Ticks and times save straight away and show on the Run Board${opts.some(o => o.task && on.has(o.id)) ? " (your planned times are your game plan)" : ""}.</p></details></div>`;
   }).join("");
+  if (bare) return `<h3 class="sub">Tasks</h3>${blocks || `<p class="hint">Nothing extra on this shift.</p>`}`;
   return `<div class="card${next ? " nextc" : ""}"><h2>${isT ? "Today's tasks" : "Next tasks"}<span>${isT ? "add-ons + timed tasks" : dayTag(D.day)}</span></h2>
     ${blocks || `<p class="hint">Nothing extra on this shift.</p>`}${isT ? `<p class="hint" style="margin:0">Orange = not done yet · red = due within the hour or missed · green = done. Tap Done as you finish each one; Jeremy sees it straight away.</p>` : ""}</div>`;
 }
