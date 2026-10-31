@@ -85,7 +85,10 @@ function ruleCheck(ws, leaveOn) {
     const vans = {}; for (const s of L) if (s.van && !isSort(s.run)) { const { st, en } = segTimes(s, S.runsBy); for (const o of vans[s.van] || []) if (st < o.en && o.st < en) iss.push(["warn", `${label(day)}: ${s.van} is on ${o.run} and ${s.run} at the same time`]); (vans[s.van] ??= []).push({ st, en, run: s.run }); }
     for (const r of S.rules) { if (!r.active || r.runs.includes("ALL") || r.runs.length < 2 || !r.addon) continue; if (!r.days.includes(dow(day) + 1)) continue; const on = L.filter(s => r.runs.includes(s.run) && (s.addons || []).includes(r.addon)); if (on.length > 1) iss.push(["warn", `${label(day)}: ${r.name} is ticked on ${on.map(s => s.run).join(" and ")} — pick one`]); if (!on.length && S.addons.find(a => a.id === r.addon)?.id.startsWith("tw_")) iss.push(["warn", `${label(day)}: ${r.name} isn't ticked on any run`]); }
   }
-  return `<details class="card" ${iss.length ? "open" : ""}><summary>Rule check<span class="meta">${iss.length ? `${iss.length} to look at` : "✓ all good"}</span></summary><div class="list" style="margin-top:8px">${iss.map(([c, t]) => `<div class="item ${c}">${esc(t)}</div>`).join("") || `<p class="meta">Nothing to fix.</p>`}</div></details>`;
+  const dis = new Set(S.notes.find(x => x.week_start === S.week)?.dismissed || []);
+  const live = iss.filter(([, t]) => !dis.has(t)); const gone = iss.filter(([, t]) => dis.has(t)); const can = S.me.can("roster");
+  const dBtn = (t, act, txt) => can ? `<button class="btn sm ghost" data-rc="${act}" data-t="${esc(t)}">${txt}</button>` : "";
+  return `<details class="card" ${live.length ? "open" : ""}><summary>Rule check<span class="meta">${live.length ? `${live.length} to look at` : "✓ all good"}${gone.length ? ` · ${gone.length} dismissed` : ""}</span></summary><div class="list" style="margin-top:8px">${live.map(([c, t]) => `<div class="item ${c}"><div class="row" style="justify-content:space-between;align-items:center"><span>${esc(t)}</span>${dBtn(t, "dis", "Dismiss")}</div></div>`).join("") || `<p class="meta">Nothing to fix.</p>`}</div>${gone.length ? `<details style="margin-top:8px"><summary class="meta">${gone.length} dismissed</summary><div class="list" style="margin-top:8px">${gone.map(([c, t]) => `<div class="item done"><div class="row" style="justify-content:space-between;align-items:center"><span>${esc(t)}</span>${dBtn(t, "res", "Restore")}</div></div>`).join("")}</div></details>` : ""}</details>`;
 }
 
 /* ---------- wiring ---------- */
@@ -96,6 +99,8 @@ export function wireRunBoard() {
   $("#copy-prev")?.addEventListener("click", copyPrev);
   $("#run-times")?.addEventListener("click", runTimes);
   $("#wk-notes")?.addEventListener("blur", async e => { await q(sb.from("week_notes").upsert({ week_start: S.week, notes: e.target.value, updated_at: new Date().toISOString() })); toast("Notes saved", "ok"); });
+  $$("[data-rc]").forEach(b => b.onclick = async () => { const t = b.dataset.t; const cur = S.notes.find(x => x.week_start === S.week)?.dismissed || []; const next = b.dataset.rc === "dis" ? [...new Set([...cur, t])] : cur.filter(x => x !== t);
+    const { error } = await sb.from("week_notes").upsert({ week_start: S.week, dismissed: next, updated_at: new Date().toISOString() }); if (error) return toast(error.message, "err"); toast(b.dataset.rc === "dis" ? "Dismissed" : "Restored", "ok"); });
   // [data-ack] confirm/dismiss buttons are handled by detail.js bind()
   $$("[data-approve]").forEach(b => b.onclick = () => finalizeSend(b.dataset.approve));
   $$("[data-reject]").forEach(b => b.onclick = async () => { const id = b.dataset.reject; const items = S.items.filter(i => i.change_id === id); // put the roster back to what drivers have
