@@ -83,13 +83,13 @@ function render() {
     <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
     ${quickBar(T, n)}
     ${rosterChanges(n)}
-    ${fromJeremy()}
     ${alertsCard()}
     ${messagesCard()}
     <div class="pair">${todayCard(T, nextDay, n)}${addonsCard(T, nextDay, n)}</div>
     ${scoresCard()}
     <div class="grid2">${vanCard(T, nextDay)}<div class="span">${shiftsCard(t)}</div></div>
     ${toFixCard(n)}
+    ${fromJeremy()}
     ${leaveCard()}
     ${detailsCard()}
     ${moreCard()}
@@ -137,12 +137,20 @@ function rosterChanges(n) {
 /* ---------- From Jeremy / alerts / messages ---------- */
 const ENTRY_K = { praise: ["ok", "Nice work 👏"], issue: ["warn", "Heads up"], note: ["accent", "Note"], mistake: ["crit", "Mistake recorded"], adjust: ["accent", "Admin points"], safety: ["warn", "Safety"], eff: ["accent", "Efficiency set"] };
 function fromJeremy() {
-  const all = S.entries.filter(e => e.show_driver).sort((a, b) => (b.created_at || b.day).localeCompare(a.created_at || a.day)); if (!all.length) return "";
-  const fresh = all.filter(e => !e.seen_at), old = all.filter(e => e.seen_at).slice(0, 12);
-  const row = (e, seen) => { const k = ENTRY_K[e.kind] || ENTRY_K.note; return `<div class="item clk ${seen || e.excused ? "done" : k[0]}" data-entryv="${e.id}"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><div class="m">${k[1]} · ${label(e.day)}${e.run ? ` · ${esc(e.run)}` : ""}${seen ? ` · viewed ${fmtTs(e.seen_at)}` : ""}</div><div>${esc(e.title)}${e.note ? `<div class="meta">${esc(e.note)}</div>` : ""}</div></div>${seen || S.viewAs ? "" : `<button class="btn ghost sm" data-seen="${e.id}" style="flex:0">Viewed ✓</button>`}</div></div>`; };
-  if (!fresh.length && !old.length) return "";
-  return `<div class="card ${fresh.some(e => e.kind === "mistake") ? "hot" : fresh.length ? "warnc" : ""}"><h2>From Jeremy<span>${fresh.length ? `${fresh.length} new` : "nothing new"}</span></h2>${fresh.length ? `<div class="list">${fresh.map(e => row(e, false)).join("")}</div><p class="hint">Tap Viewed once you've read it and it moves to the list below. Jeremy sees when you've viewed it.</p>` : ""}
-    ${old.length ? `<details><summary>Viewed<span class="meta">${old.length}</span></summary><div class="list" style="margin-top:8px">${old.map(e => row(e, true)).join("")}</div></details>` : ""}</div>`;
+  const all = S.entries.filter(e => e.show_driver && e.day >= addDays(today(), -56)).sort((a, b) => (b.created_at || b.day).localeCompare(a.created_at || a.day)); if (!all.length) return "";
+  const effect = e => [e.kind === "mistake" && !e.excused ? `−${S.C.rules.mistakePct}% Accuracy` : "", e.admin_pts ? `Admin ${e.admin_pts > 0 ? "+" : ""}${e.admin_pts}` : "", e.safety_pct != null ? `Safety ${e.safety_pct}%` : "", e.eff_pct != null ? `Efficiency ${e.eff_pct}%` : ""].filter(Boolean).join(" · ");
+  const status = e => e.excused ? pill("removed — doesn't count", "grey") : e.review_requested_at && !e.review_resolved_at ? pill("review requested", "warn") : e.review_resolved_at ? pill("reviewed · stands", "grey") : "";
+  const row = e => { const k = ENTRY_K[e.kind] || ENTRY_K.note; return `<div class="item clk ${e.excused ? "done" : k[0]}" data-entryv="${e.id}"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><div class="m">${k[1]} · ${label(e.day)}${e.run ? ` · ${esc(e.run)}` : ""}${effect(e) ? ` · ${esc(effect(e))}` : ""}</div><div>${esc(e.title)}${e.note ? `<div class="meta">${esc(e.note)}</div>` : ""}</div></div>${status(e) || (!S.viewAs ? `<button class="btn ghost sm" data-review="${e.id}" style="flex:0">Request a review</button>` : "")}</div></div>`; };
+  const live_ = all.filter(e => !e.excused); const recent = live_.slice(0, 8), older = [...live_.slice(8), ...all.filter(e => e.excused)];
+  if (!recent.length && !older.length) return "";
+  return `<div class="card"><h2>Notes from Jeremy<span>mistakes, praise and adjustments · nothing to tick — ask for a review if something's not right</span></h2>${recent.length ? `<div class="list">${recent.map(row).join("")}</div>` : `<p class="meta">Nothing current.</p>`}
+    ${older.length ? `<details><summary>Older and removed<span class="meta">${older.length}</span></summary><div class="list" style="margin-top:8px">${older.map(row).join("")}</div></details>` : ""}</div>`;
+}
+function reviewSheet(id) {
+  const e = S.entries.find(x => x.id === id); if (!e) return;
+  sheet(`<h3>Ask Jeremy to review this</h3><p><b>${esc(e.title)}</b> · ${label(e.day)}</p><form class="frm" id="rv"><label class="f full">What should he look at? (optional)<textarea class="in" id="rv-note" rows="3" placeholder="e.g. That parcel was signed for by the neighbour — photo on my scanner"></textarea></label><button class="btn" type="submit">Send review request</button></form><p class="hint">Jeremy gets this as an alert and will either keep the note or remove it. You'll see the result here.</p>`, (bg, close) => {
+    bg.querySelector("#rv").onsubmit = async ev => { ev.preventDefault(); const { error } = await sb.rpc("entry_review", { p_id: id, p_note: bg.querySelector("#rv-note").value }); if (error) return toast(error.message, "err"); close(); toast("Review request sent", "ok"); await loadAll(); render(); };
+  });
 }
 function alertsCard() {
   if (!S.alerts.length) return "";
@@ -364,6 +372,7 @@ function wire() {
   $("#gotit")?.addEventListener("click", async e => { const ids = e.currentTarget.dataset.ids.split(","); for (const id of ids) S.gotit[id] = new Date().toISOString(); localStorage.setItem("tp-gotit", JSON.stringify(S.gotit)); render();
     const { error } = await sb.from("change_acks").update({ confirmed_at: new Date().toISOString(), seen_at: new Date().toISOString() }).in("item_id", ids).eq("driver", S.me.id); if (error) toast("Couldn't send. Try again.", "err"); else toast("Confirmed ✓", "ok"); });
   $("#gotit-again")?.addEventListener("click", () => { S.gotit = {}; localStorage.removeItem("tp-gotit"); render(); });
+  $$("[data-review]").forEach(b => b.onclick = e => { e.stopPropagation(); reviewSheet(b.dataset.review); });
   $$("[data-seen]").forEach(b => b.onclick = async e => { e.stopPropagation(); b.disabled = true; const { error } = await sb.rpc("entry_seen", { p_id: b.dataset.seen }); if (error) { toast(error.message, "err"); b.disabled = false; return; } const en = S.entries.find(x => x.id === b.dataset.seen); if (en) en.seen_at = new Date().toISOString(); toast("Marked as viewed", "ok"); render(); });
   $$("[data-confirm]").forEach(b => b.onclick = async () => { await q(sb.from("message_recipients").update({ confirmed_at: new Date().toISOString(), read_at: new Date().toISOString() }).eq("message_id", b.dataset.confirm).eq("person", S.me.id)); toast("Confirmed ✓", "ok"); });
   const unread = S.msgs.filter(m => !m.read_at).map(m => m.message_id); if (unread.length) sb.from("message_recipients").update({ read_at: new Date().toISOString() }).in("message_id", unread).eq("person", S.me.id).then(() => { });
@@ -526,7 +535,8 @@ function entrySheet(e) {
   const K = { praise: "Nice work 👏", issue: "Heads up", note: "Note from Jeremy", mistake: "Mistake recorded", adjust: "Admin points", safety: "Safety", eff: "Efficiency set" };
   sheet(`<h3>${K[e.kind] || e.kind}</h3><p class="meta">${label(e.day, true)}${e.run ? ` · ${esc(e.run)}` : ""} · ${fmtTs(e.created_at)}</p><p><b>${esc(e.title)}</b></p>${e.note ? `<p>${esc(e.note)}</p>` : ""}
     <dl class="kv">${e.kind === "mistake" && !e.excused ? `<dt>Effect</dt><dd>−${S.C.rules.mistakePct}% Accuracy for the week and month it falls in</dd>` : ""}${e.excused ? `<dt>Status</dt><dd>${pill("removed — doesn't count", "grey")}</dd>` : ""}${e.admin_pts ? `<dt>Admin</dt><dd>${e.admin_pts > 0 ? "+" : ""}${e.admin_pts} points</dd>` : ""}${e.safety_pct != null ? `<dt>Safety</dt><dd>${e.safety_pct}%</dd>` : ""}${e.eff_pct != null ? `<dt>Efficiency</dt><dd>${e.eff_pct}% for that day</dd>` : ""}</dl>
-    <div class="row">${e.show_driver && !e.seen_at && !S.viewAs ? `<button class="btn sm" id="en-seen">Viewed ✓</button>` : ""}<button class="btn ghost sm" data-dayv="${e.day}">That day</button></div>${e.seen_at ? `<p class="meta">You viewed this ${fmtTs(e.seen_at)}.</p>` : ""}<p class="hint">Think it's wrong? Message Jeremy.</p>`, (bg, close) => { bg.querySelector("#en-seen")?.addEventListener("click", async () => { const { error } = await sb.rpc("entry_seen", { p_id: e.id }); if (error) return toast(error.message, "err"); e.seen_at = new Date().toISOString(); close(); toast("Marked as viewed", "ok"); render(); }); });
+    ${e.review_requested_at ? `<p class="meta">Review requested ${fmtTs(e.review_requested_at)}${e.review_note ? ` — "${esc(e.review_note)}"` : ""}${e.excused ? " · removed after review" : e.review_resolved_at ? ` · reviewed ${fmtTs(e.review_resolved_at)}, the note stands` : " · waiting for Jeremy"}</p>` : ""}
+    <div class="row">${e.show_driver && !e.excused && !(e.review_requested_at && !e.review_resolved_at) && !S.viewAs ? `<button class="btn ghost sm" data-review="${e.id}">Request a review</button>` : ""}<button class="btn ghost sm" data-dayv="${e.day}">That day</button></div><p class="hint">Think it's wrong? Request a review and Jeremy will look at it.</p>`, (bg, close) => { bg.querySelector("[data-review]")?.addEventListener("click", () => { close(); reviewSheet(e.id); }); });
 }
 function weekSheet(w) {
   const s = scoreAt(w, addDays(w, 6)); const days = Array.from({ length: 7 }, (_, i) => addDays(w, i));
