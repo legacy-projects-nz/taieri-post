@@ -73,6 +73,7 @@ function viewBar() {
 }
 
 /* ================= render ================= */
+const pair = (a, b) => a && b ? `<div class="pair">${a}${b}</div>` : (a || b || "");   // two boxes across wherever both exist, on phones too
 function render() {
   const n = nzNow(); const t = n.date; const name = first(S.me.name);
   const greet = n.min < 720 ? "Morning" : n.min < 1020 ? "Hi" : "Evening";
@@ -85,13 +86,11 @@ function render() {
     ${rosterChanges(n)}
     ${alertsCard()}
     ${messagesCard()}
-    <div class="pair">${todayCard(T, nextDay, n)}${addonsCard(T, nextDay, n)}</div>
+    ${pair(todayCard(T, nextDay, n), addonsCard(T, nextDay, n))}
     ${scoresCard()}
-    <div class="grid2">${vanCard(T, nextDay)}<div class="span">${shiftsCard(t)}</div></div>
-    ${toFixCard(n)}
-    ${fromJeremy()}
-    ${leaveCard()}
-    ${detailsCard()}
+    ${pair(vanCard(T, nextDay), shiftsCard(t))}
+    ${pair(toFixCard(n), fromJeremy())}
+    ${pair(leaveCard(), detailsCard())}
     ${moreCard()}
     <p class="foot">Shift or score looks wrong? Message Jeremy.<br>Signed in as ${esc((S.viewer || S.me).email || "")}</p>
   </div>`;
