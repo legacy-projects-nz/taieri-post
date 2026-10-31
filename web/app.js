@@ -160,7 +160,7 @@ function messagesCard() {
 function runName(code) { const r = S.runsBy[code]; const fc = S.C.runCodes[code]; return r ? `${r.name}${fc ? ` (${fc})` : ""}` : code; }
 function segRow(x, day, n, isToday, tasks = true) {
   const code = x.shift.run; const r = S.runsBy[code];
-  const tags = [x.shift.van ? `<span class="tag van">${esc(x.shift.van)}</span>` : "", x.shift.trainee ? `<span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : "", ...(tasks ? (x.shift.addons || []).map(a => `<span class="tag">+ ${esc(addName(a))}</span>`) : [])].join("");
+  const tags = [x.shift.van ? `<span class="tag van"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 6.5A1.5 1.5 0 0 1 4.5 5H14l4.2 4.2H20a1 1 0 0 1 1 1V16a1 1 0 0 1-1 1h-1.3a2.5 2.5 0 0 1-4.9 0H9.7a2.5 2.5 0 0 1-4.9 0H4a1 1 0 0 1-1-1V6.5Zm10.6.5H5v4h12.2L13.6 7ZM7.25 18a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Zm9.5 0a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Z"/></svg>${esc(x.shift.van)}</span>` : "", x.shift.trainee ? `<span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : "", ...(tasks ? (x.shift.addons || []).map(a => `<span class="tag">+ ${esc(addName(a))}</span>`) : [])].join("");
   const tw = x.sort || !tasks ? "" : timingRows(x, day, isToday ? n.min : null);
   const act = isToday ? segActions(x, day, n) : "";
   return `<div class="seg clk" data-dayv="${day}" title="Tap for the full day"><div class="tm">${fmtT(x.st)} – ${fmtT(x.en)}</div><div class="rn">${x.sort ? esc(r?.label || "Sort") : `${esc(code)}<span class="sub">${esc(runName(code))}</span>`}<div class="tags">${tags}</div>${tw}${act}</div></div>`;
