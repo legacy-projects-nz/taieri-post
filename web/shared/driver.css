@@ -73,3 +73,15 @@ details summary{font-size:16px;min-height:44px}
 /* one Next shift box: shift, tasks and vehicle separated by grey lines */
 hr.gl{border:0;border-top:1px solid var(--line);margin:4px 0;width:100%}
 h3.sub{margin:0;font:700 15px var(--fd);color:var(--ink)}
+
+/* Next shift box: three sections (shift, tasks, vehicle) — tasks shaded, no rules between them */
+.card.nextc{gap:16px}
+.ns{display:flex;flex-direction:column;gap:8px;min-width:0}
+.ns.shade{background:var(--soft);border-radius:14px;padding:14px}
+.ns.shade .tk:not(.warn):not(.crit):not(.ok){background:var(--card);border-color:transparent}
+.ns .seg,.ns .ablk{border-top:0;padding-top:0}
+.ns .seg{padding:2px 0}
+.ns .tag.van{background:var(--soft)}
+.ns .kv{margin-top:2px}
+.ns .abmore summary{color:var(--ink2)}
+hr.gl{display:none}

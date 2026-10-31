@@ -231,9 +231,9 @@ const dayTag = d => `${d === addDays(today(), 1) ? "Tomorrow · " : ""}${label(d
 function nextShiftCard(N, n) {   // one box: shift, tasks, vehicle, split by grey lines
   if (!N) return `<div class="card nextc"><h2>Next shift</h2><div class="big">Not on the roster yet</div><p class="hint">Your next shift, tasks and van show here once the roster is out.</p></div>`;
   return `<div class="card nextc"><h2>Next shift<span>${dayTag(N.day)}</span></h2>
-    <div class="big bigrow"><span>${fmtT(N.start)}–${fmtT(N.end)}</span>${vanChips(N)}</div><div class="meta" style="margin-top:-4px">${N.hours} h rostered</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}
-    <hr class="gl">${tasksCard(N, n, true, true)}
-    <hr class="gl"><h3 class="sub">Vehicle</h3>${vanInner(N)}</div>`;
+    <section class="ns"><h3 class="sub">Shift</h3><div class="big bigrow"><span>${fmtT(N.start)}–${fmtT(N.end)}</span>${vanChips(N)}</div><div class="meta" style="margin-top:-4px">${N.hours} h rostered</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}</section>
+    <section class="ns shade">${tasksCard(N, n, true, true)}</section>
+    <section class="ns"><h3 class="sub">Vehicle</h3>${vanInner(N)}</section></div>`;
 }
 function vanCard(T, N) {
   const src = T && T.segs.some(x => x.shift.van) ? T : N && N.segs.some(x => x.shift.van) ? N : null; if (!src) return "";
