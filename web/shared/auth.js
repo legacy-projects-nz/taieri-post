@@ -26,11 +26,11 @@ function signInScreen(root) {
       <div class="top"><div><div class="brand">${WHO}</div><h1>Sign in</h1></div></div>
       <form class="card" id="f1"><label class="f">Your email<input id="em" type="email" inputmode="email" autocomplete="email" required placeholder="you@example.com" autofocus></label>
         <button class="btn" type="submit">Email me a sign-in code</button>
-        <p class="hint">We'll email you a 6-digit code and a link. Either one signs you in. No password.</p></form>
+        <p class="hint">We'll email you a 6-digit code. You only do this once on each phone. No password.</p></form>
       <form class="card hidden" id="f2"><p>Check your email at <b id="emb"></b>.</p>
-        <label class="f">6-digit code<input id="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="8" placeholder="123456"></label>
+        <label class="f">6-digit code<input id="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="6" placeholder="123456"></label>
         <button class="btn" type="submit">Sign in</button>
-        <p class="hint">Or tap the link in the email. Didn't get it? Check spam, or <button type="button" class="linkbtn" id="again">send it again</button>.</p></form>
+        <p class="hint">Didn't get it? Check spam, or <button type="button" class="linkbtn" id="again">send it again</button>.</p></form>
       <p class="foot">Safe. Sharp. Swift.</p></div>`;
     const f1 = $("#f1", root), f2 = $("#f2", root); let email = "";
     f1.onsubmit = async e => { e.preventDefault(); email = $("#em", root).value.trim().toLowerCase(); const b = f1.querySelector("button"); b.disabled = true; b.textContent = "Sending…";
