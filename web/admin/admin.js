@@ -1,5 +1,5 @@
 // Taieri Ops · owner / staff portal
-import { sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmt24, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, settings as loadSettings, signOut, hours, nzToIso } from "/shared/core.js";
+import { sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmt24, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, settings as loadSettings, signOut, hours, nzToIso, avg } from "/shared/core.js";
 import { requireUser } from "/shared/auth.js";
 import { AREAS, AREA_LABEL } from "/shared/config.js";
 import { cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, segTimes, setEvidence } from "/shared/score.js";
@@ -67,6 +67,7 @@ export function render(soft = false) {
   $$("[data-tab]").forEach(b => b.onclick = () => { S.tab = b.dataset.tab; location.hash = S.tab; render(); });
   if (S.tab !== "live") { /* the live board draws its own map */ }
   ({ live: wireLive2, runboard: wireRunBoard, classic: () => { }, scorecard: wireScorecard, fix: wireFix, alerts: wireAlerts, messages: wireMessages, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople, pay: wirePay })[S.tab]?.();
+  wireRange();
   bind($("#view"));   // every tile, row and chip with a data-… attribute opens its detail sheet
 }
 
@@ -83,6 +84,22 @@ export const nm = id => S.peopleBy[id]?.name || id || "—";
 export const fnm = id => first(nm(id));
 export function weekBar(extra = "") { return `<div class="wkbar"><button class="ar" data-wk="-1">‹</button><b>${label(S.week)} – ${label(addDays(S.week, 6))}</b><button class="ar" data-wk="1">›</button><button class="btn ghost sm" data-wk="0">This week</button>${extra}</div>`; }
 export function wireWeek() { $$("[data-wk]").forEach(b => b.onclick = async () => { const d = +b.dataset.wk; S.week = d === 0 ? monOf(today()) : addDays(S.week, d * 7); await loadAll(); render(); }); }
+/** Team scores range: this week / last week / last month, relative to the week on screen (base = that week's Monday). */
+const MON = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+export function teamRange(base) {
+  const r = S.tsRange || "week";
+  if (r === "last") return { r, from: addDays(base, -7), to: addDays(base, -1), txt: `last week · ${label(addDays(base, -7))} – ${label(addDays(base, -1))}`, lbl: "Last week" };
+  if (r === "month") { const e = addDays(base, 6); const y = +e.slice(0, 4), m = +e.slice(5, 7); const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
+    return { r, from: `${py}-${String(pm).padStart(2, "0")}-01`, to: addDays(`${y}-${String(m).padStart(2, "0")}-01`, -1), txt: `${MON[pm - 1]} ${py}`, lbl: "Last month" }; }
+  return { r: "week", from: base, to: addDays(base, 6), txt: `week of ${label(base)}`, lbl: "This week" };
+}
+export const rangeBar = () => `<div class="seg-btns" style="margin:2px 0 8px">${[["week", "This week"], ["last", "Last week"], ["month", "Last month"]].map(([k, l]) => `<button data-tsr="${k}" class="${(S.tsRange || "week") === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+export function teamStats(rg) {
+  const ss = S.drivers.map(d => scoreFor(d.id, rg.from, rg.to, scoreData(), S.C)).filter(s => s.closed || s.effDays.length || s.nMist || s.accDays.length);
+  const real = ss.filter(s => !S.peopleBy[s.driver]?.pay_exclude);
+  return { n: ss.length, team: k => avg(real.map(s => s[k])) };
+}
+export function wireRange() { $$("[data-tsr]").forEach(b => b.onclick = () => { S.tsRange = b.dataset.tsr; render(); }); }
 export const scoreData = () => ({ shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, ovs: S.ovs, runsBy: S.runsBy });
 
 /* ================= LIVE ================= */

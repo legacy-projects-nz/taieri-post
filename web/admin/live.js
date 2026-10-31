@@ -2,16 +2,20 @@
 // hours by day, admin action centre, roster changes not confirmed, drivers grid, posts board + live feed, newspapers, on-time by day, map.
 import { sb, q, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, toast, pill, first, col, pct, isSort, avg, sum } from "/shared/core.js";
 import { scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, band, dayShifts, segTimes, addName } from "/shared/score.js";
-import { S, sheet, opt, nm, fnm, loadAll, render, scoreData, alertRow, fn } from "/admin/admin.js";
+import { S, sheet, opt, nm, fnm, loadAll, render, scoreData, alertRow, fn, teamRange, rangeBar, teamStats } from "/admin/admin.js";
 import { itemKeyFor } from "/admin/detail.js";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-function sel() { const t = today(); const wk = monOf(t); if (!S.daySel || S.daySelWk !== wk) { S.daySel = DAYS.map((_, i) => addDays(wk, i)); S.daySelWk = wk; } return S.daySel; }
+/** The week the live board is showing: this week by default, back 8 weeks or forward 1 */
+function liveWk() { const cur = monOf(today()); const w = S.liveWk || cur; return w > addDays(cur, 7) ? addDays(cur, 7) : w < addDays(cur, -56) ? addDays(cur, -56) : w; }
+function weekNav(wk) { const cur = monOf(today()); const rel = wk === cur ? "This week" : wk === addDays(cur, 7) ? "Next week" : wk === addDays(cur, -7) ? "Last week" : wk > cur ? "Coming week" : "Past week";
+  return `<div class="wkbar"><button class="ar" data-lwk="-1" ${wk <= addDays(cur, -56) ? "disabled" : ""}>‹</button><b>${rel} · ${label(wk)} – ${label(addDays(wk, 6))}</b><button class="ar" data-lwk="1" ${wk >= addDays(cur, 7) ? "disabled" : ""}>›</button><button class="btn ghost sm" data-lwk="0">This week</button><button class="btn ghost sm" data-lwk="next">Next week</button></div>`; }
+function sel() { const wk = liveWk(); if (!S.daySel || S.daySelWk !== wk) { S.daySel = DAYS.map((_, i) => addDays(wk, i)); S.daySelWk = wk; } return S.daySel; }
 const chip = it => `<button class="chip ${it.st} ${it.mark?.status ? "man" : ""}" data-item="${esc(it.key)}" title="${STATE_LABEL[it.st]}">${esc(it.label)} <span style="font-weight:500">${itemNote(it).replace(/^posted /, "")}</span></button>`;
 const tile = (l, v, s = "", cls = null, attrs = "") => `<${attrs ? "button" : "div"} class="tile" ${attrs}><div class="l">${l}</div><div class="v ${cls || "c-" + col(v)}">${typeof v === "number" || v == null ? pct(v) : v}</div>${s ? `<div class="s">${s}</div>` : ""}</${attrs ? "button" : "div"}>`;
 
 export function liveTab() {
-  const n = nzNow(); const t = n.date; const wk = monOf(t); const days = sel(); const one = days.length === 1; const R = S.C.rules; const D = scoreData();
+  const n = nzNow(); const t = n.date; const wk = liveWk(); const days = sel(); const one = days.length === 1; const R = S.C.rules; const D = scoreData();
   const from = days[0], to = days[days.length - 1];
   const drivers = S.drivers.filter(d => !d.pay_exclude || true);
   const scores = drivers.map(d => scoreFor(d.id, wk, addDays(wk, 6), D, S.C));                     // week to date (team tiles, drivers grid)
@@ -27,7 +31,8 @@ export function liveTab() {
   const kpi = one ? `<div class="tiles">${tile("Posts due so far", String(items.length - due.length), `of ${items.length} for ${label(days[0])}`, "", k("due"))}${tile("On time", String(ok), closed.length ? `${Math.round(ok / closed.length * 100)}% of posts` : "no posts yet", "c-ok", k("ok"))}${tile("Late", String(late.length), `late = −${R.perEvent}% Admin`, late.length ? "c-warn" : "", k("late"))}${tile("Overdue now", String(over.length + miss.length), miss.length ? `${miss.length} missing` : "chased automatically when on", over.length + miss.length ? "c-crit" : "", k("over"))}</div>`
     : `<div class="tiles">${tile("Team on-time rate", closed.length ? ok / closed.length * 100 : null, `${ok} of ${closed.length} posts on time`, null, k("rate"))}${tile("Late", String(late.length), "posted after the due time", late.length ? "c-warn" : "", k("late"))}${tile("Missing", String(miss.length), "never posted", miss.length ? "c-crit" : "", k("miss"))}${tile("Drivers rostered", String(rostered), "tracked this week", "", k("rostered"))}</div>`;
 
-  return `<div class="card">${chips}${kpi}</div>
+  const cur = monOf(t);
+  return `${weekNav(wk)}${wk > cur ? `<p class="hint" style="margin:0 0 6px">Next week: the planned roster. Nothing is posted yet, so scores fill in as the days come.</p>` : ""}<div class="card">${chips}${kpi}</div>
     ${receivers(t, n)}
     <div class="grid2">${important(scores, n)}${teamAndLabour(scores, team, wk)}</div>
     <div class="grid2">${hoursByDay(wk)}${actionCentre(scores, n)}</div>
@@ -90,9 +95,10 @@ function teamAndLabour(scores, team, wk) {
   for (const p of S.drivers) for (const [k, l] of [["licence_expiry", "licence"], ["dg_expiry", "DG"]]) if (p[k]) { const dd = Math.round((new Date(p[k]) - new Date(t)) / 86400000); if (dd <= R.dueSoonDays) dueList.push({ dd, txt: `${first(p.name)} ${l} ${dd < 0 ? "expired" : "due"} · ${label(p[k])}`, person: p.id }); }
   dueList.sort((a, b) => a.dd - b.dd);
   const L = labourWeek(wk); const cls = v => v == null ? "grey" : v <= 0 ? "ok" : v <= 10 ? "warn" : "crit";
-  const m = k => `data-metric="${k}" data-mwk="${wk}" title="Tap for every driver and the week-by-week history"`; const lb = `data-labour="${wk}" title="Tap for hours by driver and by day"`;
-  return `<div class="card"><h2>Team scores<span>week of ${label(wk)} · ${scores.filter(s => s.closed || s.effDays.length).length} drivers · tap a score</span></h2>
-      <div class="tiles">${tile("Overall", team("overall"), `admin ${W.admin} · eff ${W.eff} · acc ${W.acc} · safety ${W.safe}`, null, m("overall"))}${tile("Admin", team("admin"), "posts on time", null, m("admin"))}${tile("Efficiency", team("eff"), "expected ÷ actual", null, m("eff"))}${tile("Accuracy", team("acc"), "NZ Post feed − mistakes", null, m("acc"))}${tile("Safety", team("safe"), "100% unless entered", null, m("safe"))}</div>
+  const m = k => `data-metric="${k}" data-mwk="${teamRange(wk).from}" ${teamRange(wk).r === "week" ? "" : `data-mto="${teamRange(wk).to}"`} title="Tap for every driver and the week-by-week history"`; const lb = `data-labour="${wk}" title="Tap for hours by driver and by day"`;
+  const rg = teamRange(wk); const T = rg.r === "week" ? { n: scores.filter(s => s.closed || s.effDays.length).length, team } : teamStats(rg);
+  return `<div class="card"><h2>Team scores<span>${rg.txt} · ${T.n} drivers · tap a score</span></h2>${rangeBar()}
+      <div class="tiles">${tile("Overall", T.team("overall"), `admin ${W.admin} · eff ${W.eff} · acc ${W.acc} · safety ${W.safe}`, null, m("overall"))}${tile("Admin", T.team("admin"), "posts on time", null, m("admin"))}${tile("Efficiency", T.team("eff"), "expected ÷ actual", null, m("eff"))}${tile("Accuracy", T.team("acc"), "NZ Post feed − mistakes", null, m("acc"))}${tile("Safety", T.team("safe"), "100% unless entered", null, m("safe"))}</div>
       <div class="meta mono" style="margin-top:4px">DUE WITHIN ${R.dueSoonDays} DAYS</div>${dueList.length ? `<div class="row" style="gap:4px">${dueList.map(d => `<button class="chip ${d.dd < 0 ? "miss" : "late"}" ${d.plate ? `data-vanof="${esc(d.plate)}"` : `data-personof="${esc(d.person)}"`}>${esc(d.txt)}</button>`).join("")}</div>` : `<div class="meta c-ok">✓ Vehicles &amp; licences up to date</div>`}
       <h2 style="margin-top:10px">Labour<span>wage rates from profiles (default $${R.hourRate}/h) · excludes Jeremy · tap for the breakdown</span></h2>
       <div class="tiles"><button class="tile" ${lb}><div class="l">Expected · week</div><div class="v ${L.estH ? "c-warn" : ""}">${L.estH ? "≈" : ""}${L.E.toFixed(1)} h</div><div class="s">${L.estH ? `<span class="c-warn">${L.estH.toFixed(1)} h estimated</span> from past EODs · rest from EOD figures` : "all from EOD figures"}</div></button><button class="tile" ${lb}><div class="l">Actual · week</div><div class="v ${L.Aest ? "c-warn" : ""}">${L.Aest ? "≈" : ""}${L.At.toFixed(1)} h</div><div class="s">${L.A.toFixed(1)} h from SOD → EOD${L.Aest ? ` · <span class="c-warn">≈${L.Aest.toFixed(1)} h estimated</span> (SOD/EOD not in)` : ""} · ${L.done} of ${L.runs} runs in</div></button><button class="tile" ${lb}><div class="l">Spend · week</div><div class="v ${L.Aest ? "c-warn" : ""}">$${Math.round(L.spend).toLocaleString()}</div><div class="s">actual hours × each driver's rate${L.Aest ? " · estimated part at expected" : ""}</div></button><button class="tile" ${lb}><div class="l">Tracking</div><div class="v c-${cls(L.trk)}">${L.trk == null ? "—" : (L.trk > 0 ? "+" : "") + Math.round(L.trk) + "%"}</div><div class="s">${L.A.toFixed(1)} h actual vs ${L.Ec.toFixed(1)} h expected on days with SOD + EOD in${L.train ? ` · ${L.train.toFixed(1)} h training not counted` : ""}</div></button></div></div>`;
@@ -201,7 +207,8 @@ function feed(t) {
 /* ---- wiring ---- */
 export function wireLive() {
   $$("[data-day]").forEach(b => b.onclick = () => { const d = b.dataset.day; const cur = sel(); S.daySel = cur.includes(d) ? (cur.length > 1 ? cur.filter(x => x !== d) : cur) : [...cur, d].sort(); render(); });
-  $$("[data-days]").forEach(b => b.onclick = () => { const wk = monOf(today()); S.daySel = b.dataset.days === "today" ? [today()] : DAYS.map((_, i) => addDays(wk, i)); render(); });
+  $$("[data-days]").forEach(b => b.onclick = () => { const today_ = b.dataset.days === "today"; if (today_) S.liveWk = monOf(today()); const wk = liveWk(); S.daySel = today_ ? [today()] : DAYS.map((_, i) => addDays(wk, i)); S.daySelWk = wk; render(); });
+  $$("[data-lwk]").forEach(b => b.onclick = () => { const cur = monOf(today()); const v = b.dataset.lwk; S.liveWk = v === "0" ? cur : v === "next" ? addDays(cur, 7) : addDays(liveWk(), +v * 7); render(); });
   $$("[data-go]").forEach(b => b.onclick = () => { S.tab = b.dataset.go; location.hash = S.tab; render(); });
   $$("[data-dismiss]").forEach(b => b.addEventListener("click", e => e.stopPropagation()));
   $$("[data-dismiss]").forEach(b => b.onclick = async () => { await q(sb.from("marks").upsert({ key: b.dataset.dismiss, status: "exc", reviewed: true, note: "Dismissed on the dashboard", by_person: S.me.id, at: new Date().toISOString() })); });

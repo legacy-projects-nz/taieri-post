@@ -1,7 +1,7 @@
 // Scorecard tab: team and driver scores, posts board, review, efficiency, mistakes & entries, labour, reports
 import { sb, q, nzNow, today, addDays, dow, monOf, label, toMin, fmtT, fmt24, fmtTs, fmtTime, esc, $, $$, toast, pill, first, col, pct, isSort, avg, sum } from "/shared/core.js";
 import { scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, band, dayShifts, segTimes, addName, LEG_RUNS, PICKUP_RUNS } from "/shared/score.js";
-import { S, sheet, opt, nm, fnm, weekBar, wireWeek, loadAll, render, scoreData, fn } from "/admin/admin.js";
+import { S, sheet, opt, nm, fnm, weekBar, wireWeek, loadAll, render, scoreData, fn, teamRange, rangeBar, teamStats } from "/admin/admin.js";
 import { dayRow } from "/admin/detail.js";
 import { labourWeek } from "/admin/live.js";
 
@@ -18,9 +18,9 @@ export function scorecardTab() {
 }
 export function tile(l, v, s = "", attrs = "") { return `<${attrs ? "button" : "div"} class="tile" ${attrs}><div class="l">${l}</div><div class="v c-${col(v)}">${pct(v)}</div>${s ? `<div class="s">${s}</div>` : ""}</${attrs ? "button" : "div"}>`; }
 function dash(scores, team) {
-  const W = S.C.weights;
-  const m = k => `data-metric="${k}" data-mwk="${S.week}" title="Tap for every driver and the week-by-week history"`;
-  return `<div class="card"><h2>Team scores<span>week of ${label(S.week)} · ${scores.length} drivers · tap a score for the breakdown</span></h2><div class="tiles">${tile("Overall", team("overall"), `admin ${W.admin} · eff ${W.eff} · acc ${W.acc} · safety ${W.safe}`, m("overall"))}${tile("Admin", team("admin"), "posts on time", m("admin"))}${tile("Efficiency", team("eff"), "expected ÷ actual", m("eff"))}${tile("Accuracy", team("acc"), "NZ Post feed − mistakes", m("acc"))}${tile("Safety", team("safe"), "100% unless entered", m("safe"))}</div></div>
+  const W = S.C.weights; const rg = teamRange(S.week); const T = rg.r === "week" ? { n: scores.length, team } : teamStats(rg);
+  const m = k => `data-metric="${k}" data-mwk="${rg.from}" ${rg.r === "week" ? "" : `data-mto="${rg.to}"`} title="Tap for every driver and the week-by-week history"`;
+  return `<div class="card"><h2>Team scores<span>${rg.txt} · ${T.n} drivers · tap a score for the breakdown</span></h2>${rangeBar()}<div class="tiles">${tile("Overall", T.team("overall"), `admin ${W.admin} · eff ${W.eff} · acc ${W.acc} · safety ${W.safe}`, m("overall"))}${tile("Admin", T.team("admin"), "posts on time", m("admin"))}${tile("Efficiency", T.team("eff"), "expected ÷ actual", m("eff"))}${tile("Accuracy", T.team("acc"), "NZ Post feed − mistakes", m("acc"))}${tile("Safety", T.team("safe"), "100% unless entered", m("safe"))}</div></div>
     <div class="card"><h2>Drivers<span>tap a name for the detail</span></h2>${scores.length ? `<div class="dgrid">${scores.sort((a, b) => (a.overall ?? 101) - (b.overall ?? 101)).map(s => { const d = S.peopleBy[s.driver]; const hrs = Object.values(s.days).reduce((a, x) => a + x.hours, 0);
       return `<button class="dcard" data-driver="${s.driver}" style="border:0;color:inherit;text-align:left"><div class="ring" style="--p:${Math.round(s.overall || 0)};--c:var(--${col(s.overall) === "grey" ? "grey" : col(s.overall)})"><span>${pct(s.overall)}</span></div><div style="flex:1"><b>${esc(d.name)}</b>${d.pay_exclude ? ` <span class="meta">(owner)</span>` : ""}<div class="meta">${hrs.toFixed(1)} h rostered · ${s.onTime}/${s.closed} on time</div><div class="mini">${[["Adm", s.admin], ["Eff", s.eff], ["Acc", s.acc], ["Saf", s.safe]].map(([l, v]) => `<span>${l}</span><div class="bar"><i class="bg-${col(v)}" style="width:${Math.min(100, v || 0)}%"></i></div><span class="c-${col(v)}">${pct(v)}</span>`).join("")}</div><div class="meta">${[s.missing ? `<span class="c-crit">${s.missing} missing</span>` : "", s.late ? `<span class="c-warn">${s.late} late</span>` : "", s.nMist ? `<span class="c-crit">${s.nMist} mistake${s.nMist > 1 ? "s" : ""}</span>` : ""].filter(Boolean).join(" · ") || "no issues"}</div></div></button>`; }).join("")}</div>` : `<p class="empty">No driver data for this week yet. Scores appear once SODs and EODs come in.</p>`}</div>`;
 }
