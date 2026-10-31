@@ -255,12 +255,20 @@ function addonsCard(T, N, n) {
 }
 
 /* ---------- Scores ---------- */
+function scoreRange() { // this week (Mon–Sun) or this month
+  const t = today(); S.scRange ??= "week";
+  if (S.scRange === "month") { const first = t.slice(0, 8) + "01"; const d = new Date(first + "T12:00:00Z"); d.setUTCMonth(d.getUTCMonth() + 1); d.setUTCDate(0); return { from: first, to: d.toISOString().slice(0, 10) }; }
+  const mon = monOf(t); return { from: mon, to: addDays(mon, 6) };
+}
 function scoresCard() {
-  const F = fortnight(today()); const D = { shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, runsBy: S.runsBy };
+  const F = scoreRange(); const D = { shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, runsBy: S.runsBy };
   const sc = scoreFor(S.me.id, F.from, F.to, { ...D, ovs: S.ovs }, S.C); S.sc = sc; S.F = F;
   const tile = (k, l, v) => `<button class="tile ${S.scSel === k ? "sel" : ""}" data-sc="${k}"><div class="l">${l} ▾</div><div class="v c-${col(v)}">${pct(v)}</div><div class="bar"><i class="bg-${col(v)}" style="width:${Math.min(100, v || 0)}%"></i></div></button>`;
   const line = [`${sc.onTime} of ${sc.closed} posts on time`, sc.late ? `${sc.late} late` : "", sc.missing ? `${sc.missing} missing` : "", sc.nMist ? `${sc.nMist} mistake${sc.nMist === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
+  const fresh = F.to < S.C.rules.startDate || (!sc.closed && !sc.effDays.length && !sc.accDays.length && F.from < S.C.rules.startDate);
   return `<div class="card" id="scores"><h2>My scores<span>${label(F.from)} – ${label(F.to)}</span></h2>
+    <div class="seg-btns"><button data-scrange="week" class="${S.scRange === "week" ? "on" : ""}">This week</button><button data-scrange="month" class="${S.scRange === "month" ? "on" : ""}">This month</button></div>
+    ${fresh ? `<p class="hint">Scores count from ${label(S.C.rules.startDate)}. Your first scored shifts will show here.</p>` : ""}
     <div class="tiles" style="grid-template-columns:1fr 1fr">${tile("admin", "Admin", sc.admin)}${tile("eff", "Efficiency", sc.eff)}${tile("acc", "Accuracy", sc.acc)}${tile("safe", "Safety", sc.safe)}</div>
     <div class="meta">Overall <b class="c-${col(sc.overall)}">${pct(sc.overall)}</b> · ${line} · tap a score to see the figures</div>
     ${S.scSel ? scoreDetail(sc, S.scSel) : ""}
@@ -346,6 +354,7 @@ function wire() {
   $$("[data-plan]").forEach(i => i.onchange = async () => { const shift = S.shifts.find(s => s.id === i.dataset.shift); const plan = { ...(shift.plan || {}), [i.dataset.plan]: i.value }; const { error } = await sb.rpc("set_my_plan", { p_shift: shift.id, p_plan: plan }); if (error) toast(error.message, "err"); else { shift.plan = plan; toast("Saved", "ok"); } });
   $$("[data-done]").forEach(b => b.onclick = async () => { const { error } = await sb.rpc("task_done", { p_shift: b.dataset.shift, p_addon: b.dataset.done }); if (error) toast(error.message, "err"); else { toast("Marked done ✓", "ok"); await loadAll(); render(); } });
   $$("[data-sc]").forEach(b => b.onclick = () => { S.scSel = S.scSel === b.dataset.sc ? null : b.dataset.sc; render(); setTimeout(() => $("#scores")?.scrollIntoView({ block: "nearest" }), 0); });
+  $$("[data-scrange]").forEach(b => b.onclick = () => { S.scRange = b.dataset.scrange; render(); setTimeout(() => $("#scores")?.scrollIntoView({ block: "nearest" }), 0); });
   $("#leave-new")?.addEventListener("click", leaveForm);
   $("#prof-edit")?.addEventListener("click", profileForm);
   $("#vchk-btn")?.addEventListener("click", vehicleCheckForm);
@@ -494,7 +503,7 @@ function accSheet(day, code) {
 function entrySheet(e) {
   const K = { praise: "Nice work 👏", issue: "Heads up", note: "Note from Jeremy", mistake: "Mistake recorded", adjust: "Admin points", safety: "Safety", eff: "Efficiency set" };
   sheet(`<h3>${K[e.kind] || e.kind}</h3><p class="meta">${label(e.day, true)}${e.run ? ` · ${esc(e.run)}` : ""} · ${fmtTs(e.created_at)}</p><p><b>${esc(e.title)}</b></p>${e.note ? `<p>${esc(e.note)}</p>` : ""}
-    <dl class="kv">${e.kind === "mistake" && !e.excused ? `<dt>Effect</dt><dd>−${S.C.rules.mistakePct}% Accuracy for the fortnight it falls in</dd>` : ""}${e.excused ? `<dt>Status</dt><dd>${pill("removed — doesn't count", "grey")}</dd>` : ""}${e.admin_pts ? `<dt>Admin</dt><dd>${e.admin_pts > 0 ? "+" : ""}${e.admin_pts} points</dd>` : ""}${e.safety_pct != null ? `<dt>Safety</dt><dd>${e.safety_pct}%</dd>` : ""}${e.eff_pct != null ? `<dt>Efficiency</dt><dd>${e.eff_pct}% for that day</dd>` : ""}</dl>
+    <dl class="kv">${e.kind === "mistake" && !e.excused ? `<dt>Effect</dt><dd>−${S.C.rules.mistakePct}% Accuracy for the week and month it falls in</dd>` : ""}${e.excused ? `<dt>Status</dt><dd>${pill("removed — doesn't count", "grey")}</dd>` : ""}${e.admin_pts ? `<dt>Admin</dt><dd>${e.admin_pts > 0 ? "+" : ""}${e.admin_pts} points</dd>` : ""}${e.safety_pct != null ? `<dt>Safety</dt><dd>${e.safety_pct}%</dd>` : ""}${e.eff_pct != null ? `<dt>Efficiency</dt><dd>${e.eff_pct}% for that day</dd>` : ""}</dl>
     <div class="row">${e.show_driver && !e.seen_at && !S.viewAs ? `<button class="btn sm" id="en-seen">Viewed ✓</button>` : ""}<button class="btn ghost sm" data-dayv="${e.day}">That day</button></div>${e.seen_at ? `<p class="meta">You viewed this ${fmtTs(e.seen_at)}.</p>` : ""}<p class="hint">Think it's wrong? Message Jeremy.</p>`, (bg, close) => { bg.querySelector("#en-seen")?.addEventListener("click", async () => { const { error } = await sb.rpc("entry_seen", { p_id: e.id }); if (error) return toast(error.message, "err"); e.seen_at = new Date().toISOString(); close(); toast("Marked as viewed", "ok"); render(); }); });
 }
 function weekSheet(w) {
