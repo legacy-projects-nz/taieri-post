@@ -120,10 +120,10 @@ export function driverDay(drv, d) {
   return { d, drv, hol, D, exp, est, act, actEst, actIsEst: act == null, actHow, train, spend: (actEst ?? exp) * rate, rate, runs: runSegs.length, done: eods.length, sod, eods, runSegs, effRows, trk: act != null && exp ? ((act - train) - exp) / exp * 100 : null };
 }
 export function labourWeek(wk) {
-  let E = 0, Ec = 0, A = 0, Aest = 0, P = 0, spend = 0, runs = 0, done = 0, train = 0, estH = 0; const rows = [];
+  let E = 0, Ec = 0, A = 0, Aest = 0, P = 0, spend = 0, runs = 0, done = 0, train = 0, estH = 0, trainAll = 0; const rows = [];
   for (let i = 0; i < 7; i++) { const d = addDays(wk, i); let e = 0, ec = 0, a = null, aest = 0, sp = 0, tr = 0, est = 0, n = 0; const hol = S.C.holidays[d];
     for (const drv of S.drivers) { if (drv.pay_exclude) continue; const r = driverDay(drv, d); if (!r) continue; n++;
-      e += r.exp; if (r.est) est += r.exp; runs += r.runs; done += r.done; tr += r.train; sp += r.spend; if (r.act != null) { a = (a || 0) + r.act; ec += r.exp; } else aest += r.actEst || 0; }
+      e += r.exp; if (r.est) est += r.exp; runs += r.runs; done += r.done; sp += r.spend; trainAll += r.train; if (r.act != null) { a = (a || 0) + r.act; ec += r.exp; tr += r.train; } else aest += r.actEst || 0; }
     E += e; Ec += ec; A += a || 0; Aest += aest; spend += sp; train += tr; estH += est; P += (a || 0) + aest;
     rows.push({ d, e, ec, a, aest, at: (a || 0) + aest, est, sp, tr, hol, n }); }
   const trk = Ec && A ? ((A - train) - Ec) / Ec * 100 : null;
