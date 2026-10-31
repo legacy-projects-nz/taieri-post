@@ -26,7 +26,7 @@ export function fixTab() {
   const miss = L.filter(i => i.st === "miss").length, part = L.filter(i => i.st === "part").length, late = L.filter(i => i.st === "late").length;
   return `${weekBar(`<label class="chk ${both ? "on" : ""}"><input type="checkbox" id="fx-both" ${both ? "checked" : ""}>include last week</label>`)}
     <div class="card"><h2>Fix posts<span>${L.length ? `${miss} missing · ${part} incomplete · ${late} late` : "all clear"}</span></h2>
-    <p class="hint">Every SOD or EOD that is missing, incomplete or late. <b>Fix</b> opens an editor: add a missing SOD or EOD for the driver, correct the start or finish time, or fill in missing figures. Fixed items drop off the list straight away. <b>Excuse</b> removes the deduction, <b>OK</b> accepts a late post as it is.</p>
+    <p class="hint">Every SOD or EOD that is missing, incomplete or late. <b>Fix</b> opens an editor: add a missing SOD or EOD for the driver, correct the start or finish time, or fill in missing figures. Once you save a fix, choose whether it is excused (no deduction) or recorded as an admin error, and it drops off the list. <b>Excuse</b> removes the deduction, <b>OK</b> accepts a late post as it is.</p>
     ${Object.entries(by).map(([day, items]) => `<h4 style="margin:12px 0 4px">${label(day, true)}</h4><div class="list">${items.map(it => `<div class="item ${it.st === "miss" || it.st === "over" ? "crit" : "warn"}"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(nm(it.driver))}</b> · ${chip(it)}<span class="meta"> ${esc(STATE_LABEL[it.st])}${it.st === "part" || it.st === "miss" ? "" : ""}</span></span><span class="row" style="flex:0;gap:4px"><button class="btn sm" data-fx="fix" data-key="${esc(it.key)}">Fix</button><button class="btn sm ghost" data-fx="exc" data-key="${esc(it.key)}" data-drv="${it.driver}">Excuse</button>${it.st === "late" || it.st === "part" ? `<button class="btn sm ghost" data-fx="ok" data-key="${esc(it.key)}" data-drv="${it.driver}">OK</button>` : ""}</span></div></div>`).join("")}</div>`).join("") || `<p class="empty">✓ Nothing to fix.</p>`}</div>`;
 }
 
@@ -45,6 +45,14 @@ export function wireFix() {
   });
 }
 
+/** Outcome picker shown on each fix form: once filled in, the item leaves the list either excused or logged as an admin error */
+const OUTCOME = `<label class="f full">Once saved<select class="in" id="oc"><option value="exc">Excuse it: no deduction</option><option value="err">Record as admin error: deduction stays, logged on the driver's record</option></select></label>`;
+async function settle(it, oc, what) {
+  if (!oc) return; const at = new Date().toISOString();
+  await q(sb.from("marks").upsert({ key: it.key, driver: it.driver, reviewed: true, by_person: S.me.id, at, ...(oc === "exc" ? { status: "exc", note: `Excused after fix (${what})` } : { note: `Admin error recorded (${what})` }) }));
+  if (oc === "err") await sb.from("entries").insert({ driver: it.driver, day: it.day, run: it.shift?.run || null, kind: "adjust", title: `Admin error · ${what}`, note: `${what} filled in by ${first(S.me.name)} in Fix posts`, admin_pts: 0, show_driver: false, created_by: S.me.id });
+}
+
 /** SOD: add one, or change the time they started, van, km and note */
 function sodSheet(it) {
   const row = it.row; const sh = it.shift; const sm = row ? nzNow(new Date(row.sent_at)).min : null;
@@ -55,11 +63,11 @@ function sodSheet(it) {
     <label class="f">Start km<input class="in" id="km" type="number" inputmode="numeric" value="${row?.start_km ?? ""}"></label>
     <label class="f">Run ID<input class="in" id="rid" value="${esc(row?.run_id || "")}"></label>
     <label class="f full">Note<input class="in" id="nt" value="${esc(row?.note || "")}" placeholder="e.g. told me by text"></label>
-    <button class="btn full" type="submit">Save</button></form>`, (bg, close) => {
+    ${OUTCOME}<button class="btn full" type="submit">Save</button></form>`, (bg, close) => {
     bg.querySelector("#sf").onsubmit = async e => { e.preventDefault(); const g = x => bg.querySelector("#" + x).value; const at = nzToIso(it.day, g("tm"));
       const vals = { van: g("van") || null, start_km: g("km") ? +g("km") : null, run_id: g("rid") || null, note: g("nt") || (row ? row.note : `Entered by ${first(S.me.name)}`) };
       const { error } = row ? await sb.from("sod").update({ sent_at: at, edited_at: new Date().toISOString(), ...vals }).eq("shift_id", row.shift_id) : await sb.from("sod").insert({ shift_id: sh.id, driver: it.driver, sent_at: at, ...vals });
-      if (error) return toast(error.message, "err"); close(); toast("SOD saved", "ok"); await loadAll(); render(); };
+      if (error) return toast(error.message, "err"); await settle(it, g("oc"), "SOD"); close(); toast("SOD saved", "ok"); await loadAll(); render(); };
   });
 }
 
@@ -71,9 +79,9 @@ function eodFix(it) {
     <form class="frm" id="ef2"><label class="f">Finish time<input class="in" type="time" id="tm" required></label>
     <label class="f">${tge ? "Delivery total" : "Total parcels"}<input class="in" id="p" type="number" inputmode="numeric"></label>
     <label class="f">${tge ? "Jobs" : "Stops"}<input class="in" id="s" type="number" inputmode="numeric"></label>
-    <label class="f full">Note<input class="in" id="nt" placeholder="e.g. told me by text"></label><button class="btn full" type="submit">Save</button></form>`, (bg, close) => {
+    <label class="f full">Note<input class="in" id="nt" placeholder="e.g. told me by text"></label>${OUTCOME}<button class="btn full" type="submit">Save</button></form>`, (bg, close) => {
     bg.querySelector("#ef2").onsubmit = async e => { e.preventDefault(); const g = x => bg.querySelector("#" + x).value; const t = g("tm");
       const { error } = await sb.from("eod").insert({ shift_id: sh.id, driver: it.driver, sent_at: nzToIso(it.day, t), finish_time: t, parcels: g("p") ? +g("p") : null, stops: g("s") ? +g("s") : null, note: g("nt") || `Entered by ${first(S.me.name)}` });
-      if (error) return toast(error.message, "err"); close(); toast("EOD saved", "ok"); await loadAll(); render(); };
+      if (error) return toast(error.message, "err"); await settle(it, g("oc"), "EOD"); close(); toast("EOD saved", "ok"); await loadAll(); render(); };
   });
 }
