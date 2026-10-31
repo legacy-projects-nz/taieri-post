@@ -5,6 +5,7 @@ import { AREAS, AREA_LABEL } from "/shared/config.js";
 import { cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, segTimes } from "/shared/score.js";
 import { runBoardTab, wireRunBoard } from "/admin/runboard.js";
 import { scorecardTab, wireScorecard } from "/admin/scorecard.js";
+import { liveTab as liveTab2, wireLive as wireLive2 } from "/admin/live.js";
 
 export const S = { me: null, tab: location.hash.slice(1) || "live", week: monOf(today()), set: {}, C: null, runs: [], runsBy: {}, vans: [], vansBy: {}, addons: [], rules: [], people: [], peopleBy: {}, shifts: [], sods: [], eods: [], marks: [], entries: [], feed: [], ovs: [], changes: [], items: [], acks: [], sent: [], msgs: [], recips: [], leave: [], alerts: [], locs: [], skills: [], notes: [], vchk: [], log: [] };
 const app = $("#app");
@@ -47,21 +48,22 @@ export async function loadAll() {
   S.sodBy = Object.fromEntries(S.sods.map(s => [s.shift_id, s])); S.eodBy = Object.fromEntries(S.eods.map(e => [e.shift_id, e]));
 }
 
-const TABS = [["live", "Live", "alerts"], ["runboard", "Run Board", "roster"], ["scorecard", "Scorecard", "scorecard"], ["alerts", "Alerts", "alerts"], ["messages", "Messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"]];
+const TABS = [["live", "Live", "alerts"], ["runboard", "Run Board", "roster"], ["classic", "Run Board (classic)", "roster"], ["scorecard", "Scorecard", "scorecard"], ["comms", "Alerts & messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"]];
 export function render(soft = false) {
   if (soft && (document.activeElement?.matches("input,textarea,select") || $(".sheet-bg"))) return;
   const n = nzNow(); const tabs = TABS.filter(([, , a]) => S.me.can(a));
   if (!tabs.some(([k]) => k === S.tab)) S.tab = tabs[0][0];
-  const badge = { live: S.alerts.filter(a => !a.resolved_at).length, leave: S.leave.filter(l => l.status === "pending").length, runboard: S.items.filter(i => i.roster_changes.status === "awaiting_approval").length, alerts: S.alerts.filter(a => !a.resolved_at).length };
+  const badge = { live: S.alerts.filter(a => !a.resolved_at).length, leave: S.leave.filter(l => l.status === "pending").length, runboard: S.items.filter(i => i.roster_changes.status === "awaiting_approval").length, comms: S.alerts.filter(a => !a.resolved_at).length };
   app.innerHTML = `<div class="wrap">
-    <div class="top"><div><div class="brand">Taieri Ops</div><h1>${({ live: "Live board", runboard: "Run Board", scorecard: "Driver Scorecard", alerts: "Alerts", messages: "Messages", leave: "Leave", fleet: "Fleet", timing: "Timing rules", people: "People & settings" })[S.tab]}</h1></div>
+    <div class="top"><div><div class="brand">Taieri Ops</div><h1>${({ live: "Live board", runboard: "Run Board", classic: "Run Board (classic)", scorecard: "Driver Scorecard", comms: "Alerts & messages", leave: "Leave", fleet: "Fleet", timing: "Timing rules", people: "People & settings" })[S.tab]}</h1></div>
       <div class="upd"><span class="dot live"></span>live · ${fmtT(n.min)}<br>${esc(first(S.me.name))} · <button class="linkbtn" id="signout">sign out</button></div></div>
     <nav class="nav">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? "on" : ""}">${l}${badge[k] ? `<span class="b ${k === "runboard" ? "warn" : ""}">${badge[k]}</span>` : ""}</button>`).join("")}</nav>
-    <div id="view">${({ live: liveTab, runboard: runBoardTab, scorecard: scorecardTab, alerts: alertsTab, messages: messagesTab, leave: leaveTab, fleet: fleetTab, timing: timingTab, people: peopleTab })[S.tab]()}</div>
+    <div id="view">${({ live: liveTab2, runboard: runBoardTab, classic: classicTab, scorecard: scorecardTab, comms: () => messagesTab() + alertsTab(), leave: leaveTab, fleet: fleetTab, timing: timingTab, people: peopleTab })[S.tab]()}</div>
     <p class="foot">Safe. Sharp. Swift. · <a href="/">driver portal</a></p></div>`;
   $("#signout").onclick = signOut;
   $$("[data-tab]").forEach(b => b.onclick = () => { S.tab = b.dataset.tab; location.hash = S.tab; render(); });
-  ({ live: wireLive, runboard: wireRunBoard, scorecard: wireScorecard, alerts: wireAlerts, messages: wireMessages, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople })[S.tab]?.();
+  if (S.tab !== "live") { /* the live board draws its own map */ }
+  ({ live: wireLive2, runboard: wireRunBoard, classic: () => { }, scorecard: wireScorecard, comms: () => { wireMessages(); wireAlerts(); }, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople })[S.tab]?.();
 }
 
 /* ================= shared helpers ================= */
@@ -123,11 +125,17 @@ function wireLive() {
   if (pts.length) map.fitBounds(L.latLngBounds(pts.map(l => [l.lat, l.lng])).pad(0.3), { maxZoom: 13 });
 }
 
+/* ================= CLASSIC RUN BOARD ================= */
+function classicTab() {
+  return `<div class="card" style="padding:8px"><p class="hint" style="margin:0 0 6px">The old drag-and-drop Run Board, running on the new database. Every change lands on the live roster straight away; when you're done, open the <button class="linkbtn" data-tab="runboard">Run Board (new)</button> tab and press <b>Send changes</b> so drivers are told. <a href="/admin/classic/" target="_blank" rel="noopener">Open full screen ↗</a></p>
+    <iframe src="/admin/classic/" title="Run Board (classic)" style="width:100%;height:calc(100vh - 220px);min-height:700px;border:0;border-radius:10px;background:#eaedf1"></iframe></div>`;
+}
+
 /* ================= ALERTS ================= */
 function alertsTab() {
   const open = S.alerts.filter(a => !a.resolved_at), done = S.alerts.filter(a => a.resolved_at);
   const rem = S.set.reminders || {};
-  return `<div class="card"><h2>Open<span>${open.length}</span></h2>${open.length ? `<div class="list">${open.map(alertRow).join("")}</div><button class="btn ghost sm" id="resolve-all">Resolve all</button>` : `<p class="empty">✓ Nothing open</p>`}</div>
+  return `<div class="card"><h2>Open alerts<span>${open.length}</span></h2>${open.length ? `<div class="list">${open.map(alertRow).join("")}</div><button class="btn ghost sm" id="resolve-all">Resolve all</button>` : `<p class="empty">✓ Nothing open</p>`}</div>
     <div class="card"><h2>How alerts work</h2><p class="hint">Every minute the system checks: SOD not in by rostered start + ${S.C.rules.sodGrace} min · EOD not in ${S.C.rules.eodHours} h after a run finishes · timing windows due soon or missed · roster changes not confirmed before the run starts · vehicle checks due Thursday 5pm. Each alert appears here, pings the driver's phone, and (when email chasing is on) emails the driver once.</p>
       <label class="chk ${rem.enabled ? "on" : ""}"><input type="checkbox" id="rem-on" ${rem.enabled ? "checked" : ""} ${S.me.can("people") ? "" : "disabled"}>Email drivers automatically when a post is late (between ${esc(rem.from || "07:00")} and ${esc(rem.to || "20:00")})</label></div>
     <div class="card"><h2>Resolved recently<span>${done.length}</span></h2>${done.length ? `<div class="list">${done.slice(0, 30).map(alertRow).join("")}</div>` : `<p class="empty">Nothing yet</p>`}</div>`;

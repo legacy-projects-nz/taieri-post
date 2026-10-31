@@ -129,7 +129,7 @@ export function wireScorecard() {
 }
 const r = v => v == null ? "" : Math.round(v);
 
-function itemSheet(key) {
+export function itemSheet(key) {
   const [day, drv, code, kind] = key.split("|"); const D = scoreData(); const s = scoreFor(drv, day, day, D, S.C); const it = s.items.find(i => i.key === key); if (!it) return;
   const row = it.row;
   sheet(`<h3>${esc(nm(drv))} · ${esc(it.label)}</h3><p class="meta">${label(day, true)} · due ${fmtT(it.due % 1440)}</p>
@@ -170,7 +170,7 @@ function effSheet(r) {
     bg.querySelector("#clr").onclick = async () => { await sb.from("eff_overrides").delete().eq("shift_id", r.x.shift.id); close(); };
   });
 }
-function driverSheet(id) {
+export function driverSheet(id) {
   const F = fortnight(S.week); const s = scoreFor(id, F.from, F.to, scoreData(), S.C); const d = S.peopleBy[id]; const b = band(s.eff);
   const weeks = Array.from({ length: 8 }, (_, i) => addDays(S.week, -7 * i)).reverse().map(w => ({ w, s: scoreFor(id, w, addDays(w, 6), scoreData(), S.C) }));
   sheet(`<h3>${esc(d.name)}</h3><p class="meta">Pay fortnight ${label(F.from)} – ${label(F.to)} · ${s.onTime}/${s.closed} posts on time${b != null ? ` · Band ${b || "<1"} (${esc(S.C.bands[b] || "")})` : ""}</p>
