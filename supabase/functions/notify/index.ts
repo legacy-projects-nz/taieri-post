@@ -63,6 +63,12 @@ Deno.serve(async (req) => {
     await sendEmail(sec, set, p.email, `Your Taieri Post scorecard: ${label(body.from)} – ${label(body.to)}`, wrap(`<p>Hi ${esc(first(p.name))},</p><p>Here is your Taieri Post scorecard for ${esc(longLabel(body.from))} to ${esc(longLabel(body.to))}.</p><table style="border-collapse:collapse;min-width:280px">${row("Posts on time", s.onTime != null ? `${s.onTime} of ${s.closed}` : null)}${row("Admin", pct(s.admin))}${row("Efficiency", pct(s.eff))}${row("Accuracy", pct(s.acc))}${row("Safety", pct(s.safe))}${row("Overall", pct(s.overall))}</table>${s.mistakes?.length ? `<p><b>Mistakes recorded (${s.mistakes.length})</b> (−${set.rules?.mistakePct ?? 10}% Accuracy each)</p><ul>${s.mistakes.map((m: string) => `<li>${esc(m)}</li>`).join("")}</ul>` : ""}${s.misses?.length ? `<p><b>Posts late or missing (${s.misses.length})</b></p><ul>${s.misses.map((m: string) => `<li>${esc(m)}</li>`).join("")}</ul>` : "<p><b>No misses. Great work.</b></p>"}<p>SOD is due within ${set.rules?.sodGrace ?? 15} minutes of your rostered start, and the EOD within ${set.rules?.eodHours ?? 2} hours of finishing. Every field in the EOD counts toward your Admin and Efficiency scores.</p><p><a href="${SITE}/">Open your page</a> to see the figures behind each score.</p>${sig}`));
     return json({ ok: true });
   }
+  if (body.type === "email") {   // classic Run Board: approval / roster emails that used to go through Outlook
+    if (!can("roster") && !can("leave") && !can("scorecard")) return json({ error: "no" }, 403);
+    const to = (Array.isArray(body.to) ? body.to : [body.to]).filter((x: string) => /@/.test(x || "")); if (!to.length) return json({ error: "no recipient" }, 400);
+    const r = await sendEmail(sec, set, to, String(body.subject || "Taieri Post").slice(0, 200), wrap(String(body.html || "")), body.cc?.[0]);
+    return json({ ok: true, r });
+  }
   return json({ error: "unknown type" }, 400);
 });
 const pct = (v: any) => v == null ? "—" : `${Math.round(v)}%`;

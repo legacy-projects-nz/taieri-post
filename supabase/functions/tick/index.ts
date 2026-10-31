@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
 
   // write alerts, push, email
   const staffAlerts = await staffWith(sb, "alerts"); const staffIds = staffAlerts.map(p => p.id);
-  for (const a of newAlerts) { const { _push, _email, _rule, _staffOnly, _area, ...row } = a; const { data: ins, error } = await sb.from("alerts").insert(row).select().single(); if (error) { console.error(error); continue; } out.push(row.dedupe_key);
+  for (const a of newAlerts) { const { _push, _email, _rule, _staffOnly, _area, ...row } = a; const { data: ins, error } = await sb.from("alerts").upsert(row, { onConflict: "dedupe_key", ignoreDuplicates: true }).select().maybeSingle(); if (error) { console.error(error); continue; } if (!ins) continue; out.push(row.dedupe_key);
     const staff = _area ? (await staffWith(sb, _area)).map(p => p.id) : staffIds;
     await push(sb, sec, set, [...new Set(staff)], { title: row.title, body: row.body, url: "/admin/#live", tag: row.dedupe_key });
     if (_push && !_staffOnly) await push(sb, sec, set, _push.to, { title: _push.title, body: _push.body, url: "/", tag: row.dedupe_key });
