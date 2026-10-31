@@ -142,7 +142,7 @@ function wireLive() {
   $$("[data-resolve]").forEach(b => b.onclick = async () => { await q(sb.from("alerts").update({ resolved_at: new Date().toISOString(), resolved_by: S.me.id }).eq("id", b.dataset.resolve)); });
   const el = $("#map"); if (!el || !window.L) return;
   const map = L.map(el, { zoomControl: true, attributionControl: true }).setView([-45.88, 170.4], 10);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { attribution: "© OpenStreetMap © CARTO", maxZoom: 19 }).addTo(map);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap contributors", maxZoom: 19, className: "osm-dark" }).addTo(map);
   const latest = {}; for (const l of S.locs) if (!latest[l.driver]) latest[l.driver] = l;
   const pts = Object.values(latest).filter(l => { const D = S.shifts.find(s => s.id === l.shift_id); return D ? !S.eodBy[D.id] : true; });
   for (const l of pts) { const stale = Date.now() - new Date(l.at) > 600e3; L.marker([l.lat, l.lng], { icon: L.divIcon({ className: "", html: `<div class="mk ${stale ? "stale" : ""}">${esc(fnm(l.driver))}</div>`, iconAnchor: [20, 12] }) }).addTo(map).bindPopup(`<b>${esc(nm(l.driver))}</b><br>${esc(fmtTs(l.at))}${l.speed ? `<br>${Math.round(l.speed * 3.6)} km/h` : ""}`); }
