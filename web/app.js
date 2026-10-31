@@ -238,7 +238,7 @@ function addonsCard(T, N, n) {
     const code = x.shift.run; const opts = S.addons.filter(a => a.runs.includes(code) && !(sat && a.no_saturday) && !a.id.startsWith("tw_"));
     const on = new Set(x.shift.addons || []); const plan = x.shift.plan || {}; const done = x.shift.done || {};
     const mine = opts.filter(o => on.has(o.id)); const nDone = mine.filter(o => done[o.id]).length;
-    const btn = o => { const rule = S.rules.find(r => r.addon === o.id); const when = rule ? winTxt(rule) : plan[o.id] ? `planned ${fmtT(toMin(plan[o.id]))}` : "";
+    const btn = o => { const rules = S.rules.filter(r => r.addon === o.id && (r.runs.includes("ALL") || r.runs.includes(code)) && (r.days || []).includes(dow(D.day) + 1)); const when = rules.length ? rules.map(r => `${r.name} · ${winTxt(r)}`).join(" · ") : plan[o.id] ? `planned ${fmtT(toMin(plan[o.id]))}` : "";
       if (done[o.id]) return `<div class="ab done"><b>✓ ${esc(o.name)}</b><small>done ${fmtTime(done[o.id])}</small></div>`;
       if (isT && !S.viewAs) return `<button class="ab" data-done="${o.id}" data-shift="${x.shift.id}"><b>${esc(o.name)}</b><small>${esc(when || "tap when done")}</small></button>`;
       return `<div class="ab plain"><b>${esc(o.name)}</b>${when ? `<small>${esc(when)}</small>` : ""}</div>`; };
