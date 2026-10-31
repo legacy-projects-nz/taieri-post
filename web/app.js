@@ -88,6 +88,7 @@ function render() {
     ${messagesCard()}
     ${pair(todayCard(T, nextDay, n), addonsCard(T, nextDay, n))}
     ${scoresCard()}
+    ${pair(nextShiftCard(nextDay, n), nextTasksCard(nextDay, n))}
     ${pair(vanCard(T, nextDay), shiftsCard(t))}
     ${pair(toFixCard(n), fromJeremy())}
     ${pair(leaveCard(), detailsCard())}
@@ -223,9 +224,13 @@ function todayCard(T, N, n) {
         ${S.locOn ? `<p class="hint">📍 Sharing your location with the depot until your EOD.</p>` : ""}</div>`;
     }
   }
-  const lead = !T ? (hol ? `<p class="hint">Today: ${esc(hol.name)}</p>` : `<p class="hint">Day off today</p>`) : "";
-  if (N) return `<div class="card today"><h2>Next shift<span>${label(N.day)}</span></h2>${lead}<div class="big bigrow"><span>${fmtT(N.start)}–${fmtT(N.end)}</span>${vanChips(N)}</div><div class="meta" style="margin-top:-4px">${N.hours} h rostered</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}</div>`;
-  return `<div class="card today"><h2>Next shift</h2>${lead}<div class="big">Not on the roster yet</div><p class="hint">Your next shift shows here once the roster is out.</p></div>`;
+  const why = hol ? esc(hol.name) : !T ? "Day off today" : "Today's shift is done ✓";
+  return `<div class="card"><h2>Today<span>${label(n.date)}</span></h2><p class="hint" style="font-size:15px">${why}</p></div>`;
+}
+const dayTag = d => `${d === addDays(today(), 1) ? "Tomorrow · " : ""}${label(d)}`;
+function nextShiftCard(N, n) {
+  if (!N) return `<div class="card nextc"><h2>Next shift</h2><div class="big">Not on the roster yet</div><p class="hint">Your next shift shows here once the roster is out.</p></div>`;
+  return `<div class="card nextc"><h2>Next shift<span>${dayTag(N.day)}</span></h2><div class="big bigrow"><span>${fmtT(N.start)}–${fmtT(N.end)}</span>${vanChips(N)}</div><div class="meta" style="margin-top:-4px">${N.hours} h rostered</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}</div>`;
 }
 function vanCard(T, N) {
   const src = T && T.segs.some(x => x.shift.van) ? T : N && N.segs.some(x => x.shift.van) ? N : null; if (!src) return "";
@@ -251,16 +256,19 @@ function shiftsCard(t) {
 }
 
 /* ---------- Add-ons (beside the shift: one button per add-on, tap = done) ---------- */
-function addonsCard(T, N, n) {
-  const runSeg = D => D && D.segs.filter(x => !x.sort && (S.addons.some(a => a.runs.includes(x.shift.run)) || x.shift.addons?.length || rulesFor(x, D.day).length));
-  const thisDone = !T || !runSeg(T)?.length || n.min >= Math.max(...runSeg(T).map(x => x.en ?? x.st));
-  const nextDays = Object.values(S.days).filter(d => d.day > n.date && runSeg(d)?.length).sort((a, b) => a.day < b.day ? -1 : 1)[0];
-  const showThis = !thisDone && runSeg(T)?.length, showNext = nextDays && runSeg(nextDays)?.length;
-  if (!showThis && !showNext) return `<div class="card"><h2>Today's tasks</h2><p class="hint">No add-ons or timed tasks on your next shift.</p></div>`;
-  S.addTab ??= showThis ? "this" : "next"; if (S.addTab === "this" && !showThis) S.addTab = "next"; if (S.addTab === "next" && !showNext) S.addTab = "this";
-  const D = S.addTab === "this" ? T : nextDays; const isT = D.day === n.date;
+function runSegOf(D) { return D && D.segs.filter(x => !x.sort && (S.addons.some(a => a.runs.includes(x.shift.run)) || x.shift.addons?.length || rulesFor(x, D.day).length)); }
+function addonsCard(T, N, n) {   // today's tasks, only while today's run is still going
+  const rs = runSegOf(T); const done = !T || !rs?.length || n.min >= Math.max(...rs.map(x => x.en ?? x.st));
+  return done ? "" : tasksCard(T, n, false);
+}
+function nextTasksCard(N, n) {   // tasks for the next shift (tomorrow when rostered), grey side bar
+  if (!N) return `<div class="card nextc"><h2>Next tasks</h2><p class="hint">Your tasks show here once your next shift is on the roster.</p></div>`;
+  return tasksCard(N, n, true);
+}
+function tasksCard(D, n, next) {
+  const isT = !next && D.day === n.date;
   const sat = dayName(D.day) === "Sat";
-  const blocks = runSeg(D).map(x => {
+  const blocks = (runSegOf(D) || []).map(x => {
     const code = x.shift.run; const opts = S.addons.filter(a => a.runs.includes(code) && !(sat && a.no_saturday) && !a.id.startsWith("tw_"));
     const on = new Set(x.shift.addons || []); const plan = x.shift.plan || {}; const done = x.shift.done || {};
     // one list: every timed task on the run, then any add-on that has no timed task of its own
@@ -282,9 +290,8 @@ function addonsCard(T, N, n) {
           ${o.task && isOn ? `<input class="in" type="time" step="900" style="flex:0 0 120px;min-height:40px" value="${esc(plan[o.id] || "")}" data-plan="${o.id}" data-shift="${x.shift.id}" aria-label="Planned time for ${esc(o.name)}">` : ""}</div>`; }).join("")}</div>
         <p class="hint" style="margin:6px 0 0">Ticks and times save straight away and show on the Run Board${opts.some(o => o.task && on.has(o.id)) ? " (your planned times are your game plan)" : ""}.</p></details></div>`;
   }).join("");
-  return `<div class="card"><h2>${isT ? "Today's tasks" : "Tasks"}<span>${isT ? "add-ons + timed tasks" : label(D.day)}${nextDays && S.addTab === "this" ? ` · next: ${label(nextDays.day)}` : ""}</span></h2>
-    ${showThis && showNext ? `<div class="seg-btns"><button data-tab="this" class="${S.addTab === "this" ? "on" : ""}">This shift</button><button data-tab="next" class="${S.addTab === "next" ? "on" : ""}">Next shift</button></div>` : ""}
-    ${blocks}${isT ? `<p class="hint" style="margin:0">Orange = not done yet · red = due within the hour or missed · green = done. Tap Done as you finish each one; Jeremy sees it straight away.</p>` : ""}</div>`;
+  return `<div class="card${next ? " nextc" : ""}"><h2>${isT ? "Today's tasks" : "Next tasks"}<span>${isT ? "add-ons + timed tasks" : dayTag(D.day)}</span></h2>
+    ${blocks || `<p class="hint">Nothing extra on this shift.</p>`}${isT ? `<p class="hint" style="margin:0">Orange = not done yet · red = due within the hour or missed · green = done. Tap Done as you finish each one; Jeremy sees it straight away.</p>` : ""}</div>`;
 }
 
 /* ---------- Scores ---------- */
@@ -385,7 +392,6 @@ function wire() {
   $$("[data-sod-late]").forEach(b => b.onclick = () => sendSod(b.dataset.sodLate, true));
   $$("[data-eod]").forEach(b => b.onclick = () => eodForm(b.dataset.eod, !!b.dataset.sort));
   $$("[data-eodedit]").forEach(b => b.onclick = () => eodForm(b.dataset.eodedit, !!b.dataset.sort, true));
-  $$("[data-tab]").forEach(b => b.onclick = () => { S.addTab = b.dataset.tab; render(); });
   $$("[data-addon]").forEach(c => c.onchange = async () => { const shift = S.shifts.find(s => s.id === c.dataset.shift); const set = new Set(shift.addons || []); c.checked ? set.add(c.dataset.addon) : set.delete(c.dataset.addon); const { error } = await sb.rpc("set_my_addons", { p_shift: shift.id, p_addons: [...set] }); if (error) { toast(error.message, "err"); c.checked = !c.checked; } else { shift.addons = [...set]; render(); } });
   $$("[data-plan]").forEach(i => i.onchange = async () => { const shift = S.shifts.find(s => s.id === i.dataset.shift); const plan = { ...(shift.plan || {}), [i.dataset.plan]: i.value }; const { error } = await sb.rpc("set_my_plan", { p_shift: shift.id, p_plan: plan }); if (error) toast(error.message, "err"); else { shift.plan = plan; toast("Saved", "ok"); } });
   $$("[data-done]").forEach(b => b.onclick = async () => { const { error } = await sb.rpc("task_done", { p_shift: b.dataset.shift, p_addon: b.dataset.done }); if (error) toast(error.message, "err"); else { toast("Marked done ✓", "ok"); await loadAll(); render(); } });

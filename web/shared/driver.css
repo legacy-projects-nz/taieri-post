@@ -63,3 +63,9 @@ details summary{font-size:16px;min-height:44px}
   .tk{gap:10px}
 }
 @media (prefers-reduced-motion:no-preference){.card.today{animation:in .4s ease}}
+
+/* tomorrow / next shift boxes: grey side bar so they read as "coming up", not "now" */
+.card.nextc{border:1px solid var(--line);border-left:7px solid var(--grey)}
+.card.nextc .big{white-space:nowrap}.card.nextc .seg .rn{min-width:0}.card.nextc .seg .tm{white-space:nowrap}
+.card.nextc .tags{margin-top:6px}
+@media (max-width:719px){.card.nextc .big{font-size:24px}}
