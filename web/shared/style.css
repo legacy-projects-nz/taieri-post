@@ -184,7 +184,9 @@ button.qb:disabled{opacity:.4}
 /* driver app: keep lines whole in the Today / Next shift box */
 .card.today .seg .tm{white-space:nowrap}.card.today .seg .rn{min-width:0}.card.today .seg .rn .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card.today .big{white-space:nowrap}.card.today .tags{margin-top:6px}
-@media (max-width:719px){.pair .card.today .big{font-size:17px}.pair .card.today .big small{display:block;font-size:11.5px}.pair .tag.van{font-size:14px}.pair .card.today .seg .rn{font-size:14px}}
+.bigrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.bigrow>span{white-space:nowrap}
+.card.today .seg .rn{font-size:15px}
+@media (max-width:719px){.pair .card.today .big{font-size:17px}.pair .card.today .big small{font-size:11.5px}.pair .tag.van{font-size:14px}.pair .card.today .seg .rn{font-size:14px}}
 
 /* driver app: Today's tasks — one list, three lines each, orange / red / green */
 .tks{display:flex;flex-direction:column;gap:6px;margin-top:8px}
