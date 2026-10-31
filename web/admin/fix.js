@@ -41,14 +41,16 @@ export function wireFix() {
     const key = b.dataset.key; const act = b.dataset.fx;
     if (act === "fix") { const it = findItem(key); if (it) it.kind === "SOD" ? sodSheet(it) : eodFix(it); return; }
     const row = { key, driver: b.dataset.drv, reviewed: true, by_person: S.me.id, at: new Date().toISOString(), status: act === "exc" ? "exc" : "ok", note: act === "exc" ? "Excused in Fix posts" : "Accepted in Fix posts" };
-    await q(sb.from("marks").upsert(row)); toast(act === "exc" ? "Excused" : "Marked OK", "ok");
+    await q(sb.from("marks").upsert(row)); toast(act === "exc" ? "Excused" : "Marked OK", "ok"); await loadAll(); render();
   });
 }
 
 /** Outcome picker shown on each fix form: once filled in, the item leaves the list either excused or logged as an admin error */
 const OUTCOME = `<label class="f full">Once saved<select class="in" id="oc"><option value="exc">Excuse it: no deduction</option><option value="err">Record as admin error: deduction stays, logged on the driver's record</option></select></label>`;
 async function settle(it, oc, what) {
-  if (!oc) return; const at = new Date().toISOString();
+  if (!oc) return; await loadAll(); const cur = findItem(it.key);
+  if (!cur || cur.st === "ok" || cur.st === "exc" || cur.st === "part" || cur.st === "due") return;   // fixed properly (nothing to excuse) or still incomplete (stays on the list)
+  const at = new Date().toISOString();
   await q(sb.from("marks").upsert({ key: it.key, driver: it.driver, reviewed: true, by_person: S.me.id, at, ...(oc === "exc" ? { status: "exc", note: `Excused after fix (${what})` } : { note: `Admin error recorded (${what})` }) }));
   if (oc === "err") await sb.from("entries").insert({ driver: it.driver, day: it.day, run: it.shift?.run || null, kind: "adjust", title: `Admin error · ${what}`, note: `${what} filled in by ${first(S.me.name)} in Fix posts`, admin_pts: 0, show_driver: false, created_by: S.me.id });
 }
@@ -67,13 +69,13 @@ function sodSheet(it) {
     bg.querySelector("#sf").onsubmit = async e => { e.preventDefault(); const g = x => bg.querySelector("#" + x).value; const at = nzToIso(it.day, g("tm"));
       const vals = { van: g("van") || null, start_km: g("km") ? +g("km") : null, run_id: g("rid") || null, note: g("nt") || (row ? row.note : `Entered by ${first(S.me.name)}`) };
       const { error } = row ? await sb.from("sod").update({ sent_at: at, edited_at: new Date().toISOString(), ...vals }).eq("shift_id", row.shift_id) : await sb.from("sod").insert({ shift_id: sh.id, driver: it.driver, sent_at: at, ...vals });
-      if (error) return toast(error.message, "err"); await settle(it, g("oc"), "SOD"); close(); toast("SOD saved", "ok"); await loadAll(); render(); };
+      if (error) return toast(error.message, "err"); const oc = g("oc"); close(); toast("SOD saved", "ok"); await loadAll(); await settle(it, oc, "SOD"); await loadAll(); render(); };
   });
 }
 
 /** EOD: add one for the driver, or edit the figures on theirs */
 function eodFix(it) {
-  if (it.row) { eodEdit(it.row); return; }
+  if (it.row) { eodEdit(it.row, { extra: OUTCOME, after: oc => settle(it, oc, "EOD") }); return; }
   const sh = it.shift; const code = sh?.run || ""; const tge = /^(S|T)$/.test(code);
   sheet(`<h3>Add EOD · ${esc(code)} · ${esc(nm(it.driver))}</h3><p class="hint">${label(it.day, true)} · use the time they actually finished. You can fill in the rest afterwards with Fix.</p>
     <form class="frm" id="ef2"><label class="f">Finish time<input class="in" type="time" id="tm" required></label>
@@ -82,6 +84,6 @@ function eodFix(it) {
     <label class="f full">Note<input class="in" id="nt" placeholder="e.g. told me by text"></label>${OUTCOME}<button class="btn full" type="submit">Save</button></form>`, (bg, close) => {
     bg.querySelector("#ef2").onsubmit = async e => { e.preventDefault(); const g = x => bg.querySelector("#" + x).value; const t = g("tm");
       const { error } = await sb.from("eod").insert({ shift_id: sh.id, driver: it.driver, sent_at: nzToIso(it.day, t), finish_time: t, parcels: g("p") ? +g("p") : null, stops: g("s") ? +g("s") : null, note: g("nt") || `Entered by ${first(S.me.name)}` });
-      if (error) return toast(error.message, "err"); await settle(it, g("oc"), "EOD"); close(); toast("EOD saved", "ok"); await loadAll(); render(); };
+      if (error) return toast(error.message, "err"); const oc = g("oc"); close(); toast("EOD saved", "ok"); await loadAll(); await settle(it, oc, "EOD"); await loadAll(); render(); };
   });
 }
