@@ -150,7 +150,7 @@ function wireLive() {
 
 /* ================= CLASSIC RUN BOARD ================= */
 function classicTab() {
-  return `<div class="card" style="padding:8px"><p class="hint" style="margin:0 0 6px">The old drag-and-drop Run Board, running on the new database. Every change lands on the live roster straight away; when you're done, open the <button class="linkbtn" data-tab="runboard">Run Board (new)</button> tab and press <b>Send changes</b> so drivers are told. <a href="/admin/classic/" target="_blank" rel="noopener">Open full screen ↗</a></p>
+  return `<div class="card" style="padding:8px"><p class="hint" style="margin:0 0 6px">The old drag-and-drop Run Board, running on the new database. Every change lands on the live roster straight away; when you're done, open the <button class="linkbtn" data-tab="runboard">Run Board (new)</button> tab and press <b>Approve roster</b> (new week) or <b>Push changes</b> (edits) so drivers get it. <a href="/admin/classic/" target="_blank" rel="noopener">Open full screen ↗</a></p>
     <iframe src="/admin/classic/" title="Run Board (classic)" style="width:100%;height:calc(100vh - 220px);min-height:700px;border:0;border-radius:10px;background:#eaedf1"></iframe></div>`;
 }
 

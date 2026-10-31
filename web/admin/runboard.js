@@ -1,4 +1,6 @@
-// Run Board tab: the week grid IS the roster. Changes save live; "Send changes" notifies drivers and tracks confirmations.
+// Run Board tab: the week grid IS the roster. Two steps for drivers:
+//  1. "Approve roster" publishes the week to the driver app (silent: no email, no Got it) — until then drivers can't see that week at all (RLS week_published()).
+//  2. "Push changes" (edits made after approval) emails + alerts the affected drivers, who tap Got it.
 import { sb, q, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmt24, fmtTs, fmtTime, ago, esc, $, $$, toast, pill, first, isSort, hours } from "/shared/core.js";
 import { addName, segTimes } from "/shared/score.js";
 import { S, sheet, opt, nm, fnm, weekBar, wireWeek, loadAll, render, fn } from "/admin/admin.js";
@@ -6,14 +8,17 @@ import { S, sheet, opt, nm, fnm, weekBar, wireWeek, loadAll, render, fn } from "
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const key = s => `${s.day}|${s.run}|${s.slot}`;
 const snap = s => s ? { driver: s.driver || null, van: s.van || null, start_at: s.start_at ? s.start_at.slice(0, 5) : null, end_at: s.end_at ? s.end_at.slice(0, 5) : null, addons: [...(s.addons || [])].sort(), trainee: s.trainee || null } : null;
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const canon = o => o ? JSON.stringify([o.driver ?? null, o.van ?? null, o.start_at ?? null, o.end_at ?? null, [...(o.addons || [])].sort(), o.trainee ?? null]) : "null"; // jsonb reorders keys, so compare by field
+const same = (a, b) => canon(a) === canon(b);
 
 function weekShifts() { const end = addDays(S.week, 6); return S.shifts.filter(s => s.day >= S.week && s.day <= end); }
 function sentBy() { return Object.fromEntries(S.sent.map(x => [x.shift_key, x])); }
-export function pendingChanges() { // diffs vs last sent, today onwards
+export function weekInfo(wk = S.week) { return S.notes.find(x => x.week_start === wk) || null; }
+export function isPublished(day) { return !!weekInfo(monOf(day))?.published_at; }
+export function pendingChanges() { // diffs vs what drivers have, today onwards, approved weeks only
   const t = today(); const sb_ = sentBy(); const out = []; const seen = new Set();
-  for (const s of S.shifts) { if (s.day < t || s.run === "BU") continue; const k = key(s); seen.add(k); const prev = sb_[k]?.snapshot || null; const cur = snap(s); if (!same(prev, cur) && (cur.driver || prev?.driver)) out.push({ k, shift: s, before: prev, after: cur }); }
-  for (const x of S.sent) { if (seen.has(x.shift_key)) continue; const [day, run, slot] = x.shift_key.split("|"); if (day < t || !x.snapshot?.driver) continue; out.push({ k: x.shift_key, shift: { day, run, slot: +slot }, before: x.snapshot, after: null }); }
+  for (const s of S.shifts) { if (s.day < t || s.run === "BU" || !isPublished(s.day)) continue; const k = key(s); seen.add(k); const prev = sb_[k]?.snapshot || null; const cur = snap(s); if (!same(prev, cur) && (cur.driver || prev?.driver)) out.push({ k, shift: s, before: prev, after: cur }); }
+  for (const x of S.sent) { if (seen.has(x.shift_key)) continue; const [day, run, slot] = x.shift_key.split("|"); if (day < t || !x.snapshot?.driver || !isPublished(day)) continue; out.push({ k: x.shift_key, shift: { day, run, slot: +slot }, before: x.snapshot, after: null }); }
   return out;
 }
 function winTxt(a) { const st = toMin(a?.start_at), en = toMin(a?.end_at); return st != null && en != null ? `${fmtT(st)}–${fmtT(en)}` : ""; }
@@ -47,10 +52,17 @@ export function runBoardTab() {
       return `<div class="slot filled" data-day="${day}" data-run="${r.code}" data-slot="${slot}"><span class="d">${esc(nm(s.driver))}${lv ? ` <span class="ack">on leave!</span>` : ""}</span>${s.van && !isSort(r.code) ? `<span class="v">${esc(s.van)}</span>` : ""}<span class="w">${fmtT(st)}–${fmtT(en)}</span>${s.addons?.length ? `<span class="a">${s.addons.map(a => `<span>${esc(S.addons.find(x => x.id === a)?.short || addName(a))}</span>`).join("")}</span>` : ""}${s.trainee ? `<span class="tr">training ${esc(fnm(s.trainee))}</span>` : ""}${u?.includes(s.driver) ? `<span class="ack">? not confirmed</span>` : ""}${day === t && sod ? `<span class="sod">SOD ${fmtTime(sod.sent_at)}</span>` : ""}</div>`; }).join("")}</td>`; }).join("")}</tr>`).join("");
   const note = S.notes.find(x => x.week_start === S.week)?.notes || "";
   const canSend = S.me.can("roster"); const canApprove = S.me.isOwner || S.me.can("roster_approve");
-  return `${weekBar(`${pend.length && canSend ? `<button class="btn crit sm" id="send-changes">Send ${pend.length} change${pend.length === 1 ? "" : "s"} to drivers</button>` : pend.length ? `<span class="meta">${pend.length} unsent change${pend.length === 1 ? "" : "s"}</span>` : `<span class="meta c-ok">✓ roster matches what drivers have</span>`}<button class="btn ghost sm" id="copy-prev">Copy last week</button><button class="btn ghost sm" id="run-times">Run times</button>`)}
+  const wi = weekInfo(); const pub = !!wi?.published_at; const filled = ws.filter(s => s.driver && s.run !== "BU").length;
+  const status = !pub
+    ? (canApprove && filled ? `<button class="btn sm" id="approve-roster">Approve roster → drivers' app</button>` : `<span class="meta c-warn">${filled ? "Not approved yet — drivers can't see this week" : "Empty week — add shifts, then approve"}</span>`)
+    : pend.length && canSend ? `<button class="btn crit sm" id="send-changes">Push ${pend.length} change${pend.length === 1 ? "" : "s"} to drivers</button>`
+    : pend.length ? `<span class="meta">${pend.length} change${pend.length === 1 ? "" : "s"} not pushed yet</span>`
+    : `<span class="meta c-ok">✓ approved ${fmtTs(wi.published_at)} · drivers have the latest</span>`;
+  return `${weekBar(`${status}<button class="btn ghost sm" id="copy-prev">Copy last week</button><button class="btn ghost sm" id="run-times">Run times</button>`)}
+    ${!pub && filled ? `<div class="card warnc"><h2>Not in the drivers' app yet</h2><p class="meta">Drivers can't see this week until it's approved. "Approve roster" puts it in their app quietly — no email, no alert, nothing to confirm. After that, any edit you make shows up here as a change, and "Push changes" emails and alerts just the drivers affected, who tap Got it.</p></div>` : ""}
     ${awaiting.length ? approvalCard(awaiting, canApprove) : ""}
     <div class="rb"><table><thead><tr><th class="run">Run</th>${DAYS.map((D, i) => { const day = addDays(S.week, i); const hol = S.C.holidays[day]; return `<th class="${day === t ? "c-accent" : ""}">${D} <span class="meta">${label(day).slice(4)}</span>${hol ? `<div class="meta c-warn">${esc(hol.name)}</div>` : ""}</th>`; }).join("")}</tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="hint">Tap a slot to set the driver, van, times, add-ons or a trainee. Red outline = changed since drivers were last told. Amber = waiting for Jeremy's OK. "? not confirmed" = the driver hasn't tapped Got it yet.</p>
+    <p class="hint">Tap a slot to set the driver, van, times, add-ons or a trainee. ${pub ? `Red outline = changed since drivers were last told (push it to them when you're ready). ` : ""}Amber = waiting for Jeremy's OK. "? not confirmed" = the driver hasn't tapped Got it yet.</p>
     ${confirmCard(sentItems, ackOf, n)}
     ${ruleCheck(ws, leaveOn)}
     <div class="card"><h2>Roster notes<span>week of ${label(S.week)}</span></h2><textarea class="in" id="wk-notes" rows="5" placeholder="Notes for this week's roster (road closures, training, reminders)…" ${canSend ? "" : "disabled"}>${esc(note)}</textarea><p class="hint">Saves when you click away.</p></div>
@@ -96,6 +108,7 @@ export function wireRunBoard() {
   wireWeek();
   $$(".slot").forEach(el => el.onclick = () => slotSheet(el.dataset.day, el.dataset.run, +el.dataset.slot));
   $("#send-changes")?.addEventListener("click", sendSheet);
+  $("#approve-roster")?.addEventListener("click", approveRoster);
   $("#copy-prev")?.addEventListener("click", copyPrev);
   $("#run-times")?.addEventListener("click", runTimes);
   $("#wk-notes")?.addEventListener("blur", async e => { await q(sb.from("week_notes").upsert({ week_start: S.week, notes: e.target.value, updated_at: new Date().toISOString() })); toast("Notes saved", "ok"); });
@@ -123,7 +136,7 @@ function slotSheet(day, run, slot) {
     ${opts.length ? `<div class="full"><div class="meta mono" style="margin-bottom:6px">ADD-ONS</div><div class="row">${opts.map(a => `<label class="chk ${(s?.addons || []).includes(a.id) ? "on" : ""}"><input type="checkbox" name="add" value="${a.id}" ${(s?.addons || []).includes(a.id) ? "checked" : ""}>${esc(a.name)}${a.minutes ? ` <span class="meta">+${a.minutes}m</span>` : ""}</label>`).join("")}</div></div>` : ""}
     ${isSort(run) ? "" : `<label class="f full">Trainee riding along<select class="in" id="tr">${opt([["", "—"], ...S.drivers.map(d => [d.id, d.name])], s?.trainee || "")}</select></label>`}
     <label class="f full">Note<input class="in" id="note" value="${esc(s?.note || "")}"></label>
-    <div class="row full"><button class="btn" type="submit">Save</button>${s ? `<button class="btn ghost" type="button" id="rm">Clear slot</button>` : ""}</div></form><p class="hint">Saves to the roster straight away. Drivers are told when you press "Send changes".</p>`, (bg, close) => {
+    <div class="row full"><button class="btn" type="submit">Save</button>${s ? `<button class="btn ghost" type="button" id="rm">Clear slot</button>` : ""}</div></form><p class="hint">${isPublished(day) ? `Saves to the roster straight away. Drivers are told when you press "Push changes".` : `Saves to the roster straight away. Drivers won't see this week until you press "Approve roster".`}</p>`, (bg, close) => {
     bg.querySelectorAll(".chk input").forEach(i => i.onchange = () => i.parentElement.classList.toggle("on", i.checked));
     bg.querySelector("#sf").onsubmit = async e => { e.preventDefault(); const g = x => bg.querySelector("#" + x); const drv = g("drv").value || null;
       if (!drv && !s) { close(); return; }
@@ -137,10 +150,10 @@ function slotSheet(day, run, slot) {
 function sendSheet() {
   const pend = pendingChanges().map(ch => ({ ...ch, ...summarize(ch) })); const byDrv = {}; for (const p of pend) for (const d of p.affects) (byDrv[d] ??= []).push(p.text);
   const direct = S.me.isOwner || S.me.can("roster_approve");
-  sheet(`<h3>Send ${pend.length} change${pend.length === 1 ? "" : "s"}</h3><p class="hint">${direct ? "Each driver gets a notification and an email with their lines, and a Got it button on their page. You'll see their ✓ live." : "These go to Jeremy for approval first. Once he approves, the drivers are told."}</p>
+  sheet(`<h3>Push ${pend.length} change${pend.length === 1 ? "" : "s"} to drivers</h3><p class="hint">${direct ? "Only the drivers affected are told: a notification and an email with their lines, and a Got it button on their page. You'll see their ✓ live." : "These go to Jeremy for approval first. Once he approves, the drivers are told."}</p>
     <div class="list">${Object.entries(byDrv).map(([d, L]) => `<div class="item"><b>${esc(nm(d))}</b><ul style="margin:2px 0;padding-left:18px">${L.map(t => `<li>${esc(t)}</li>`).join("")}</ul></div>`).join("")}</div>
     <label class="f">Reason / note to drivers (optional)<input class="in" id="reason" placeholder="e.g. Pat is away this week"></label>
-    <button class="btn ${direct ? "crit" : "warn"}" id="go">${direct ? "Send to drivers now" : "Send to Jeremy for approval"}</button>`, async (bg, close) => {
+    <button class="btn ${direct ? "crit" : "warn"}" id="go">${direct ? "Push to drivers now" : "Send to Jeremy for approval"}</button>`, async (bg, close) => {
     bg.querySelector("#go").onclick = async () => { const b = bg.querySelector("#go"); b.disabled = true;
       try { const c = await q(sb.from("roster_changes").insert({ created_by: S.me.id, status: direct ? "sent" : "awaiting_approval", reason: bg.querySelector("#reason").value || null, ...(direct ? { approved_by: S.me.id, sent_at: new Date().toISOString() } : {}) }).select().single());
         const items = await q(sb.from("roster_change_items").insert(pend.map(p => ({ change_id: c.id, shift_id: p.shift.id || null, day: p.shift.day, run: p.shift.run, before: p.before, after: p.after ? { ...p.after, slot: p.shift.slot } : null, affects: [...new Set(p.affects)].filter(Boolean), summary: p.text }))).select());
@@ -154,6 +167,15 @@ async function afterSend(changeId, items, pend) {
   await q(sb.from("roster_sent").upsert(pend.map(p => ({ shift_key: p.k, snapshot: p.after || { driver: null }, sent_at: new Date().toISOString() })), { onConflict: "shift_key" }));
   fn("notify", { type: "roster_change", change_id: changeId }).catch(e => console.warn(e));
   toast("Sent to drivers ✓", "ok");
+}
+function approveRoster() {
+  const ws = weekShifts().filter(s => s.driver && s.run !== "BU"); const drivers = new Set(ws.map(s => s.driver));
+  sheet(`<h3>Approve roster · week of ${label(S.week)}</h3><p class="hint">${ws.length} shifts for ${drivers.size} drivers go into the drivers' app as their roster for the week. No email, no alert and nothing for them to confirm — they'll see it under My shifts. After this, edits to this week show as changes you can push.</p>
+    <button class="btn" id="go">Approve roster</button>`, async (bg, close) => {
+    bg.querySelector("#go").onclick = async () => { const b = bg.querySelector("#go"); b.disabled = true;
+      const { error } = await sb.rpc("publish_week", { wk: S.week }); if (error) { toast(error.message, "err"); b.disabled = false; return; }
+      close(); toast("Roster approved — it's in the drivers' app", "ok"); await loadAll(); render(); };
+  });
 }
 async function finalizeSend(changeId) {
   const items = S.items.filter(i => i.change_id === changeId);

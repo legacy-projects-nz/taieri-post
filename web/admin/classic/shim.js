@@ -71,7 +71,7 @@ window.claude = { use: async name => ({ db: DBshim, user: userShim, mcp: mcpShim
 
 // a small banner so it's clear this is the classic board on the new database
 const b = document.createElement("div"); b.style.cssText = "font:600 12px/1.4 ui-monospace,monospace;background:#16323b;color:#5cc0dc;border:1px solid #5cc0dc;border-radius:8px;padding:6px 10px;margin:8px 0";
-b.innerHTML = `Classic Run Board on the new database · every change lands on the live roster straight away · when you're done, open <a href="/admin/#runboard" style="color:#eef1f4">Run Board (new)</a> and press <b>Send changes</b> so drivers are told · signed in as ${esc(first(me.name))}`;
+b.innerHTML = `Classic Run Board on the new database · every change lands on the live roster straight away · when you're done, open <a href="/admin/#runboard" style="color:#eef1f4">Run Board (new)</a> and press <b>Approve roster</b> (new week) or <b>Push changes</b> (edits) so drivers get it · signed in as ${esc(first(me.name))}`;
 document.querySelector(".wrap")?.prepend(b);
 
 // finally load the untouched board code
