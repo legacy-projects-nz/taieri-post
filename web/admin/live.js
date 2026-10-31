@@ -1,5 +1,5 @@
 // Live board: the old Scorecard dashboard, live. Day chips, KPIs, receivers & pick-ups, important points, team scores + labour,
-// hours by day, admin action centre, roster changes not confirmed, drivers grid, posts board + live feed, newspapers, on-time by day, map.
+// add-ons & timings board, hours by day, admin action centre, roster changes not confirmed, drivers grid, posts board + live feed, map.
 import { sb, q, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, toast, pill, first, col, pct, isSort, avg, sum } from "/shared/core.js";
 import { scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, band, dayShifts, segTimes, addName } from "/shared/score.js";
 import { S, sheet, opt, nm, fnm, loadAll, render, scoreData, alertRow, fn, teamRange, rangeBar, teamStats } from "/admin/admin.js";
@@ -33,25 +33,43 @@ export function liveTab() {
 
   const cur = monOf(t);
   return `${weekNav(wk)}${wk > cur ? `<p class="hint" style="margin:0 0 6px">Next week: the planned roster. Nothing is posted yet, so scores fill in as the days come.</p>` : ""}<div class="card">${chips}${kpi}</div>
-    ${receivers(t, n)}
+    ${addonBoard(one ? days[0] : t, n)}
     <div class="grid2">${important(scores, n)}${teamAndLabour(scores, team, wk)}</div>
     <div class="grid2">${hoursByDay(wk)}${actionCentre(scores, n)}</div>
     ${notConfirmed(n)}
     ${driversGrid(scores)}
     <div class="card"><h2>${one ? `Posts for ${label(days[0])}` : "Posts by driver and day"}<span>tap a chip to review</span></h2>${postsBoard(selScores, days, t)}</div>
-    <div class="grid2">${newspapers(wk)}${onTimeByDay(wk, D)}</div>
     <div class="grid2"><div class="card"><h2>Live feed<span>today</span></h2>${feed(t)}</div><div class="card"><h2>Where everyone is<span>between SOD and EOD · app open</span></h2><div class="map" id="map"></div><p class="hint">Dots update every couple of minutes while a driver's app is on screen. Grey = older than 10 minutes.</p></div></div>`;
 }
 
-/* ---- Receivers & pick-ups · today ---- */
-function receivers(t, n) {
-  const segs = S.shifts.filter(s => s.day === t && s.driver && !isSort(s.run) && (s.addons || []).some(a => S.addons.find(x => x.id === a)?.task));
+/* ---- Add-ons & timings · one board for the day: every add-on and timed task on every run, done or not ---- */
+function rulesForShift(s) {
+  const d = dow(s.day) + 1; const out = [];
+  for (const r of S.rules) { if (!r.active || !(r.days || []).includes(d)) continue; const all = r.runs.includes("ALL"); if (!all && !r.runs.includes(s.run)) continue;
+    const ad = r.addon ? S.addons.find(a => a.id === r.addon) : null; if (ad && ad.runs.includes(s.run)) { if (!(s.addons || []).includes(r.addon)) continue; } else if (!all && r.runs.length > 1) continue; out.push(r); }
+  return out.sort((a, b) => (toMin(a.closes) ?? toMin(a.opens) ?? 0) - (toMin(b.closes) ?? toMin(b.opens) ?? 0));
+}
+const winTxt = r => { const f = toMin(r.opens), t = toMin(r.closes); return f != null && t != null ? `${fmtT(f)}–${fmtT(t)}` : t != null ? `by ${fmtT(t)}` : f != null ? `from ${fmtT(f)}` : ""; };
+function addonBoard(day, n) {
+  const isT = day === n.date, past = day < n.date; const nowMin = isT ? n.min : past ? 1440 : -1;
+  const segs = S.shifts.filter(s => s.day === day && s.driver && !isSort(s.run) && s.run !== "BU").map(s => ({ s, ...segTimes(s, S.runsBy) })).sort((a, b) => (a.st ?? 0) - (b.st ?? 0));
   if (!segs.length) return "";
-  const ruleFor = a => S.rules.find(r => r.addon === a && r.active);
-  const rows = segs.map(s => { const tasks = (s.addons || []).map(a => S.addons.find(x => x.id === a)).filter(a => a?.task); const planOk = Object.keys(s.plan || {}).length > 0; const gpRule = S.rules.find(r => r.active && r.runs.includes(s.run) && /game plan/i.test(r.name)); const gpDue = gpRule ? toMin(gpRule.closes) : 660;
-    const gp = planOk ? `<span class="chip ok">✓ game plan</span>` : n.min > gpDue ? `<span class="chip miss">✗ no game plan by ${fmtT(gpDue)}</span>` : `<span class="chip due">game plan due ${fmtT(gpDue)}</span>`;
-    return `<div class="item clk" data-task="${s.id}" title="Tap for the plan, history and the driver's day"><div class="row" style="justify-content:space-between"><b>${esc(s.run)} · ${esc(nm(s.driver))}</b>${gp}</div><div class="row" style="gap:3px">${tasks.map(a => { const done = s.done?.[a.id]; const plan = s.plan?.[a.id]; const r = ruleFor(a.id); const closes = r ? toMin(r.closes) : null; const missed = !done && closes != null && n.min > closes; return `<span class="chip ${done ? "ok" : missed ? "miss" : plan ? "due" : "over"}" title="${esc(r ? r.name : a.name)}">${esc(a.short || a.name)}${done ? ` ✓ ${fmtTime(done)}` : plan ? ` ~${fmtT(toMin(plan))}` : missed ? " ✗ not done" : " waiting"}</span>`; }).join("")}</div></div>`; });
-  return `<div class="card"><h2>Receivers &amp; pick-ups · today<span>game plan + each task as the driver taps Done</span></h2><div class="list">${rows.join("")}</div></div>`;
+  let tot = 0, done = 0, missed = 0; const rows = [];
+  for (const { s, st, en } of segs) {
+    const chips = []; const seen = new Set(); const dn = s.done || {}; const plan = s.plan || {};
+    for (const r of rulesForShift(s)) { const key = r.addon; const d = key ? dn[key] : null; const gp = key?.startsWith("tw_") && /game plan/i.test(r.name); const planned = gp && Object.keys(plan).length > 0; const closes = toMin(r.closes), opens = toMin(r.opens);
+      let cls = "due", txt = winTxt(r); if (d) { cls = "ok"; txt = `✓ ${fmtTime(d)}`; } else if (planned) { cls = "ok"; txt = "✓ game plan in"; } else if (closes != null && nowMin > closes) { cls = "miss"; txt = `✗ not done by ${fmtT(closes)}`; } else if (opens != null && nowMin >= opens) { cls = "over"; txt = `now · ${txt}`; }
+      if (key) { seen.add(key); tot++; if (cls === "ok") done++; if (cls === "miss") missed++; }
+      chips.push(`<span class="chip ${cls}" title="${esc(r.name)}">${esc(r.name)} <span style="font-weight:500">${esc(txt)}</span></span>`); }
+    for (const id of s.addons || []) { if (seen.has(id)) continue; const a = S.addons.find(x => x.id === id); if (!a) continue; const d = dn[id]; const p = plan[id]; const ended = en != null && nowMin > en;
+      const cls = d ? "ok" : ended ? "miss" : "due"; const txt = d ? `✓ ${fmtTime(d)}` : ended ? "✗ not marked" : p ? `~${fmtT(toMin(p))}` : isT ? "not yet" : ""; tot++; if (d) done++; else if (ended) missed++;
+      chips.push(`<span class="chip ${cls}" title="${esc(a.name)}">${esc(a.short || a.name)}${txt ? ` <span style="font-weight:500">${esc(txt)}</span>` : ""}</span>`); }
+    if (!chips.length) continue;
+    const nd = chips.filter(c => c.includes('class="chip ok"')).length;
+    rows.push(`<div class="item clk ${chips.some(c => c.includes('chip miss')) ? "crit" : nd === chips.length ? "done" : ""}" data-task="${s.id}" title="Tap for the plan, history and the driver's day"><div class="row" style="justify-content:space-between"><b>${esc(s.run)} · ${esc(nm(s.driver))}</b><span class="meta">${st != null ? `${fmtT(st)}–${fmtT(en)}` : ""}${s.van ? ` · ${esc(s.van)}` : ""} · ${nd}/${chips.length} done</span></div><div class="row" style="gap:3px">${chips.join("")}</div></div>`);
+  }
+  if (!rows.length) return "";
+  return `<div class="card ${missed ? "hot" : ""}"><h2>Add-ons &amp; timings · ${isT ? "today" : label(day)}<span>${done}/${tot} done${missed ? ` · <b class="c-crit">${missed} missed</b>` : ""} · green ✓ as each driver taps Done · tap a run for the detail</span></h2><div class="list">${rows.join("")}</div></div>`;
 }
 
 /* ---- Important points ---- */
@@ -78,8 +96,6 @@ function important(scores, n) {
   for (const [d, L] of Object.entries(unc)) { const hrs = Math.round((Date.now() - new Date(L[0].roster_changes.sent_at)) / 3600e3); P.push({ lv: hrs > 24 ? "crit" : "warn", who: nm(d), t: "Roster change not confirmed", d: `${L.length} change${L.length > 1 ? "s" : ""} · ${hrs} h waiting`, w: hrs > 24 ? 80 : 45, sig: `${d}|ntc|${L.length}` }); }
   // open alerts (missed things)
   for (const a of S.alerts.filter(a => !a.resolved_at && a.created_at.slice(0, 10) >= addDays(t, -1) && ["timing_missed", "sod_late", "eod_late"].includes(a.kind))) P.push({ lv: "crit", who: a.driver ? fnm(a.driver) : "", t: a.title.replace(/^[^:]+: /, ""), d: a.body || "", w: 95, sig: `alert|${a.dedupe_key}` });
-  // newspapers this week
-  for (const code of S.C.news.runs || []) { const wkShifts = S.shifts.filter(s => s.day >= wk && s.day <= addDays(wk, 6) && s.run === code && s.driver); if (!wkShifts.length) continue; const done = wkShifts.some(s => S.eodBy[s.id]?.newspapers); if (!done && dow(t) >= 4) P.push({ lv: "warn", who: code, t: "Newspapers claim", d: `${code} not claimed this week`, w: 10, sig: `news|${wk}|${code}` }); }
   const live = P.filter(p => !dismissed.has("imp|" + p.sig)).sort((a, b) => (a.lv === b.lv ? b.w - a.w : a.lv === "crit" ? -1 : 1));
   const top = live.slice(0, 5); const nd = P.length - live.length;
   return `<div class="card"><h2>Important points<span>${top.length ? "the 5 most important this week, most urgent first" : `✓ nothing to look at`}</span></h2>
@@ -181,15 +197,6 @@ function postsBoard(selScores, days, t) {
   if (days.length === 1) { const d = days[0]; const rows = selScores.filter(s => s.items.length).map(s => { const D = s.days[d]; const sod = s.items.find(i => i.kind === "SOD"); const eods = s.items.filter(i => i.kind === "EOD"); return `<tr><td class="clk" data-dayof="${s.driver}|${d}" title="Tap for ${esc(fnm(s.driver))}'s day"><b>${esc(nm(s.driver))}</b><div class="meta">${D ? `${fmtT(D.start)}–${fmtT(D.end)} · ${D.hours}h · ${D.segs.map(x => x.shift.run + (x.shift.trainee ? " (training " + fnm(x.shift.trainee) + ")" : "")).join(" · ")}` : ""}</div></td><td>${sod ? chip(sod) : ""}</td><td>${eods.map(e => `<div style="margin:2px 0"><span class="meta mono">${esc(e.code || "day")}</span> ${chip(e)}</div>`).join("")}</td></tr>`; });
     return rows.length ? `<div class="scroll"><table class="dt"><tr><th>Driver</th><th>SOD</th><th>EOD (one per run)</th></tr>${rows.join("")}</table></div><p class="hint">● on time · ● late · ● overdue / missing · ● due · struck = excused · outlined = set by hand</p>` : `<p class="empty">Nobody tracked is rostered on ${label(d)}.</p>`; }
   return `<div class="scroll"><table class="dt"><tr><th>Driver</th>${days.map(d => `<th class="${d === t ? "c-accent" : ""}">${label(d).slice(0, 6)}</th>`).join("")}<th>On time</th><th>Late</th><th>Missing</th><th>Rate</th><th>Admin</th></tr>${selScores.filter(s => s.items.length).map(s => `<tr><td class="clk" data-driver="${s.driver}" title="Tap for ${esc(fnm(s.driver))}'s sheet"><b>${esc(nm(s.driver))}</b></td>${days.map(d => `<td style="white-space:nowrap">${s.items.filter(i => i.day === d).map(it => `<button class="chip ${it.st}" data-item="${esc(it.key)}" title="${esc(it.label)} · ${itemNote(it)}" style="width:14px;height:14px;padding:0;border-radius:3px;margin:1px"></button>`).join("")}</td>`).join("")}<td class="num">${s.onTime}</td><td class="num">${s.late}</td><td class="num">${s.missing}</td><td class="num">${s.closed ? Math.round(s.onTime / s.closed * 100) + "%" : "—"}</td><td class="c-${col(s.admin)}">${pct(s.admin)}</td></tr>`).join("")}</table></div><p class="hint">One square per required post · tap a square to review it</p>`;
-}
-function newspapers(wk) {
-  const runs = S.C.news.runs || []; const chips = runs.map(code => { const ws = S.shifts.filter(s => s.day >= wk && s.day <= addDays(wk, 6) && s.run === code && s.driver); const hit = ws.map(s => ({ s, e: S.eodBy[s.id] })).find(x => x.e?.newspapers); return `<button class="chip ${hit ? "ok" : dow(today()) >= 6 ? "miss" : "due"}" data-news="${esc(code)}" data-mwk="${wk}" title="Tap for this week's runs and the history">${esc(code)} · ${hit ? `${esc(fnm(hit.s.driver))} · ${label(hit.s.day)} ✓` : ws.length ? "not claimed yet" : "not rostered"}</button>`; });
-  return `<div class="card"><h2>Newspapers claim<span>once a week · ${S.C.news.min} minutes added to that day's time allowed · tap for history</span></h2><div class="row" style="gap:4px">${chips.join("")}</div></div>`;
-}
-function onTimeByDay(wk, D) {
-  const vals = DAYS.map((_, i) => { const d = addDays(wk, i); const its = S.drivers.flatMap(dr => scoreFor(dr.id, d, d, D, S.C).items).filter(x => !["due", "over", "exc"].includes(x.st)); return { d, n: its.length, ok: its.filter(x => x.st === "ok").length }; });
-  const W = 420, H = 130;
-  return `<div class="card"><h2>Team on-time rate by day<span>posts that are due and closed</span></h2><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${vals.map((v, i) => { const x = 20 + i * 56; const pctv = v.n ? v.ok / v.n * 100 : null; const h = pctv == null ? 0 : (pctv / 100) * (H - 40); return `<g class="clk" data-ontime="${v.d}" style="cursor:pointer"><title>${label(v.d)} · ${v.n ? `${v.ok} of ${v.n} on time` : "no posts closed"} · tap for the posts</title><rect x="${x}" y="0" width="40" height="${H - 20}" fill="transparent"/><rect x="${x}" y="${H - 20 - h}" width="40" height="${h}" fill="var(--${col(pctv) === "grey" ? "line" : col(pctv)})"/><text x="${x + 20}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--ink3)">${DAYS[i]}</text>${pctv != null ? `<text x="${x + 20}" y="${H - 24 - h}" text-anchor="middle" font-size="10" fill="var(--ink2)">${Math.round(pctv)}%</text>` : ""}</g>`; }).join("")}</svg><p class="hint">Tap a day for every post that day.</p></div>`;
 }
 function feed(t) {
   const ev = [];
