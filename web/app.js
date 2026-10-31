@@ -216,13 +216,13 @@ function todayCard(T, N, n) {
       const sodBtn = !sodSeg ? `<p class="hint">No SOD yet — tap <b>SOD</b> at the top when you start.</p>`
         : `<div class="row"><div class="meta c-ok">✓ SOD ${fmtTime(sodSeg.sod.sent_at)}${sodSeg.sod.van ? ` · ${esc(sodSeg.sod.van)}` : ""}${sodSeg.sod.edited_at ? " (edited)" : ""}</div>${allEod ? "" : `<button class="btn ghost sm" id="sod-edit" data-shift="${sodSeg.shift.id}">Edit SOD</button>`}</div>`;
       const sortOnly = !T.segs.some(x => !x.sort) && sodSeg && !allEod;
-      return `<div class="card today"><h2>Today<span>${label(T.day)}</span></h2><div class="big bigrow"><span>${fmtT((left[0] || T.segs[0]).st)} – ${fmtT(T.end)}</span>${vanChips(T)}</div>${left.length === T.segs.length ? `<div class="meta" style="margin-top:-4px">${T.hours} h rostered</div>` : ""}
+      return `<div class="card today"><h2>Today<span>${label(T.day)}</span></h2><div class="big bigrow"><span>${fmtT((left[0] || T.segs[0]).st)}–${fmtT(T.end)}</span>${vanChips(T)}</div>${left.length === T.segs.length ? `<div class="meta" style="margin-top:-4px">${T.hours} h rostered</div>` : ""}
         ${sodBtn}${(left.length ? left : T.segs).map(x => segRow(x, T.day, n, true, false)).join("")}
         ${S.locOn ? `<p class="hint">📍 Sharing your location with the depot until your EOD.</p>` : ""}</div>`;
     }
   }
   const lead = !T ? (hol ? `<p class="hint">Today: ${esc(hol.name)}</p>` : `<p class="hint">Day off today</p>`) : "";
-  if (N) return `<div class="card today"><h2>Next shift<span>${label(N.day)}</span></h2>${lead}<div class="big bigrow"><span>${fmtT(N.start)} – ${fmtT(N.end)}</span>${vanChips(N)}</div><div class="meta" style="margin-top:-4px">${N.hours} h rostered</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}</div>`;
+  if (N) return `<div class="card today"><h2>Next shift<span>${label(N.day)}</span></h2>${lead}<div class="big bigrow"><span>${fmtT(N.start)}–${fmtT(N.end)}</span>${vanChips(N)}</div><div class="meta" style="margin-top:-4px">${N.hours} h rostered</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}</div>`;
   return `<div class="card today"><h2>Next shift</h2>${lead}<div class="big">Not on the roster yet</div><p class="hint">Your next shift shows here once the roster is out.</p></div>`;
 }
 function vanCard(T, N) {
@@ -368,7 +368,7 @@ function wire() {
   $("#signout")?.addEventListener("click", signOut);
   $("#view-as")?.addEventListener("change", e => { location.hash = e.target.value ? "as=" + e.target.value : ""; });
   $$("#va-prev,#va-next").forEach(b => b.onclick = () => { if (b.dataset.id) location.hash = "as=" + b.dataset.id; });
-  if (S.viewAs) { $$("#gotit,#gotit-again,[data-confirm],[data-addon],[data-plan],[data-done],#leave-new,#prof-edit,#push-btn,#vchk-btn").forEach(el => { el.disabled = true; el.title = "Only " + first(S.viewAs.name) + " can do this"; el.style.opacity = ".5"; }); }
+  if (S.viewAs) { $$("#gotit,#gotit-again,[data-confirm],[data-addon],[data-plan],[data-done],#leave-new,#push-btn,#vchk-btn").forEach(el => { el.disabled = true; el.title = "Only " + first(S.viewAs.name) + " can do this"; el.style.opacity = ".5"; }); }
   pushState().then(s => { const el = $("#push-state"); if (el) el.textContent = s === "on" ? "on" : s === "denied" ? "blocked in phone settings" : s === "unsupported" ? "add to Home Screen first" : "off, tap to turn on"; });
   $("#push-btn")?.addEventListener("click", async () => { const r = await enablePush(S.me.id, VAPID_PUBLIC); toast(r.ok ? "Notifications are on" : r.why, r.ok ? "ok" : "err"); render(); });
   $("#gotit")?.addEventListener("click", async e => { const ids = e.currentTarget.dataset.ids.split(","); for (const id of ids) S.gotit[id] = new Date().toISOString(); localStorage.setItem("tp-gotit", JSON.stringify(S.gotit)); render();
@@ -478,9 +478,12 @@ function leaveForm() {
   });
 }
 function profileForm() {
-  const p = S.me;
-  sheet(`<h3>Update my details</h3><form class="frm" id="pf"><label class="f full">Phone<input class="in" id="phone" type="tel" value="${esc(p.phone || "")}"></label><label class="f">Licence class<input class="in" id="lc" value="${esc(p.licence_class || "")}" placeholder="e.g. Class 1 full"></label><label class="f">Licence expires<input class="in" type="date" id="le" value="${p.licence_expiry || ""}"></label><label class="f full">DG endorsement expires<input class="in" type="date" id="dg" value="${p.dg_expiry || ""}"></label><button class="btn full" type="submit">Save</button></form><p class="hint">Email changes go through Jeremy, because it's how you sign in.</p>`, (bg, close) => {
-    bg.querySelector("#pf").onsubmit = async e => { e.preventDefault(); const { error } = await sb.rpc("update_my_profile", { p_phone: bg.querySelector("#phone").value || null, p_lic_class: bg.querySelector("#lc").value || null, p_lic_exp: bg.querySelector("#le").value || null, p_dg_exp: bg.querySelector("#dg").value || null }); if (error) return toast(error.message, "err"); close(); toast("Saved", "ok"); S.me = await me(); render(); };
+  const p = S.me; const forOther = S.viewAs && S.viewer?.can?.("people");
+  if (S.viewAs && !forOther) return toast(`Only ${first(S.viewAs.name)} (or Jeremy) can change these`, "err");
+  sheet(`<h3>${forOther ? `Update ${esc(first(p.name))}'s details` : "Update my details"}</h3><form class="frm" id="pf"><label class="f full">Phone<input class="in" id="phone" type="tel" value="${esc(p.phone || "")}"></label><label class="f">Licence class<input class="in" id="lc" value="${esc(p.licence_class || "")}" placeholder="e.g. Class 1 full"></label><label class="f">Licence expires<input class="in" type="date" id="le" value="${p.licence_expiry || ""}"></label><label class="f full">DG endorsement expires<input class="in" type="date" id="dg" value="${p.dg_expiry || ""}"></label><button class="btn full" type="submit">Save</button></form><p class="hint">Email changes go through Jeremy, because it's how you sign in.</p>`, (bg, close) => {
+    bg.querySelector("#pf").onsubmit = async e => { e.preventDefault(); const v = { phone: bg.querySelector("#phone").value || null, licence_class: bg.querySelector("#lc").value || null, licence_expiry: bg.querySelector("#le").value || null, dg_expiry: bg.querySelector("#dg").value || null };
+      const { error } = forOther ? await sb.from("people").update(v).eq("id", p.id) : await sb.rpc("update_my_profile", { p_phone: v.phone, p_lic_class: v.licence_class, p_lic_exp: v.licence_expiry, p_dg_exp: v.dg_expiry });
+      if (error) return toast(error.message, "err"); close(); toast("Saved", "ok"); if (forOther) Object.assign(S.me, v); else S.me = await me(); render(); };
   });
 }
 function vehicleCheckForm() {
