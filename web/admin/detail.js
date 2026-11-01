@@ -56,6 +56,7 @@ export function bind(root) {
   on("[data-resolve]", async el => { await q(sb.from("alerts").update({ resolved_at: new Date().toISOString(), resolved_by: S.me.id }).eq("id", el.dataset.resolve)); toast("Resolved", "ok"); el.closest(".sheet-bg") ? refreshTop() : null; });
   on("[data-van-edit]", el => editVan(el.dataset.vanEdit));
   on("[data-mark-done]", async el => { const [sid, addon] = el.dataset.markDone.split("|"); const s = S.shifts.find(x => x.id === sid); if (!s) return; const done = { ...(s.done || {}), [addon]: new Date().toISOString() }; const { error } = await sb.from("shifts").update({ done }).eq("id", sid); if (error) return toast(error.message, "err"); s.done = done; toast("Marked done", "ok"); if (el.closest(".sheet-bg")) refreshTop(); else render(); });
+  on("[data-transfer]", el => transferTask(...el.dataset.transfer.split("|")));
   on("[data-person-edit]", el => editPerson(el.dataset.personEdit));
 }
 // re-open the top sheet with fresh data after a write
@@ -187,7 +188,7 @@ export function openTask(shiftId, ruleId) {
     const s = S.shifts.find(x => x.id === shiftId); if (!s) return `<h3>Shift not found</h3>`; const n = nzNow();
     const tasks = (s.addons || []).map(a => S.addons.find(x => x.id === a)).filter(a => a?.task);
     const rules = S.rules.filter(r => { if (!r.active || !r.days.includes(dow(s.day) + 1)) return false; const all = r.runs.includes("ALL"); if (!all && !r.runs.includes(s.run)) return false; const ad = r.addon ? S.addons.find(a => a.id === r.addon) : null; if (ad && ad.runs.includes(s.run)) return (s.addons || []).includes(r.addon); return all || r.runs.length === 1; });
-    const rowFor = (a, r) => { const done = s.done?.[a?.id || r?.addon]; const plan = s.plan?.[a?.id || r?.addon]; const closes = r ? toMin(r.closes) : null; const opens = r ? toMin(r.opens) : null; const past = s.day < n.date || (s.day === n.date && closes != null && n.min > closes); const st = done ? ["ok", `done ${fmtTime(done)}`] : past && closes != null ? ["miss", `missed · due ${fmtT(closes)}`] : plan ? ["due", `planned ~${fmtT(toMin(plan))}`] : ["over", "no plan yet"]; const key = a?.id || r?.addon; return `<tr class="${r && ruleId === r.id ? "c-accent" : ""}"><td><b>${esc(r?.name || a?.name)}</b>${r?.note ? `<div class="meta">${esc(r.note)}</div>` : ""}</td><td class="mono">${closes != null && opens != null ? `${fmtT(opens)}–${fmtT(closes)}` : closes != null ? `by ${fmtT(closes)}` : opens != null ? `from ${fmtT(opens)}` : "any time"}</td><td class="mono">${plan ? fmtT(toMin(plan)) : "—"}</td><td><span class="chip ${st[0]}">${st[1]}</span>${!done && key && S.me.can("roster") ? ` <button class="btn ghost sm" data-mark-done="${s.id}|${esc(key)}">Mark done</button>` : ""}</td></tr>`; };
+    const rowFor = (a, r) => { const done = s.done?.[a?.id || r?.addon]; const plan = s.plan?.[a?.id || r?.addon]; const closes = r ? toMin(r.closes) : null; const opens = r ? toMin(r.opens) : null; const past = s.day < n.date || (s.day === n.date && closes != null && n.min > closes); const st = done ? ["ok", `done ${fmtTime(done)}`] : past && closes != null ? ["miss", `missed · due ${fmtT(closes)}`] : plan ? ["due", `planned ~${fmtT(toMin(plan))}`] : ["over", "no plan yet"]; const key = a?.id || r?.addon; return `<tr class="${r && ruleId === r.id ? "c-accent" : ""}"><td><b>${esc(r?.name || a?.name)}</b>${r?.note ? `<div class="meta">${esc(r.note)}</div>` : ""}</td><td class="mono">${closes != null && opens != null ? `${fmtT(opens)}–${fmtT(closes)}` : closes != null ? `by ${fmtT(closes)}` : opens != null ? `from ${fmtT(opens)}` : "any time"}</td><td class="mono">${plan ? fmtT(toMin(plan)) : "—"}</td><td><span class="chip ${st[0]}">${st[1]}</span>${!done && key && S.me.can("roster") ? ` <button class="btn ghost sm" data-mark-done="${s.id}|${esc(key)}">✓ Done</button> <button class="btn ghost sm" data-transfer="${s.id}|${esc(key)}">Transfer</button>` : ""}</td></tr>`; };
     const seen = new Set(); const rows = []; for (const r of rules) { seen.add(r.addon); rows.push(rowFor(S.addons.find(a => a.id === r.addon), r)); } for (const a of tasks) if (!seen.has(a.id)) rows.push(rowFor(a, null));
     const since = addDays(s.day, -28); const hist = S.shifts.filter(x => x.run === s.run && x.driver && x.day >= since && x.day < s.day && (x.addons || []).some(a => S.addons.find(z => z.id === a)?.task)).sort((a, b) => b.day.localeCompare(a.day)).slice(0, 20);
     return `<h3>${esc(s.run)} · ${esc(nm(s.driver))} · ${label(s.day)}</h3><p class="meta">Game plan = the driver's planned times for each task · Done = when they tapped it in the app</p>
@@ -294,4 +295,25 @@ export function openFeed(g) {
 /** item key for a shift's SOD or EOD, matching how the score engine names it */
 export function itemKeyFor(shift, kind) {
   const s = scoreFor(shift.driver, shift.day, shift.day, scoreData(), S.C); const it = s.items.find(i => i.kind === kind && (kind === "SOD" || i.shift.id === shift.id)) || s.items.find(i => i.kind === kind); return it?.key || null;
+}
+
+/** Give a task to another driver working the same day: it moves off this shift and onto theirs. */
+export function transferTask(sid, addon) {
+  const s = S.shifts.find(x => x.id === sid); if (!s) return;
+  const ad = S.addons.find(a => a.id === addon), rule = S.rules.find(r => r.addon === addon);
+  const byDrv = {}; for (const x of S.shifts) if (x.day === s.day && x.driver && x.driver !== s.driver && x.run !== "BU") (byDrv[x.driver] ??= []).push(x);
+  const opts = Object.entries(byDrv).map(([d, list]) => ({ d, sh: list.find(z => ad?.runs.includes(z.run)) || list.find(z => !isSort(z.run)) || list[0] }));
+  sheet(`<h3>Transfer: ${esc(rule?.name || ad?.name || addon)}</h3><p class="meta">Now with ${esc(nm(s.driver))} · ${label(s.day)}. Pick who does it instead. It moves onto their shift that day and shows in their app.</p>
+    <div class="list">${opts.map(o => `<button class="btn ghost" style="text-align:left" data-pick="${o.sh.id}">${esc(nm(o.d))} <span class="meta">${esc(o.sh.run)}</span></button>`).join("") || `<p class="empty">No one else is rostered that day.</p>`}</div>`, (bg, close) => {
+    bg.querySelectorAll("[data-pick]").forEach(b => b.onclick = async () => {
+      const t = S.shifts.find(z => z.id === b.dataset.pick); if (!t) return;
+      try {
+        const runs = new Set(ad?.runs || []); if (!runs.has(t.run)) { runs.add(t.run); await q(sb.from("addons").update({ runs: [...runs] }).eq("id", addon)); }
+        if (rule && !rule.runs.includes("ALL") && !rule.runs.includes(t.run)) await q(sb.from("timing_rules").update({ runs: [...rule.runs, t.run] }).eq("id", rule.id));
+        await q(sb.from("shifts").update({ addons: (s.addons || []).filter(a => a !== addon) }).eq("id", s.id));
+        await q(sb.from("shifts").update({ addons: [...new Set([...(t.addons || []), addon])] }).eq("id", t.id));
+      } catch (e) { return toast(e.message || "Couldn't transfer", "err"); }
+      toast(`Moved to ${nm(t.driver)}`, "ok"); close(); const { loadAll } = await import("/admin/admin.js"); await loadAll(); render(true);
+    });
+  });
 }
