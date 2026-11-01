@@ -36,7 +36,7 @@ export function nzToIso(date, hhmm) {
 }
 
 /* ---------- HTML helpers ---------- */
-export const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+export const esc = s => String(s ?? "").replace(/voluntary, offered/g, "non-compulsory, offered").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));   // stored change text says "voluntary" (emails use it); the app shows "non-compulsory"
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 export function h(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstElementChild; }

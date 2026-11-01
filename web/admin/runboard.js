@@ -28,7 +28,7 @@ export function summarize(ch) {
   const addTxt = x => (x?.addons || []).length ? ` · add-ons: ${x.addons.map(addName).join(", ")}` : "";
   if (ch.shift.run === "BU") {   // back-up / on-call: say what is expected and the hours they are free
     const drvA = a?.driver, drvB = b?.driver, works = x => S.shifts.some(o => o.day === ch.shift.day && o.driver === x && o.run !== "BU");
-    const kindTxt = x => x?.bu_kind === "committed" ? `compulsory, add-on block up to ${x.bu_block === 10 ? "10" : "5"} hours` : "non-compulsory, offered on the day";
+    const kindTxt = x => x?.bu_kind === "committed" ? `compulsory, add-on block up to ${x.bu_block === 10 ? "10" : "5"} hours` : "voluntary, offered on the day";
     if (!drvA && drvB) return { text: `${d}: you are no longer ${works(drvB) ? "back-up" : "on-call"}`, affects: [drvB] };
     const f = buFree(ch.shift.day, drvA); const hrs = f.mins ? `free ${buTxt(f)}` : ""; const role = works(drvA) ? "Back-up" : "On-call";
     const line = role === "On-call" ? `${d}: On-call. Check your phone 6:30 to 7:30am and confirm you're available; any call-in is between 6:30 and 8am${hrs ? ` (${hrs})` : ""}` : `${d}: Back-up (${kindTxt(a)})${hrs ? `, ${hrs}` : ""}`;
