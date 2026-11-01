@@ -1,7 +1,7 @@
 // Routes tab: the saved GPS trail of every route, per driver, per day.
 // Points are recorded by the driver app between SOD and EOD (about every 2 minutes) and kept in the `locations` table.
 import { sb, nzNow, today, addDays, label, fmtT, fmtTs, nzToIso, esc, $, $$, first } from "/shared/core.js";
-import { S, nm } from "/admin/admin.js";
+import { S, nm, fnm } from "/admin/admin.js";
 
 const COLORS = ["#62c7e3", "#f0b04a", "#52cc8d", "#ff6178", "#b48cff", "#ffd166", "#4dd0c8", "#ff9f6b", "#8fd36a", "#e07bd0"];
 const st = { day: null, driver: "", cache: {}, hidden: new Set(), map: null };
@@ -58,7 +58,7 @@ function draw(all, list) {
   for (const r of list) { if (st.hidden.has(r.key)) continue; const c = COLORS[all.indexOf(r) % COLORS.length]; const ll = r.pts.map(p => [p.lat, p.lng]); bounds.push(...ll);
     L.polyline(ll, { color: c, weight: 4, opacity: .9 }).addTo(map).bindPopup(`<b>${esc(nm(r.driver))}</b> ${r.shift ? esc(r.shift.run) : ""}<br>${hhmm(r.pts[0].at)} to ${hhmm(r.pts[r.pts.length - 1].at)} · ${r.km.toFixed(1)} km`);
     for (const p of r.pts) L.circleMarker([p.lat, p.lng], { radius: 3, color: c, fillColor: c, fillOpacity: 1, weight: 1 }).addTo(map).bindPopup(`<b>${esc(nm(r.driver))}</b><br>${esc(fmtTs(p.at))}${p.speed ? `<br>${Math.round(p.speed * 3.6)} km/h` : ""}`);
-    const mk = (p, t) => L.marker([p.lat, p.lng], { icon: L.divIcon({ className: "", html: `<div class="mk" style="background:${c}">${esc(first(nm(r.driver)))} ${t}</div>`, iconAnchor: [20, 12] }) }).addTo(map);
+    const mk = (p, t) => L.marker([p.lat, p.lng], { icon: L.divIcon({ className: "", html: `<div class="mk" style="background:${c}">${esc(fnm(r.driver))} ${t}</div>`, iconAnchor: [20, 12] }) }).addTo(map);
     mk(r.pts[0], "start " + hhmm(r.pts[0].at)); if (r.pts.length > 1) mk(r.pts[r.pts.length - 1], "end " + hhmm(r.pts[r.pts.length - 1].at)); }
   if (bounds.length) map.fitBounds(L.latLngBounds(bounds).pad(0.15), { maxZoom: 15 });
 }

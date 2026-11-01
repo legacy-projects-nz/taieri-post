@@ -108,7 +108,7 @@ function teamAndLabour(scores, team, wk) {
   const W = S.C.weights; const R = S.C.rules; const t = today();
   const dueList = [];
   for (const v of S.vans.filter(v => v.active && v.plate !== "OTHER")) for (const [k, l] of [["wof_due", "WOF"], ["rego_due", "Rego"]]) if (v[k]) { const dd = Math.round((new Date(v[k]) - new Date(t)) / 86400000); if (dd <= R.dueSoonDays) dueList.push({ dd, txt: `${v.plate} ${l} ${dd < 0 ? "overdue" : "due"} · ${label(v[k])}`, plate: v.plate }); }
-  for (const p of S.drivers) for (const [k, l] of [["licence_expiry", "licence"], ["dg_expiry", "DG"]]) if (p[k]) { const dd = Math.round((new Date(p[k]) - new Date(t)) / 86400000); if (dd <= R.dueSoonDays) dueList.push({ dd, txt: `${first(p.name)} ${l} ${dd < 0 ? "expired" : "due"} · ${label(p[k])}`, person: p.id }); }
+  for (const p of S.drivers) for (const [k, l] of [["licence_expiry", "licence"], ["dg_expiry", "DG"]]) if (p[k]) { const dd = Math.round((new Date(p[k]) - new Date(t)) / 86400000); if (dd <= R.dueSoonDays) dueList.push({ dd, txt: `${fnm(p.id)} ${l} ${dd < 0 ? "expired" : "due"} · ${label(p[k])}`, person: p.id }); }
   dueList.sort((a, b) => a.dd - b.dd);
   const L = labourWeek(wk); const cls = v => v == null ? "grey" : v <= 0 ? "ok" : v <= 10 ? "warn" : "crit";
   const m = k => `data-metric="${k}" data-mwk="${teamRange(wk).from}" ${teamRange(wk).r === "week" ? "" : `data-mto="${teamRange(wk).to}"`} title="Tap for every driver and the week-by-week history"`; const lb = `data-labour="${wk}" title="Tap for hours by driver and by day"`;

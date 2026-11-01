@@ -84,7 +84,8 @@ export function closeSheets() { $$(".sheet-bg").forEach(b => b.remove()); }
 document.addEventListener("keydown", e => { if (e.key === "Escape") { const all = $$(".sheet-bg"); const top = all[all.length - 1]; if (top) (top._close || (() => top.remove()))(); } });
 export const opt = (list, val) => list.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(val) ? "selected" : ""}>${esc(l)}</option>`).join("");
 export const nm = id => S.peopleBy[id]?.name || id || "—";
-export const fnm = id => first(nm(id));
+// First name, but the full name when two people share a first name (James M / James S)
+export const fnm = id => { const n = nm(id), f = first(n); return Object.values(S.peopleBy || {}).filter(x => first(x.name) === f).length > 1 ? n : f; };
 export function weekBar(extra = "") { return `<div class="wkbar"><button class="ar" data-wk="-1">‹</button><b>${label(S.week)} – ${label(addDays(S.week, 6))}</b><button class="ar" data-wk="1">›</button><button class="btn ghost sm" data-wk="0">This week</button>${extra}</div>`; }
 export function wireWeek() { $$("[data-wk]").forEach(b => b.onclick = async () => { const d = +b.dataset.wk; S.week = d === 0 ? monOf(today()) : addDays(S.week, d * 7); await loadAll(); render(); }); }
 /** Team scores range: this week / last week / last month, relative to the week on screen (base = that week's Monday). */
@@ -185,7 +186,7 @@ function wireAlerts() {
 /* ================= MESSAGES ================= */
 function messagesTab() {
   const rec = Object.groupBy ? Object.groupBy(S.recips, r => r.message_id) : S.recips.reduce((o, r) => ((o[r.message_id] ??= []).push(r), o), {});
-  return `<div class="card"><h2>New message</h2><form id="mf" class="frm"><div class="full row">${S.drivers.map(d => `<label class="chk"><input type="checkbox" name="to" value="${d.id}">${esc(first(d.name))}</label>`).join("")}<button type="button" class="btn ghost sm" id="all-on">Everyone</button><button type="button" class="btn ghost sm" id="all-off">None</button></div>
+  return `<div class="card"><h2>New message</h2><form id="mf" class="frm"><div class="full row">${S.drivers.map(d => `<label class="chk"><input type="checkbox" name="to" value="${d.id}">${esc(fnm(d.id))}</label>`).join("")}<button type="button" class="btn ghost sm" id="all-on">Everyone</button><button type="button" class="btn ghost sm" id="all-off">None</button></div>
     <label class="f full">Message<textarea class="in" id="body" rows="3" required placeholder="e.g. Depot reminder: no parking past the bike shed."></textarea></label>
     <label class="chk full"><input type="checkbox" id="confirm">Ask each driver to tap "Got it"</label><label class="chk full"><input type="checkbox" id="push" checked>Also send a phone notification</label><button class="btn full" type="submit">Send</button></form></div>
     <div class="card"><h2>Sent<span>${S.msgs.length}</span></h2><div class="list">${S.msgs.map(m => { const rs = rec[m.id] || []; const read = rs.filter(r => r.read_at).length, conf = rs.filter(r => r.confirmed_at).length;
