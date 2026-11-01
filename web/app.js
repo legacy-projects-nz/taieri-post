@@ -41,6 +41,7 @@ async function loadAll() {
     q((S.viewer?.isStaff ? sb.from("vehicle_checks").select("*").eq("driver", m) : sb.from("vehicle_checks").select("*")).order("at", { ascending: false }).limit(12)),
   ]);
   S.set = set; S.C = cfg(set); S.runs = runs; S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vans = Object.fromEntries(vans.map(v => [v.plate, v])); S.addons = addons; S.rules = rules;
+  try { const { data: pk } = await sb.from("pickups").select("*").eq("driver", m).gte("day", t.slice(0, 7) + "-01").order("day", { ascending: false }).limit(40); S.pickups = pk || []; } catch { S.pickups = []; }
   try { const { data: ai } = await sb.from("access_info").select("body,updated_at").eq("id", 1).maybeSingle(); S.access = ai || { body: "" }; } catch { S.access = { body: "" }; }
   S.people = Object.fromEntries(people.map(p => [p.id, p])); S.shifts = shifts.filter(s => s.driver === m); S.trainee = shifts.filter(s => s.trainee === m && s.driver !== m);
   S.changes = changes; S.acks = acks; S.msgs = msgs; S.leave = leave; S.alerts = alerts; S.entries = entries; S.marks = marks; S.feed = feed; S.vchk = vchk || [];
@@ -105,6 +106,7 @@ function render() {
     ${pair(toFixCard(n), fromJeremy())}
     ${pair(leaveCard(), detailsCard())}
     ${moreCard()}
+    ${pickupsCard()}
     ${accessCard()}
     <p class="foot">Shift or score looks wrong? Message Jeremy.<br>Signed in as ${esc((S.viewer || S.me).email || "")}</p>
   </div>`;
@@ -400,6 +402,25 @@ function detailsCard() {
   return `<div class="card"><h2>My details</h2><dl class="kv"><dt>Phone</dt><dd>${p.phone ? esc(p.phone) : pill("not on file", "grey")}</dd><dt>Email</dt><dd>${esc(p.email || "")}</dd><dt>Licence</dt><dd>${p.licence_class ? esc(p.licence_class) + " · " : ""}${d(p.licence_expiry)}</dd><dt>DG</dt><dd>${d(p.dg_expiry)}</dd></dl>
     <button class="btn ghost sm" id="prof-edit">Update my details</button></div>`;
 }
+const PU_CUST = { NZC: "NZ Couriers", PH: "Post Haste", TGE: "TGE (NZ National Network)" };
+function pickupsCard() {
+  if (S.viewAs) return "";
+  const list = S.pickups || [];
+  return `<div class="card" id="pickups"><h2>Parcel pick-ups<span>Rural · Owaka · Lawrence</span></h2>
+    <p class="meta" style="margin:0 0 8px">Log the parcels you picked up so they can be invoiced.</p>
+    <div class="row"><button class="btn sm" id="pu-log" style="flex:0 0 auto">+ Log a pick-up</button></div>
+    ${list.length ? `<details style="margin-top:8px"><summary>This month · ${list.length} logged</summary><div class="list" style="margin-top:6px">${list.map(r => `<div class="item"><div>${label(r.day)} · ${esc(r.area)} · ${esc(PU_CUST[r.customer] || r.customer)}</div><div class="meta">${r.small} small${r.large ? ` · ${r.large} large` : ""}${r.note ? ` · ${esc(r.note)}` : ""}</div></div>`).join("")}</div></details>` : ""}</div>`;
+}
+function logPickup() {
+  sheet(`<h3>Log a pick-up</h3><form class="frm" id="pf"><label class="f">Date<input class="in" type="date" id="pu-day" value="${today()}" required></label>
+    <label class="f">Area<select class="in" id="pu-area"><option>Lawrence</option><option>Owaka</option><option>Rural</option></select></label>
+    <label class="f">Customer<select class="in" id="pu-cust">${Object.entries(PU_CUST).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></label>
+    <label class="f">Small parcels<input class="in" id="pu-s" inputmode="numeric" placeholder="0"></label><label class="f">Large parcels<input class="in" id="pu-l" inputmode="numeric" placeholder="0"></label>
+    <label class="f full">Note (optional)<input class="in" id="pu-n"></label><button class="btn full" type="submit">Save pick-up</button></form>`, (bg, close) => {
+    bg.querySelector("#pf").addEventListener("submit", async e => { e.preventDefault(); const g = x => bg.querySelector("#" + x).value; const sm = +g("pu-s") || 0, lg = +g("pu-l") || 0; if (!sm && !lg) return toast("Enter at least one parcel", "err");
+      const { error } = await sb.from("pickups").insert({ day: g("pu-day"), area: g("pu-area"), customer: g("pu-cust"), small: sm, large: lg, note: g("pu-n") || null, driver: S.me.id, created_by: S.me.id });
+      if (error) return toast(error.message, "err"); close(); toast("Pick-up logged ✓", "ok"); await loadAll(); render(); }); });
+}
 function accessCard() {
   const body = (S.access?.body || "").trim(); const canEdit = !!S.viewer?.can?.("people");
   if (!body && !canEdit) return "";
@@ -446,6 +467,7 @@ function wire() {
   $$("[data-addon]").forEach(c => c.onchange = async () => { const shift = S.shifts.find(s => s.id === c.dataset.shift); const set = new Set(shift.addons || []); c.checked ? set.add(c.dataset.addon) : set.delete(c.dataset.addon); const { error } = await sb.rpc("set_my_addons", { p_shift: shift.id, p_addons: [...set] }); if (error) { toast(error.message, "err"); c.checked = !c.checked; } else { shift.addons = [...set]; render(); } });
   $$("[data-plan]").forEach(i => i.onchange = async () => { const shift = S.shifts.find(s => s.id === i.dataset.shift); const plan = { ...(shift.plan || {}), [i.dataset.plan]: i.value }; const { error } = await sb.rpc("set_my_plan", { p_shift: shift.id, p_plan: plan }); if (error) toast(error.message, "err"); else { shift.plan = plan; toast("Saved", "ok"); } });
   $("#access-edit")?.addEventListener("click", editAccess);
+  $("#pu-log")?.addEventListener("click", logPickup);
   $$("[data-done]").forEach(b => b.onclick = async () => { const { error } = await sb.rpc("task_done", { p_shift: b.dataset.shift, p_addon: b.dataset.done }); if (error) toast(error.message, "err"); else { toast("Marked done ✓", "ok"); await loadAll(); render(); } });
   $$("[data-sc]").forEach(b => b.onclick = () => { S.scSel = S.scSel === b.dataset.sc ? null : b.dataset.sc; render(); setTimeout(() => $("#scores")?.scrollIntoView({ block: "nearest" }), 0); });
   $("#leave-new")?.addEventListener("click", leaveForm);
