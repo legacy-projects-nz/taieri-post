@@ -19,6 +19,9 @@ try { S.gotit = JSON.parse(localStorage.getItem("tp-gotit") || "{}"); } catch { 
   setInterval(render, 60000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadAll().then(render); } });
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => { });
+  // pick up new versions without a manual refresh: compare app.js's ETag now and whenever the app comes back to the front
+  let tag = null; const ver = async () => { try { const r = await fetch("/app.js", { method: "HEAD", cache: "no-store" }); const t = r.headers.get("etag") || r.headers.get("last-modified"); if (!t) return; if (tag && t !== tag && !document.querySelector(".sheet-bg")) location.reload(); tag = tag || t; } catch { } };
+  ver(); setInterval(ver, 300000); document.addEventListener("visibilitychange", () => { if (!document.hidden) ver(); });
 })();
 
 async function loadAll() {
