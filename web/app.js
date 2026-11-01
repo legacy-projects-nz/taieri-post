@@ -83,10 +83,11 @@ function render() {
     ${viewBar()}
     <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
     ${quickBar(T, n)}
+    ${todayCard(T, nextDay, n)}
+    ${addonsCard(T, nextDay, n)}
     ${rosterChanges(n)}
     ${alertsCard()}
     ${messagesCard()}
-    ${pair(todayCard(T, nextDay, n), addonsCard(T, nextDay, n))}
     ${scoresCard()}
     ${nextShiftCard(nextDay, n)}
     ${pair(vanCard(T, null), shiftsCard(t))}
@@ -121,16 +122,17 @@ function linePast(item, n) {
 function rosterChanges(n) {
   const ackBy = Object.fromEntries(S.acks.map(a => [a.item_id, a]));
   const live_ = S.changes.filter(i => !linePast(i, n)).sort((a, b) => (b.roster_changes.sent_at || "").localeCompare(a.roster_changes.sent_at || ""));
-  const fresh = live_.filter(i => !ackBy[i.id]?.confirmed_at && !S.gotit[i.id]);
-  const tapped = live_.filter(i => !ackBy[i.id]?.confirmed_at && S.gotit[i.id]);
-  const old = live_.filter(i => ackBy[i.id]?.confirmed_at).slice(0, 3);
+  const settled = i => ackBy[i.id]?.confirmed_at || ackBy[i.id]?.dismissed_at;   // confirmed by the driver or by Jeremy, or dismissed: no button
+  const fresh = live_.filter(i => !settled(i) && !S.gotit[i.id]);
+  const tapped = live_.filter(i => !settled(i) && S.gotit[i.id]);
+  const old = live_.filter(i => settled(i)).slice(0, 3);
   if (!fresh.length && !tapped.length && !old.length) return "";
   const grp = list => { const by = {}; for (const i of list) (by[i.change_id] ??= { at: i.roster_changes.sent_at, items: [] }).items.push(i); return Object.values(by); };
   return `<div class="card ${fresh.length ? "hot" : ""}" id="rc"><h2>Roster changes<span>${fresh.length ? `${fresh.length} to confirm` : tapped.length ? "Got it sent" : "confirmed"}</span></h2>
     ${grp(fresh).map(g => `<div><div class="meta mono">Sent ${fmtTs(g.at)}</div><ul style="margin:4px 0 0 18px;padding:0;color:var(--crit);font-weight:700">${g.items.map(i => `<li>${esc(i.summary)}</li>`).join("")}</ul></div>`).join("")}
     ${fresh.length ? `<button class="btn crit" id="gotit" data-ids="${fresh.map(i => i.id).join(",")}">Got it, I've read ${fresh.length === 1 ? "this change" : "these changes"}</button><p class="hint">One tap. Jeremy sees your ✓ straight away.</p>` : ""}
     ${tapped.length ? `<p class="hint c-ok">✓ Got it sent for ${tapped.length} change${tapped.length === 1 ? "" : "s"} · <button class="linkbtn" id="gotit-again">Didn't go through? Show again</button></p>` : ""}
-    ${grp(old).map(g => `<div><div class="meta mono c-ok">Sent ${fmtTs(g.at)} · ✓ you confirmed ${fmtTs(ackBy[g.items[0].id].confirmed_at)}</div><ul style="margin:4px 0 0 18px;padding:0;color:var(--ink3)">${g.items.map(i => `<li>${esc(i.summary)}</li>`).join("")}</ul></div>`).join("")}
+    ${grp(old).map(g => `<div><div class="meta mono c-ok">Sent ${fmtTs(g.at)} · ${ackBy[g.items[0].id].confirmed_at ? `✓ confirmed ${fmtTs(ackBy[g.items[0].id].confirmed_at)}` : "✓ cleared"}</div><ul style="margin:4px 0 0 18px;padding:0;color:var(--ink3)">${g.items.map(i => `<li>${esc(i.summary)}</li>`).join("")}</ul></div>`).join("")}
   </div>`;
 }
 
@@ -600,7 +602,7 @@ function daySheet(day) {
     ${D ? `<h4>Shifts</h4>${segs}` : ""}
     ${s && s.items.length ? `<h4>How the posts scored</h4><div class="row" style="gap:3px">${s.items.map(i => `<button class="chip ${i.st}" data-postv="${esc(i.key)}">${esc(i.label)} ${esc(itemNote(i).replace(/^posted /, ""))}</button>`).join("")}</div>` : ""}
     ${s && s.accDays.length ? `<h4>Accuracy</h4><div class="row" style="gap:3px">${s.accDays.map(a => `<button class="chip ${col(a.v) === "ok" ? "ok" : col(a.v) === "grey" ? "due" : "late"}" data-accv="${a.day}|${esc(a.code)}">${esc(a.code)} ${a.v == null ? "—" : a.v.toFixed(0) + "%"}</button>`).join("")}</div>` : ""}
-    ${ch.length ? `<h4>Roster changes for this day</h4><div class="list">${ch.map(i => `<div class="item"><div>${esc(i.summary)}</div><div class="meta">sent ${fmtTs(i.roster_changes.sent_at)} · ${ackBy[i.id]?.confirmed_at ? `✓ you confirmed ${fmtTs(ackBy[i.id].confirmed_at)}` : "not confirmed yet"}</div></div>`).join("")}</div>` : ""}
+    ${ch.length ? `<h4>Roster changes for this day</h4><div class="list">${ch.map(i => `<div class="item"><div>${esc(i.summary)}</div><div class="meta">sent ${fmtTs(i.roster_changes.sent_at)} · ${ackBy[i.id]?.confirmed_at ? `✓ confirmed ${fmtTs(ackBy[i.id].confirmed_at)}` : ackBy[i.id]?.dismissed_at ? "✓ cleared" : "not confirmed yet"}</div></div>`).join("")}</div>` : ""}
     ${ents.length ? `<h4>From Jeremy</h4><div class="list">${ents.map(x => `<div class="item clk ${x.excused ? "done" : x.kind === "mistake" ? "crit" : x.kind === "praise" ? "ok" : ""}" data-entryv="${x.id}">${esc(x.title)}</div>`).join("")}</div>` : ""}
     ${lv.length ? `<h4>Leave</h4><div class="list">${lv.map(l => `<div class="item ok clk" data-leavev="${l.id}">${esc(LEAVE_T[l.type] || l.type)} · approved</div>`).join("")}</div>` : ""}`, null, { wide: true });
 }
