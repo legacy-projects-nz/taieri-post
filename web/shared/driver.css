@@ -85,3 +85,10 @@ h3.sub{margin:0;font:700 15px var(--fd);color:var(--ink)}
 .ns .kv{margin-top:2px}
 .ns .abmore summary{color:var(--ink2)}
 hr.gl{display:none}
+
+/* Today's tasks: calm colours (blue = to do, amber = due soon / overdue, green = done), no red or brown fills */
+.tk.pend,.tk.soon,.tk.over{background:var(--soft);border:1px solid var(--line);border-left:5px solid var(--accent)}
+.tk.pend .w{color:var(--ink2)}
+.tk.soon{border-left-color:#f5a623}.tk.soon .w{color:var(--ink)}
+.tk.over{border-left-color:#f5a623;box-shadow:inset 0 0 0 1px #f5a623}.tk.over .w{color:var(--ink);font-weight:800}
+.tk.ok{background:var(--ok-fill);border:1px solid var(--ok);border-left:5px solid var(--ok)}.tk.ok .w{color:var(--ok)}

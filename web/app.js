@@ -313,8 +313,8 @@ function tasksCard(D, n, next, bare = false) {
     const nDone = items.filter(t => t.doneAt || t.planned).length;
     const row = t => { const isDone = !!(t.doneAt || t.planned); let cls = "", st = "";
       if (isDone) { cls = "ok"; st = t.doneAt ? `✓ done ${fmtTime(t.doneAt)}` : "✓ game plan in"; }
-      else if (isT) { if (t.closes != null && n.min > t.closes) { cls = "crit"; st = `✗ not done by ${fmtT(t.closes)}`; } else if (t.closes != null && t.closes - n.min <= 60) { cls = "crit"; st = `due in ${t.closes - n.min} min`; } else { cls = "warn"; st = "not done yet"; } }
-      const btn = isT && !isDone && t.key && !S.viewAs ? `<button class="btn sm ${cls === "crit" ? "warn" : ""}" data-done="${esc(t.key)}" data-shift="${x.shift.id}">Done ✓</button>` : "";
+      else if (isT) { if (t.closes != null && n.min > t.closes) { cls = "over"; st = `overdue · was due ${fmtT(t.closes)}`; } else if (t.closes != null && t.closes - n.min <= 60) { cls = "soon"; st = `due in ${t.closes - n.min} min`; } else { cls = "pend"; st = "not done yet"; } }
+      const btn = isT && !isDone && t.key && (!S.viewAs || S.viewer?.isStaff) ? `<button class="btn sm accent" data-done="${esc(t.key)}" data-shift="${x.shift.id}">Done ✓</button>` : "";
       return `<div class="tk ${cls}"><div class="tkt"><div class="t">${esc(t.title)}</div><div class="d">${esc(t.desc || "")}</div><div class="w">${esc(t.time)}${st ? ` · ${st}` : ""}</div></div>${btn}</div>`; };
     return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${fmtT(x.st)} – ${fmtT(x.en)}${items.length && isT ? ` · ${nDone}/${items.length} done` : ""}</span></div>
       ${items.length ? `<div class="tks">${items.map(row).join("")}</div>` : `<p class="meta" style="margin:4px 0 0">Nothing extra on this run.</p>`}
@@ -325,7 +325,7 @@ function tasksCard(D, n, next, bare = false) {
   }).join("");
   if (bare) return `<h3 class="sub">Tasks</h3>${blocks || `<p class="hint">Nothing extra on this shift.</p>`}`;
   return `<div class="card${next ? " nextc" : ""}"><h2>${isT ? "Today's tasks" : "Next tasks"}<span>${isT ? "add-ons + timed tasks" : dayTag(D.day)}</span></h2>
-    ${blocks || `<p class="hint">Nothing extra on this shift.</p>`}${isT ? `<p class="hint" style="margin:0">Orange = not done yet · red = due within the hour or missed · green = done. Tap Done as you finish each one; Jeremy sees it straight away.</p>` : ""}</div>`;
+    ${blocks || `<p class="hint">Nothing extra on this shift.</p>`}${isT ? `<p class="hint" style="margin:0">Blue = not done yet · amber = due within the hour or overdue · green = done. Tap Done as you finish each one; Jeremy sees it straight away.</p>` : ""}</div>`;
 }
 
 /* ---------- Scores ---------- */
@@ -411,7 +411,7 @@ function wire() {
   $("#signout")?.addEventListener("click", signOut);
   $("#view-as")?.addEventListener("change", e => { location.hash = e.target.value ? "as=" + e.target.value : ""; });
   $$("#va-prev,#va-next").forEach(b => b.onclick = () => { if (b.dataset.id) location.hash = "as=" + b.dataset.id; });
-  if (S.viewAs) { $$("#gotit,#gotit-again,[data-confirm],[data-addon],[data-plan],[data-done],#leave-new,#push-btn,#vchk-btn").forEach(el => { el.disabled = true; el.title = "Only " + first(S.viewAs.name) + " can do this"; el.style.opacity = ".5"; }); }
+  if (S.viewAs) { $$("#gotit,#gotit-again,[data-confirm],[data-addon],[data-plan],#leave-new,#push-btn,#vchk-btn").forEach(el => { el.disabled = true; el.title = "Only " + first(S.viewAs.name) + " can do this"; el.style.opacity = ".5"; }); }
   pushState().then(s => { const el = $("#push-state"); if (el) el.textContent = s === "on" ? "on" : s === "denied" ? "blocked in phone settings" : s === "unsupported" ? "add to Home Screen first" : "off, tap to turn on"; });
   $("#push-btn")?.addEventListener("click", async () => { const r = await enablePush(S.me.id, VAPID_PUBLIC); toast(r.ok ? "Notifications are on" : r.why, r.ok ? "ok" : "err"); render(); });
   $("#gotit")?.addEventListener("click", async e => { const ids = e.currentTarget.dataset.ids.split(","); for (const id of ids) S.gotit[id] = new Date().toISOString(); localStorage.setItem("tp-gotit", JSON.stringify(S.gotit)); render();
