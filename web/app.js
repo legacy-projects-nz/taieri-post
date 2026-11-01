@@ -228,12 +228,29 @@ function todayCard(T, N, n) {
   return `<div class="card"><h2>Today<span>${label(n.date)}</span></h2><p class="hint" style="font-size:15px">${why}</p></div>`;
 }
 const dayTag = d => `${d === addDays(today(), 1) ? "Tomorrow · " : ""}${label(d)}`;
+/* Back-up (also working that day: add-on hours before/after the shift) and on-call (listed, not rostered): next 7 days */
+function buSection(n) {
+  const t = n.date || today(), end = addDays(t, 7);
+  const list = S.shifts.filter(x => x.run === "BU" && x.day > t && x.day <= end).sort((a, b) => a.day < b.day ? -1 : 1);
+  if (!list.length) return "";
+  const rows = list.map(x => {
+    const works = !!S.days[x.day];
+    const kind = works ? "Back-up" : "On-call";
+    const what = works
+      ? (x.bu_kind === "committed"
+        ? `Committed. Be ready for add-on hours before or after your shift${x.bu_block ? `, up to ${x.bu_block} hours` : ""}. Allowance if you're not needed; paid for hours worked if you are.`
+        : `Voluntary. You may be offered extra hours before or after your shift. Yes or no is your call; paid for hours worked.`)
+      : `Check your phone between 6:30 and 7:30am and confirm you're available. Allowance if you're not needed; if called in, paid for the time worked (2 hour minimum).`;
+    return `<div class="bu"><div class="meta"><b>${kind}</b> · ${dayTag(x.day)}</div><div class="hint" style="margin:2px 0 10px">${what}</div></div>`;
+  }).join("");
+  return `<section class="ns"><h3 class="sub">Back-up and on-call</h3>${rows}</section>`;
+}
 function nextShiftCard(N, n) {   // one box: shift, tasks, vehicle, split by grey lines
-  if (!N) return `<div class="card nextc"><h2>Next shift</h2><div class="big">Not on the roster yet</div><p class="hint">Your next shift, tasks and van show here once the roster is out.</p></div>`;
+  if (!N) return `<div class="card nextc"><h2>Next shift</h2><div class="big">Not on the roster yet</div><p class="hint">Your next shift, tasks and van show here once the roster is out.</p>${buSection(n)}</div>`;
   return `<div class="card nextc"><h2>Next shift<span>${dayTag(N.day)}</span></h2>
     <section class="ns"><h3 class="sub">Shift</h3><div class="big bigrow"><span>${fmtT(N.start)}–${fmtT(N.end)}</span>${vanChips(N)}</div><div class="meta" style="margin-top:-4px">${N.hours} h rostered</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}</section>
     <section class="ns shade">${tasksCard(N, n, true, true)}</section>
-    <section class="ns"><h3 class="sub">Vehicle</h3>${vanInner(N)}</section></div>`;
+    <section class="ns"><h3 class="sub">Vehicle</h3>${vanInner(N)}</section>${buSection(n)}</div>`;
 }
 function vanCard(T, N) {
   const src = T && T.segs.some(x => x.shift.van) ? T : N && N.segs.some(x => x.shift.van) ? N : null; if (!src) return "";
