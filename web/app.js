@@ -166,7 +166,7 @@ const ALERT_WHAT = { sod_late: "Your start of day wasn't posted on time. Post it
 const myAlerts = () => S.alerts.filter(a => !String(a.dedupe_key || "").startsWith("review|"));
 function alertsCard() {
   const list = myAlerts(); if (!list.length) return "";
-  return `<div class="card hot"><h2>Admin tasks<span>${list.length}</span></h2><div class="list">${list.map(a => `<div class="item ${a.kind.includes("missed") || a.kind === "sod_missing" ? "crit" : "warn"}"><b>${esc(a.title)}</b>${a.body ? `<div class="meta">${esc(a.body)}</div>` : ""}<div class="m">${ago(a.created_at)}</div><div class="row" style="margin-top:6px"><button class="btn sm" data-alertv="${a.id}">What to do</button>${S.viewAs ? "" : `<button class="btn ghost sm" data-gotit-alert="${a.id}">Got it</button>`}</div></div>`).join("")}</div></div>`;
+  return `<div class="card hot"><h2>Admin tasks<span>${list.length}</span></h2><div class="list">${list.map(a => `<div class="item ${a.kind.includes("missed") || a.kind === "sod_missing" ? "crit" : "warn"}"><b>${esc(a.title)}</b>${a.body ? `<div class="meta">${esc(a.body)}</div>` : ""}<div class="m">${ago(a.created_at)}</div><div class="row" style="margin-top:6px"><button class="btn sm" data-alertv="${a.id}">What to do</button>${S.viewAs && !S.viewer?.isStaff ? "" : `<button class="btn ghost sm" data-gotit-alert="${a.id}">Got it${S.viewAs ? " (for " + esc(first(S.viewAs.name)) + ")" : ""}</button>`}</div></div>`).join("")}</div></div>`;
 }
 function messagesCard() {
   const unread = S.msgs.filter(m => !m.read_at); const toConfirm = S.msgs.filter(m => m.messages.needs_confirm && !m.confirmed_at);
@@ -629,7 +629,7 @@ function alertSheet(a) {
   const sh = a.shift_id ? S.shifts.find(x => x.id === a.shift_id) : null; const rule = a.rule_id ? S.rules.find(r => r.id === a.rule_id) : null; const what = ALERT_WHAT[a.kind] || "";
   const act = !S.viewAs && sh && ((a.kind === "sod_late" || a.kind === "sod_missing") && !S.sods.some(x => x.shift_id === sh.id) ? `<button class="btn" data-sodv="${sh.id}">Post start of day now</button>` : a.kind === "eod_late" && !S.eods.some(x => x.shift_id === sh.id) ? `<button class="btn accent" data-eodv="${sh.id}">Post end of day now</button>` : "") || (a.kind === "vchk_due" && !S.viewAs ? `<button class="btn accent" id="al-vchk">Do the vehicle check</button>` : "");
   sheet(`<h3>${esc(a.title)}</h3>${a.body ? `<p>${esc(a.body)}</p>` : ""}${what ? `<p class="hint">${what}</p>` : ""}${sh ? `<p class="meta">${esc(sh.run)} · ${label(sh.day)}${rule ? ` · ${esc(rule.name)} ${winTxt(rule)}` : ""}</p>` : ""}
-    ${act}${S.viewAs ? "" : `<button class="btn ghost" id="al-got">Got it</button>`}`,
+    ${act}${S.viewAs && !S.viewer?.isStaff ? "" : `<button class="btn ghost" id="al-got">Got it</button>`}`,
     (bg, close) => { bg.querySelector("#al-vchk")?.addEventListener("click", () => { close(); vehicleCheckForm(); }); bg.querySelector("#al-got")?.addEventListener("click", () => { close(); gotItAlert(a.id); }); });
 }
 async function gotItAlert(id) { const { error } = await sb.rpc("alert_ack", { p_id: id }); if (error) return toast(error.message, "err"); S.alerts = S.alerts.filter(x => x.id !== id); toast("Got it ✓", "ok"); render(); }
