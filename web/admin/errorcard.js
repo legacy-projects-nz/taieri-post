@@ -2,15 +2,15 @@
 import { sb, q, today, esc, $, toast } from "/shared/core.js";
 import { S, sheet, opt, nm, loadAll, render, fn } from "/admin/admin.js";
 
-export const ERROR_ISSUES = ["Misdelivery (wrong address)", "Parcel not delivered / returned wrongly", "Parcel damaged", "Scanned but not delivered", "Missing signature or photo", "Left somewhere unsafe", "Missed pick-up", "Wrong run / wrong van", "Other"];
+export const ERROR_ISSUES = ["Parcels", "Driving", "Admin", "Communication", "Vehicle", "Safety", "Timing", "Other"];
 
 export function errorCard(driver = "") {
   const def = S.C.rules.mistakePct;
   sheet(`<h3>Record an error</h3>
     <form class="frm" id="qe">
       <label class="f">Driver<select class="in" id="qe-drv">${opt(S.drivers.filter(d => d.role === "driver" || true).map(d => [d.id, d.name]), driver)}</select></label>
-      <label class="f">Issue<select class="in" id="qe-issue">${opt(ERROR_ISSUES.map(x => [x, x]))}</select></label>
-      <label class="f full">Description<textarea class="in" id="qe-desc" rows="3" placeholder="What happened, where, anything Jeremy should know" required></textarea></label>
+      <label class="f">Category<select class="in" id="qe-issue">${opt(ERROR_ISSUES.map(x => [x, x]))}</select></label>
+      <label class="f full">Description<textarea class="in" id="qe-desc" rows="3" placeholder="What happened, where, anything else to note" required></textarea></label>
       <label class="f">% off Accuracy<input class="in" id="qe-pct" inputmode="decimal" value="${def}"></label>
       <label class="f">Date<input class="in" type="date" id="qe-day" value="${today()}" required></label>
       <label class="chk on"><input type="checkbox" id="qe-show" checked>Show the driver</label>
