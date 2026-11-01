@@ -105,6 +105,8 @@ function ruleCheck(ws, leaveOn) {
 
 
 /* Back up: the hours a driver is actually free to add on that day (the Back up window minus their rostered shifts) */
+const BU_MIN = 180;      // a back-up needs 3+ hours free in a row
+const BU_NEVER = new Set(["J", "JA", "CH", "dmudmfw51", "dmudma1p1", "dmuf17o3o"]);   // Jeremy, James S, Jack, Pat, Peter, Other: never listed as back-up
 const BU_SHORT = 300;   // up to 5 h = $10 block, over 5 h = $20 block
 function buFree(day, driver) {
   const w = S.runsBy.BU?.windows?.[dayName(day)]; if (!w || !driver) return { free: [], mins: 0 };
@@ -112,12 +114,12 @@ function buFree(day, driver) {
   const a0 = toMin(w[0][0]), a1 = toMin(w[0][w[0].length - 1] ?? w[0][1]);
   const busy = S.shifts.filter(x => x.day === day && x.driver === driver && x.run !== "BU").map(x => segTimes(x, S.runsBy)).filter(x => x.st != null).map(x => [x.st, x.en ?? x.st]).sort((a, b) => a[0] - b[0]);
   const free = []; let cur = a0;
-  for (const [bs, be] of busy) { if (bs - cur >= 15) free.push([cur, Math.min(bs, a1)]); cur = Math.max(cur, be); }
-  if (a1 - cur >= 15) free.push([cur, a1]);
-  return { free, mins: free.reduce((t, f) => t + f[1] - f[0], 0) };
+  for (const [bs, be] of busy) { if (bs - cur >= BU_MIN) free.push([cur, Math.min(bs, a1)]); cur = Math.max(cur, be); }
+  if (a1 - cur >= BU_MIN) free.push([cur, a1]);
+  return { free, mins: free.reduce((t, f) => t + f[1] - f[0], 0) };   // only gaps of 3 hours or more in a row count
 }
 const buHrs = m => (Math.round(m / 6) / 10) + "h";
-const buTxt = f => f.mins ? `${f.free.map(x => `${fmtT(x[0])}–${fmtT(x[1])}`).join(" + ")} · ${buHrs(f.mins)}` : (f.leave ? "on leave" : "no free hours");
+const buTxt = f => f.mins ? `${f.free.map(x => `${fmtT(x[0])}–${fmtT(x[1])}`).join(" + ")} · ${buHrs(f.mins)}` : (f.leave ? "on leave" : "under 3 hours free");
 const buCol = m => m <= BU_SHORT ? "var(--warn)" : "var(--go)";
 
 /* ---------- wiring ---------- */
@@ -151,8 +153,8 @@ function slotSheet(day, run, slot) {
   const opts = S.addons.filter(a => a.runs.includes(run) && !(sat && a.no_saturday));
   if (!S.me.can("roster")) { toast("You can view the roster but not change it", "err"); return; }
   sheet(`<h3>${esc(r.label || run)} · ${label(day)}${(r.slots || 1) > 1 ? ` · slot ${slot}` : ""}</h3><p class="meta">${esc(r.name)}${w ? ` · usual ${fmtT(toMin(w[0][0]))}–${fmtT(toMin(w[0][1]))}` : " · doesn't usually run this day"}</p>
-    <form class="frm" id="sf">${run === "BU" ? (() => { const L = S.drivers.map(d => ({ d, f: buFree(day, d.id) })).sort((a, b) => b.f.mins - a.f.mins || nm(a.d.id).localeCompare(nm(b.d.id)));
-      return `<div class="full"><div class="meta mono" style="margin-bottom:6px">DRIVER · MOST AVAILABLE FIRST · HOURS FREE TO ADD ON</div><input type="hidden" id="drv" value="${esc(s?.driver || "")}"><div class="list" id="budrv">${L.map(({ d, f }) => `<button type="button" class="btn sm ${s?.driver === d.id ? "" : "ghost"}" data-d="${d.id}" data-s="${f.free.length ? fmt24(f.free.reduce((a, b) => (b[1] - b[0] > a[1] - a[0] ? b : a))[0]) : ""}" data-e="${f.free.length ? fmt24(f.free.reduce((a, b) => (b[1] - b[0] > a[1] - a[0] ? b : a))[1]) : ""}" data-m="${f.mins}" style="justify-content:space-between;text-align:left;border-left:6px solid ${f.mins ? buCol(f.mins) : "var(--grey)"}"><span>${esc(d.name)}</span><span class="meta">${esc(buTxt(f))}</span></button>`).join("")}</div><p class="hint" style="margin:6px 0 0"><span style="color:var(--warn)">■</span> up to 5 hours (the $10 block) · <span style="color:var(--go)">■</span> over 5 hours (the $20 block)</p></div>`; })() : `<label class="f full">Driver<select class="in" id="drv">${opt(drvOpts, s?.driver || "")}</select></label>`}
+    <form class="frm" id="sf">${run === "BU" ? (() => { const L = S.drivers.filter(d => !BU_NEVER.has(d.id) || d.id === s?.driver).map(d => ({ d, f: buFree(day, d.id) })).sort((a, b) => b.f.mins - a.f.mins || nm(a.d.id).localeCompare(nm(b.d.id)));
+      return `<div class="full"><div class="meta mono" style="margin-bottom:6px">DRIVER · MOST AVAILABLE FIRST · 3+ HOURS FREE IN A ROW, 6AM–5PM</div><input type="hidden" id="drv" value="${esc(s?.driver || "")}"><div class="list" id="budrv">${L.map(({ d, f }) => `<button type="button" class="btn sm ${s?.driver === d.id ? "" : "ghost"}" ${!f.mins && s?.driver !== d.id ? "disabled" : ""} data-d="${d.id}" data-s="${f.free.length ? fmt24(f.free.reduce((a, b) => (b[1] - b[0] > a[1] - a[0] ? b : a))[0]) : ""}" data-e="${f.free.length ? fmt24(f.free.reduce((a, b) => (b[1] - b[0] > a[1] - a[0] ? b : a))[1]) : ""}" data-m="${f.mins}" style="justify-content:space-between;text-align:left;border-left:6px solid ${f.mins ? buCol(f.mins) : "var(--grey)"};${!f.mins ? "opacity:.45" : ""}"><span>${esc(d.name)}</span><span class="meta">${esc(buTxt(f))}</span></button>`).join("")}</div><p class="hint" style="margin:6px 0 0"><span style="color:var(--warn)">■</span> up to 5 hours (the $10 block) · <span style="color:var(--go)">■</span> over 5 hours (the $20 block)</p></div>`; })() : `<label class="f full">Driver<select class="in" id="drv">${opt(drvOpts, s?.driver || "")}</select></label>`}
     ${isSort(run) || r.needs_van === false ? "" : `<label class="f full">Van<select class="in" id="van">${opt([["", "—"], ...S.vans.filter(v => v.active).map(v => [v.plate, `${v.plate}${v.model ? " · " + v.model : ""}`])], s?.van || "")}</select></label>`}
     <label class="f">Start<input class="in" type="time" id="st" value="${st != null ? fmt24(st) : ""}"></label><label class="f">Finish<input class="in" type="time" id="en" value="${en != null ? fmt24(en) : ""}"></label>
     ${opts.length ? `<div class="full"><div class="meta mono" style="margin-bottom:6px">ADD-ONS</div><div class="row">${opts.map(a => `<label class="chk ${(s?.addons || []).includes(a.id) ? "on" : ""}"><input type="checkbox" name="add" value="${a.id}" ${(s?.addons || []).includes(a.id) ? "checked" : ""}>${esc(a.name)}${a.minutes ? ` <span class="meta">+${a.minutes}m</span>` : ""}</label>`).join("")}</div></div>` : ""}
