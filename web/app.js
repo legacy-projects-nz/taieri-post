@@ -80,8 +80,7 @@ function viewBar() {
       <select class="in" id="view-as" style="min-height:38px;font-size:14px;flex:1 1 140px"><option value="">— me (${esc(first(S.viewer.name))}) —</option>${list.map(d => `<option value="${d.id}" ${S.viewAs?.id === d.id ? "selected" : ""}>${loginState(d.id).cls === "ok" ? "● " : "○ "}${esc(d.name)}${d.role !== "driver" ? ` (${d.role})` : ""}</option>`).join("")}</select>
       <button class="btn ghost sm" id="va-prev" ${prev ? `data-id="${prev.id}"` : "disabled"} style="flex:0">‹</button><button class="btn ghost sm" id="va-next" ${next ? `data-id="${next.id}"` : "disabled"} style="flex:0">›</button>
       <a class="btn ghost sm" href="/admin/" style="flex:0;text-decoration:none">Owner portal</a></div>
-    ${S.viewAs ? `<div class="row" style="align-items:center;gap:6px"><span class="chip ${loginState(S.viewAs.id).cls}">${loginState(S.viewAs.id).tag}</span><span class="meta">${esc(loginState(S.viewAs.id).txt)}</span></div>` : ""}
-    ${S.viewAs ? `<div class="hint">This is exactly what ${esc(first(S.viewAs.name))} sees. You can post a SOD or EOD on their behalf; the other buttons are theirs alone.</div>` : ""}</div>`;
+    ${S.viewAs ? `<div class="row" style="align-items:center;gap:6px"><span class="chip ${loginState(S.viewAs.id).cls}">${loginState(S.viewAs.id).tag}</span><span class="meta">${esc(loginState(S.viewAs.id).txt)}</span></div>` : ""}</div>`;
 }
 
 /* ================= render ================= */
