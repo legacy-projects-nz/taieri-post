@@ -61,7 +61,7 @@ function addonBoard(day, n) {
       let cls = "due", txt = winTxt(r); if (d) { cls = "ok"; txt = `✓ ${fmtTime(d)}`; } else if (planned) { cls = "ok"; txt = "✓ game plan in"; } else if (closes != null && nowMin > closes) { cls = "miss"; txt = `✗ not done by ${fmtT(closes)}`; } else if (opens != null && nowMin >= opens) { cls = "over"; txt = `now · ${txt}`; }
       if (key) { seen.add(key); tot++; if (cls === "ok") done++; if (cls === "miss") missed++; }
       chips.push(`<span class="chip ${cls}" title="${esc(r.name)}">${esc(r.name)} <span style="font-weight:500">${esc(txt)}</span></span>`); }
-    for (const id of s.addons || []) { if (seen.has(id)) continue; const a = S.addons.find(x => x.id === id); if (!a) continue; const d = dn[id]; const p = plan[id]; const ended = en != null && nowMin > en;
+    for (const id of s.addons || []) { if (seen.has(id)) continue; const a = S.addons.find(x => x.id === id); if (!a) continue; const d = dn[id]; const p = plan[id]; const ended = en != null && nowMin > en + (S.C.rules.finishGrace ?? 90);  // allow 1.5 h past the run finish before flagging
       const cls = d ? "ok" : ended ? "miss" : "due"; const txt = d ? `✓ ${fmtTime(d)}` : ended ? "✗ not marked" : p ? `~${fmtT(toMin(p))}` : isT ? "not yet" : ""; tot++; if (d) done++; else if (ended) missed++;
       chips.push(`<span class="chip ${cls}" title="${esc(a.name)}">${esc(a.short || a.name)}${txt ? ` <span style="font-weight:500">${esc(txt)}</span>` : ""}</span>`); }
     if (!chips.length) continue;
