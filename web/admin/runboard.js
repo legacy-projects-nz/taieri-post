@@ -7,9 +7,10 @@ import { S, sheet, opt, nm, fnm, weekBar, wireWeek, loadAll, render, fn } from "
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const key = s => `${s.day}|${s.run}|${s.slot}`;
-const snap = s => s ? { driver: s.driver || null, van: s.van || null, start_at: s.start_at ? s.start_at.slice(0, 5) : null, end_at: s.end_at ? s.end_at.slice(0, 5) : null, addons: [...(s.addons || [])].sort(), trainee: s.trainee || null } : null;
+const snap = s => s ? { driver: s.driver || null, van: s.van || null, start_at: s.start_at ? s.start_at.slice(0, 5) : null, end_at: s.end_at ? s.end_at.slice(0, 5) : null, addons: [...(s.addons || [])].sort(), trainee: s.trainee || null, ...(s.run === "BU" ? { bu_kind: s.bu_kind === "committed" ? "committed" : "voluntary", bu_block: s.bu_kind === "committed" ? (s.bu_block || 5) : null } : {}) } : null;
 const canon = o => o ? JSON.stringify([o.driver ?? null, o.van ?? null, o.start_at ?? null, o.end_at ?? null, [...(o.addons || [])].sort(), o.trainee ?? null]) : "null"; // jsonb reorders keys, so compare by field
-const same = (a, b) => canon(a) === canon(b);
+const canonBU = o => o ? JSON.stringify([o.driver ?? null, o.bu_kind ?? "voluntary", o.bu_kind === "committed" ? (o.bu_block ?? 5) : null]) : "null";   // back-up: who, and voluntary / compulsory (the free hours follow the roster)
+const same = (a, b, bu) => bu ? canonBU(a) === canonBU(b) : canon(a) === canon(b);
 
 function weekShifts() { const end = addDays(S.week, 6); return S.shifts.filter(s => s.day >= S.week && s.day <= end); }
 function sentBy() { return Object.fromEntries(S.sent.map(x => [x.shift_key, x])); }
@@ -17,7 +18,7 @@ export function weekInfo(wk = S.week) { return S.notes.find(x => x.week_start ==
 export function isPublished(day) { return !!weekInfo(monOf(day))?.published_at; }
 export function pendingChanges() { // diffs vs what drivers have, today onwards, approved weeks only
   const t = today(); const sb_ = sentBy(); const out = []; const seen = new Set();
-  for (const s of S.shifts) { if (s.day < t || s.run === "BU" || !isPublished(s.day)) continue; const k = key(s); seen.add(k); const prev = sb_[k]?.snapshot || null; const cur = snap(s); if (!same(prev, cur) && (cur.driver || prev?.driver)) out.push({ k, shift: s, before: prev, after: cur }); }
+  for (const s of S.shifts) { if (s.day < t || !isPublished(s.day)) continue; const k = key(s); seen.add(k); const prev = sb_[k]?.snapshot || null; const cur = snap(s); if (!same(prev, cur, s.run === "BU") && (cur.driver || prev?.driver)) out.push({ k, shift: s, before: prev, after: cur }); }
   for (const x of S.sent) { if (seen.has(x.shift_key)) continue; const [day, run, slot] = x.shift_key.split("|"); if (day < t || !x.snapshot?.driver || !isPublished(day)) continue; out.push({ k: x.shift_key, shift: { day, run, slot: +slot }, before: x.snapshot, after: null }); }
   return out;
 }
@@ -25,6 +26,16 @@ function winTxt(a) { const st = toMin(a?.start_at), en = toMin(a?.end_at); retur
 export function summarize(ch) {
   const d = label(ch.shift.day); const run = S.runsBy[ch.shift.run]?.label || ch.shift.run; const a = ch.after, b = ch.before;
   const addTxt = x => (x?.addons || []).length ? ` · add-ons: ${x.addons.map(addName).join(", ")}` : "";
+  if (ch.shift.run === "BU") {   // back-up / on-call: say what is expected and the hours they are free
+    const drvA = a?.driver, drvB = b?.driver, works = x => S.shifts.some(o => o.day === ch.shift.day && o.driver === x && o.run !== "BU");
+    const kindTxt = x => x?.bu_kind === "committed" ? `compulsory, add-on block up to ${x.bu_block === 10 ? "10" : "5"} hours` : "voluntary, offered on the day";
+    if (!drvA && drvB) return { text: `${d}: you are no longer ${works(drvB) ? "back-up" : "on-call"}`, affects: [drvB] };
+    const f = buFree(ch.shift.day, drvA); const hrs = f.mins ? `free ${buTxt(f)}` : ""; const role = works(drvA) ? "Back-up" : "On-call";
+    const line = role === "On-call" ? `${d}: On-call. Check your phone 6:30 to 7:30am and confirm you're available; any call-in is between 6:30 and 8am${hrs ? ` (${hrs})` : ""}` : `${d}: Back-up (${kindTxt(a)})${hrs ? `, ${hrs}` : ""}`;
+    if (drvA && drvB && drvA !== drvB) return { text: line, affects: [drvA, drvB] };
+    if (!drvB) return { text: line, affects: [drvA] };
+    return { text: `${line} (changed)`, affects: [drvA] };
+  }
   if (!a?.driver && b?.driver) return { text: `${d}: no longer on ${run}${b.start_at ? ` ${winTxt(b)}` : ""}`, affects: [b.driver] };
   if (a?.driver && !b?.driver) return { text: `${d}: ${run} ${winTxt(a)}${a.van ? ` (${a.van})` : ""}${addTxt(a)}${a.trainee ? ` — training with ${fnm(a.trainee)}` : ""}`, affects: [a.driver, ...(a.trainee ? [a.trainee] : [])] };
   if (a.driver !== b.driver) return { text: `${d}: ${run} ${winTxt(a)}${a.van ? ` (${a.van})` : ""}${addTxt(a)} (was ${fnm(b.driver)})`, affects: [a.driver, b.driver, ...(a.trainee ? [a.trainee] : [])] };
