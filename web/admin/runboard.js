@@ -46,10 +46,10 @@ export function runBoardTab() {
   const runs = S.runs.filter(r => r.active && r.code !== "BU").concat(S.runs.filter(r => r.code === "BU"));
   const rows = runs.map(r => `<tr><td class="run"><span class="code">${esc(r.label || r.code)}</span><span class="nm">${esc(r.name)}</span></td>${DAYS.map((D, di) => { const day = addDays(S.week, di); const w = r.windows?.[D]; const cell = ws.filter(s => s.run === r.code && s.day === day); const slots = Math.max(r.slots || 1, ...cell.map(s => s.slot));
     const off = !w && !cell.length; const chg = cell.some(s => pendKeys.has(key(s))) || [...pendKeys].some(k => k.startsWith(`${day}|${r.code}|`)); const aw = [...awKeys].some(k => k.startsWith(`${day}|${r.code}|`));
-    return `<td class="${off ? "off" : ""} ${chg ? "changed" : ""} ${aw ? "pending" : ""}">${Array.from({ length: slots }, (_, i) => { const slot = i + 1; const s = cell.find(x => x.slot === slot); const { st, en } = s ? segTimes(s, S.runsBy) : { st: w ? toMin(w[0][0]) : null, en: w ? toMin(w[0][1]) : null }; const u = unconf[`${day}|${r.code}`];
-      if (!s || !s.driver) return `<div class="slot" data-day="${day}" data-run="${r.code}" data-slot="${slot}">${off && !s ? `<span class="w">—</span>` : `<span class="w">${st != null ? `${fmtT(st)}–${fmtT(en)}` : ""}</span><span class="meta">+ add</span>`}</div>`;
+    return `<td class="${off ? "off" : ""} ${chg ? "changed" : ""} ${aw ? "pending" : ""}">${Array.from({ length: slots }, (_, i) => i + 1).sort((a, b) => { if (r.code !== "BU") return 0; const sa = cell.find(x => x.slot === a), sb2 = cell.find(x => x.slot === b); return (sb2?.driver ? buFree(day, sb2.driver).mins : -1) - (sa?.driver ? buFree(day, sa.driver).mins : -1); }).map(slot => { const s = cell.find(x => x.slot === slot); const { st, en } = s ? segTimes(s, S.runsBy) : { st: w ? toMin(w[0][0]) : null, en: w ? toMin(w[0][1]) : null }; const u = unconf[`${day}|${r.code}`];
+      if (!s || !s.driver) return `<div class="slot" data-day="${day}" data-run="${r.code}" data-slot="${slot}">${off && !s ? `<span class="w">—</span>` : `${r.code === "BU" ? "" : `<span class="w">${st != null ? `${fmtT(st)}–${fmtT(en)}` : ""}</span>`}<span class="meta">+ add</span>`}</div>`;
       const sod = S.sodBy[s.id]; const lv = leaveOn(s.driver, day);
-      return `<div class="slot filled" data-day="${day}" data-run="${r.code}" data-slot="${slot}"><span class="d">${esc(nm(s.driver))}${lv ? ` <span class="ack">on leave!</span>` : ""}</span>${s.van && !isSort(r.code) ? `<span class="v">${esc(s.van)}</span>` : ""}<span class="w">${fmtT(st)}–${fmtT(en)}</span>${s.addons?.length ? `<span class="a">${s.addons.map(a => `<span>${esc(S.addons.find(x => x.id === a)?.short || addName(a))}</span>`).join("")}</span>` : ""}${s.trainee ? `<span class="tr">training ${esc(fnm(s.trainee))}</span>` : ""}${r.code === "BU" ? `<span class="tr">${s.bu_kind === "committed" ? `Committed · ${s.bu_block === 10 ? "$20" : "$10"}` : "Voluntary"}</span>` : ""}${u?.includes(s.driver) ? `<span class="ack">? not confirmed</span>` : ""}${day === t && sod ? `<span class="sod">SOD ${fmtTime(sod.sent_at)}</span>` : ""}</div>`; }).join("")}</td>`; }).join("")}</tr>`).join("");
+      return `<div class="slot filled" data-day="${day}" data-run="${r.code}" data-slot="${slot}"><span class="d">${esc(nm(s.driver))}${lv ? ` <span class="ack">on leave!</span>` : ""}</span>${s.van && !isSort(r.code) ? `<span class="v">${esc(s.van)}</span>` : ""}${r.code === "BU" ? (() => { const f = buFree(day, s.driver); return `<span class="w" style="color:${buCol(f.mins)};font-weight:700">free ${esc(buTxt(f))}</span>`; })() : `<span class="w">${fmtT(st)}–${fmtT(en)}</span>`}${s.addons?.length ? `<span class="a">${s.addons.map(a => `<span>${esc(S.addons.find(x => x.id === a)?.short || addName(a))}</span>`).join("")}</span>` : ""}${s.trainee ? `<span class="tr">training ${esc(fnm(s.trainee))}</span>` : ""}${r.code === "BU" ? `<button type="button" class="btn sm ghost bu-tog" data-id="${s.id}" data-day="${day}" data-drv="${esc(s.driver)}" data-kind="${s.bu_kind === "committed" ? "committed" : "voluntary"}" title="Tap to switch between voluntary and compulsory">${s.bu_kind === "committed" ? `Compulsory · ${s.bu_block === 10 ? "$20" : "$10"}` : "Voluntary"} ⇄</button>` : ""}${u?.includes(s.driver) ? `<span class="ack">? not confirmed</span>` : ""}${day === t && sod ? `<span class="sod">SOD ${fmtTime(sod.sent_at)}</span>` : ""}</div>`; }).join("")}</td>`; }).join("")}</tr>`).join("");
   const note = S.notes.find(x => x.week_start === S.week)?.notes || "";
   const canSend = S.me.can("roster"); const canApprove = S.me.isOwner || S.me.can("roster_approve");
   const wi = weekInfo(); const pub = !!wi?.published_at; const filled = ws.filter(s => s.driver && s.run !== "BU").length;
@@ -103,10 +103,31 @@ function ruleCheck(ws, leaveOn) {
   return `<details class="card" ${live.length ? "open" : ""}><summary>Rule check<span class="meta">${live.length ? `${live.length} to look at` : "✓ all good"}${gone.length ? ` · ${gone.length} dismissed` : ""}</span></summary><div class="list" style="margin-top:8px">${live.map(([c, t]) => `<div class="item ${c}"><div class="row" style="justify-content:space-between;align-items:center"><span>${esc(t)}</span>${dBtn(t, "dis", "Dismiss")}</div></div>`).join("") || `<p class="meta">Nothing to fix.</p>`}</div>${gone.length ? `<details style="margin-top:8px"><summary class="meta">${gone.length} dismissed</summary><div class="list" style="margin-top:8px">${gone.map(([c, t]) => `<div class="item done"><div class="row" style="justify-content:space-between;align-items:center"><span>${esc(t)}</span>${dBtn(t, "res", "Restore")}</div></div>`).join("")}</div></details>` : ""}</details>`;
 }
 
+
+/* Back up: the hours a driver is actually free to add on that day (the Back up window minus their rostered shifts) */
+const BU_SHORT = 300;   // up to 5 h = $10 block, over 5 h = $20 block
+function buFree(day, driver) {
+  const w = S.runsBy.BU?.windows?.[dayName(day)]; if (!w || !driver) return { free: [], mins: 0 };
+  if (S.leave.find(l => l.driver === driver && l.status === "approved" && day >= l.date_from && day <= l.date_to)) return { free: [], mins: 0, leave: true };
+  const a0 = toMin(w[0][0]), a1 = toMin(w[0][w[0].length - 1] ?? w[0][1]);
+  const busy = S.shifts.filter(x => x.day === day && x.driver === driver && x.run !== "BU").map(x => segTimes(x, S.runsBy)).filter(x => x.st != null).map(x => [x.st, x.en ?? x.st]).sort((a, b) => a[0] - b[0]);
+  const free = []; let cur = a0;
+  for (const [bs, be] of busy) { if (bs - cur >= 15) free.push([cur, Math.min(bs, a1)]); cur = Math.max(cur, be); }
+  if (a1 - cur >= 15) free.push([cur, a1]);
+  return { free, mins: free.reduce((t, f) => t + f[1] - f[0], 0) };
+}
+const buHrs = m => (Math.round(m / 6) / 10) + "h";
+const buTxt = f => f.mins ? `${f.free.map(x => `${fmtT(x[0])}–${fmtT(x[1])}`).join(" + ")} · ${buHrs(f.mins)}` : (f.leave ? "on leave" : "no free hours");
+const buCol = m => m <= BU_SHORT ? "var(--warn)" : "var(--go)";
+
 /* ---------- wiring ---------- */
 export function wireRunBoard() {
   wireWeek();
   $$(".slot").forEach(el => el.onclick = () => slotSheet(el.dataset.day, el.dataset.run, +el.dataset.slot));
+  $$(".bu-tog").forEach(b => b.onclick = async ev => { ev.stopPropagation(); if (!S.me.can("roster")) return toast("You can view the roster but not change it", "err");
+    const to = b.dataset.kind === "committed" ? "voluntary" : "committed"; const f = buFree(b.dataset.day, b.dataset.drv);
+    const { error } = await sb.from("shifts").update({ bu_kind: to, bu_block: to === "committed" ? (f.mins <= BU_SHORT ? 5 : 10) : null }).eq("id", b.dataset.id);
+    if (error) return toast(error.message, "err"); await loadAll(); render(true); });
   $("#send-changes")?.addEventListener("click", sendSheet);
   $("#approve-roster")?.addEventListener("click", approveRoster);
   $("#copy-prev")?.addEventListener("click", copyPrev);
@@ -130,16 +151,20 @@ function slotSheet(day, run, slot) {
   const opts = S.addons.filter(a => a.runs.includes(run) && !(sat && a.no_saturday));
   if (!S.me.can("roster")) { toast("You can view the roster but not change it", "err"); return; }
   sheet(`<h3>${esc(r.label || run)} · ${label(day)}${(r.slots || 1) > 1 ? ` · slot ${slot}` : ""}</h3><p class="meta">${esc(r.name)}${w ? ` · usual ${fmtT(toMin(w[0][0]))}–${fmtT(toMin(w[0][1]))}` : " · doesn't usually run this day"}</p>
-    <form class="frm" id="sf"><label class="f full">Driver<select class="in" id="drv">${opt(drvOpts, s?.driver || "")}</select></label>
+    <form class="frm" id="sf">${run === "BU" ? (() => { const L = S.drivers.map(d => ({ d, f: buFree(day, d.id) })).sort((a, b) => b.f.mins - a.f.mins || nm(a.d.id).localeCompare(nm(b.d.id)));
+      return `<div class="full"><div class="meta mono" style="margin-bottom:6px">DRIVER · MOST AVAILABLE FIRST · HOURS FREE TO ADD ON</div><input type="hidden" id="drv" value="${esc(s?.driver || "")}"><div class="list" id="budrv">${L.map(({ d, f }) => `<button type="button" class="btn sm ${s?.driver === d.id ? "" : "ghost"}" data-d="${d.id}" data-s="${f.free.length ? fmt24(f.free.reduce((a, b) => (b[1] - b[0] > a[1] - a[0] ? b : a))[0]) : ""}" data-e="${f.free.length ? fmt24(f.free.reduce((a, b) => (b[1] - b[0] > a[1] - a[0] ? b : a))[1]) : ""}" data-m="${f.mins}" style="justify-content:space-between;text-align:left;border-left:6px solid ${f.mins ? buCol(f.mins) : "var(--grey)"}"><span>${esc(d.name)}</span><span class="meta">${esc(buTxt(f))}</span></button>`).join("")}</div><p class="hint" style="margin:6px 0 0"><span style="color:var(--warn)">■</span> up to 5 hours (the $10 block) · <span style="color:var(--go)">■</span> over 5 hours (the $20 block)</p></div>`; })() : `<label class="f full">Driver<select class="in" id="drv">${opt(drvOpts, s?.driver || "")}</select></label>`}
     ${isSort(run) || r.needs_van === false ? "" : `<label class="f full">Van<select class="in" id="van">${opt([["", "—"], ...S.vans.filter(v => v.active).map(v => [v.plate, `${v.plate}${v.model ? " · " + v.model : ""}`])], s?.van || "")}</select></label>`}
     <label class="f">Start<input class="in" type="time" id="st" value="${st != null ? fmt24(st) : ""}"></label><label class="f">Finish<input class="in" type="time" id="en" value="${en != null ? fmt24(en) : ""}"></label>
     ${opts.length ? `<div class="full"><div class="meta mono" style="margin-bottom:6px">ADD-ONS</div><div class="row">${opts.map(a => `<label class="chk ${(s?.addons || []).includes(a.id) ? "on" : ""}"><input type="checkbox" name="add" value="${a.id}" ${(s?.addons || []).includes(a.id) ? "checked" : ""}>${esc(a.name)}${a.minutes ? ` <span class="meta">+${a.minutes}m</span>` : ""}</label>`).join("")}</div></div>` : ""}
     ${isSort(run) ? "" : `<label class="f full">Trainee riding along<select class="in" id="tr">${opt([["", "—"], ...S.drivers.map(d => [d.id, d.name])], s?.trainee || "")}</select></label>`}
-    ${run === "BU" ? `<label class="f full">Back-up type<select class="in" id="bk">${opt([["voluntary", "Voluntary: offered on the day, paid for hours worked only"], ["committed", "Committed: agreed a week ahead, allowance if not needed"]], s?.bu_kind || "voluntary")}</select></label>
+    ${run === "BU" ? `<label class="f full">Back-up type<select class="in" id="bk">${opt([["voluntary", "Voluntary: offered on the day, paid for hours worked only"], ["committed", "Compulsory: agreed a week ahead, allowance if not needed"]], s?.bu_kind || "voluntary")}</select></label>
     <label class="f full" id="bbw">Add-on hours block<select class="in" id="bb">${opt([["5", "Up to 5 hours: $10 if not needed"], ["10", "Over 5, up to 10 hours: $20 if not needed"]], String(s?.bu_block || 5))}</select></label>
     <p class="hint full">Back-up hours are add-ons before or after their normal shift, inside 6am–5pm. If you need them, they're paid for hours worked and the allowance isn't added on top.</p>` : ""}
     <label class="f full">Note<input class="in" id="note" value="${esc(s?.note || "")}"></label>
     <div class="row full"><button class="btn" type="submit">Save</button>${s ? `<button class="btn ghost" type="button" id="rm">Clear slot</button>` : ""}</div></form><p class="hint">${isPublished(day) ? `Saves to the roster straight away. Drivers are told when you press "Push changes".` : `Saves to the roster straight away. Drivers won't see this week until you press "Approve roster".`}</p>`, (bg, close) => {
+    bg.querySelectorAll("#budrv button").forEach(b => b.onclick = () => { const was = bg.querySelector("#drv").value === b.dataset.d; bg.querySelector("#drv").value = was ? "" : b.dataset.d;
+      bg.querySelectorAll("#budrv button").forEach(x => x.classList.toggle("ghost", x !== b || was));
+      if (!was) { if (b.dataset.s) { bg.querySelector("#st").value = b.dataset.s; bg.querySelector("#en").value = b.dataset.e; } const bb = bg.querySelector("#bb"); if (bb) bb.value = +b.dataset.m <= BU_SHORT ? "5" : "10"; } });
     const bk = bg.querySelector("#bk"); if (bk) { const sync = () => { bg.querySelector("#bbw").style.display = bk.value === "committed" ? "" : "none"; }; bk.onchange = sync; sync(); }
     bg.querySelectorAll(".chk input").forEach(i => i.onchange = () => i.parentElement.classList.toggle("on", i.checked));
     bg.querySelector("#sf").onsubmit = async e => { e.preventDefault(); const g = x => bg.querySelector("#" + x); const drv = g("drv").value || null;
