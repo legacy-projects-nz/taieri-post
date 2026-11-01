@@ -108,15 +108,16 @@ function render() {
 
 /* ---------- SOD / EOD quick bar: always under the greeting on a work day ---------- */
 function quickBar(T, n) {
-  if (!T || S.viewAs) return `<div class="qbar"><div class="qb off"><b>▶ SOD</b><small>${S.viewAs ? "only " + esc(first(S.viewAs.name)) + " can tap this" : "no shift today"}</small></div><div class="qb off"><b>■ EOD</b><small>${S.viewAs ? "only " + esc(first(S.viewAs.name)) + " can tap this" : "no shift today"}</small></div></div>`;
+  if (!T) return `<div class="qbar"><div class="qb off"><b>▶ SOD</b><small>no shift today</small></div><div class="qb off"><b>■ EOD</b><small>no shift today</small></div></div>`;
+  const va = !!S.viewAs; const offB = (lab, txt) => `<div class="qb off"><b>${lab}</b><small>${txt}</small></div>`;
   const runs = T.segs.filter(x => !x.sort); const sodSeg = T.segs.find(x => x.sod); const sod = sodSeg?.sod;
   const sortOnly = !runs.length; const eodOf = x => x.eod;
-  const sodBtn = sod ? `<div class="qb done"><b>✓ SOD</b><small>${fmtTime(sod.sent_at)}${sod.van ? ` · ${esc(sod.van)}` : ""}</small></div>` : `<button class="btn qb" id="sod" data-shift="${T.segs[0].shift.id}"><b>▶ SOD</b><small>start of day</small></button>`;
+  const sodBtn = sod ? `<div class="qb done"><b>✓ SOD</b><small>${fmtTime(sod.sent_at)}${sod.van ? ` · ${esc(sod.van)}` : ""}</small></div>` : (va ? offB("▶ SOD", "not posted yet") : `<button class="btn qb" id="sod" data-shift="${T.segs[0].shift.id}"><b>▶ SOD</b><small>start of day</small></button>`);
   const eodBtns = sortOnly
-    ? (T.segs.some(eodOf) ? `<div class="qb done"><b>✓ EOD</b><small>sorting finished ${fmtTime(T.segs.find(eodOf).eod.sent_at)}</small></div>` : `<button class="btn qb accent" data-eod="${T.segs[T.segs.length - 1].shift.id}" data-sort="1" ${sod ? "" : "disabled"}><b>■ EOD</b><small>${sod ? "finished sorting" : "after your SOD"}</small></button>`)
+    ? (T.segs.some(eodOf) ? `<div class="qb done"><b>✓ EOD</b><small>sorting finished ${fmtTime(T.segs.find(eodOf).eod.sent_at)}</small></div>` : (va ? offB("■ EOD", "not posted yet") : `<button class="btn qb accent" data-eod="${T.segs[T.segs.length - 1].shift.id}" data-sort="1" ${sod ? "" : "disabled"}><b>■ EOD</b><small>${sod ? "finished sorting" : "after your SOD"}</small></button>`))
     : runs.map(x => { const due = (x.en ?? x.st) + S.C.rules.eodHours * 60; const late = sod && !x.eod && n.min > due;
         return x.eod ? `<div class="qb done"><b>✓ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${fmtTime(x.eod.sent_at)}${x.eod.finish_time ? ` · finished ${fmtT(toMin(x.eod.finish_time))}` : ""}</small></div>`
-          : `<button class="btn qb ${late ? "warn" : "accent"}" data-eod="${x.shift.id}" ${sod ? "" : "disabled"}><b>■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${!sod ? "after your SOD" : late ? "overdue" : "end of run"}</small></button>`; }).join("");
+          : va ? offB(`■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}`, late ? "overdue" : "not posted yet") : `<button class="btn qb ${late ? "warn" : "accent"}" data-eod="${x.shift.id}" ${sod ? "" : "disabled"}><b>■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${!sod ? "after your SOD" : late ? "overdue" : "end of run"}</small></button>`; }).join("");
   return `<div class="qbar">${sodBtn}${eodBtns}</div>`;
 }
 
