@@ -154,7 +154,7 @@ export function scoreFor(driver, from, to, D, C) {
   let items_ = 0, comp = 0; const accDays = [];
   for (const d of Object.values(days)) for (const x of d.segs) if (!x.sort && d.day >= (C.rules.accStart || C.rules.startDate)) { const fc = C.runCodes[x.shift.run]; const row = fc && D.feed.find(f => f.day === d.day && f.feed_code === fc); if (row) { items_ += row.items; comp += row.compliant; accDays.push({ day: d.day, code: x.shift.run, ...row, v: row.items ? row.compliant / row.items * 100 : null }); } }
   const feedPct = items_ ? comp / items_ * 100 : null;
-  const acc = feedPct == null && !mist.length ? null : Math.max(0, Math.min(100, (feedPct ?? 100) - mist.length * C.rules.mistakePct));
+  const acc = feedPct == null && !mist.length ? null : Math.max(0, Math.min(100, (feedPct ?? 100) - mist.reduce((t, e) => t + (e.pct_off != null ? +e.pct_off : C.rules.mistakePct), 0)));
   // safety
   const safeE = ents.filter(e => e.safety_pct != null); const safe = safeE.length ? safeE.reduce((a, e) => a + (+e.safety_pct), 0) / safeE.length : 100;
   // efficiency

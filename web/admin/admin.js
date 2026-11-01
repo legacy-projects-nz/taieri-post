@@ -10,6 +10,7 @@ import { routesTab, wireRoutes } from "/admin/routes.js";
 import { allowancesTab, wireAllowances } from "/admin/allowances.js";
 import { liveTab as liveTab2, wireLive as wireLive2 } from "/admin/live.js";
 import { bind } from "/admin/detail.js";
+import { errorCard } from "/admin/errorcard.js";
 
 export const S = { me: null, tab: location.hash.slice(1) || "live", week: monOf(today()), set: {}, C: null, runs: [], runsBy: {}, vans: [], vansBy: {}, addons: [], rules: [], people: [], peopleBy: {}, shifts: [], sods: [], eods: [], marks: [], entries: [], feed: [], ovs: [], changes: [], items: [], acks: [], sent: [], msgs: [], recips: [], leave: [], alerts: [], locs: [], skills: [], notes: [], vchk: [], log: [] };
 const app = $("#app");
@@ -65,8 +66,9 @@ export function render(soft = false) {
       <div class="upd"><span class="dot live"></span>live · ${fmtT(n.min)}<br>${esc(first(S.me.name))} · <button class="linkbtn" id="signout">sign out</button></div></div>
     <nav class="nav">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? "on" : ""}">${l}${badge[k] ? `<span class="b ${k === "runboard" ? "warn" : ""}">${badge[k]}</span>` : ""}</button>`).join("")}</nav>
     <div id="view">${({ live: liveTab2, runboard: runBoardTab, classic: classicTab, scorecard: scorecardTab, fix: fixTab, routes: routesTab, allowances: allowancesTab, alerts: alertsTab, messages: messagesTab, leave: leaveTab, fleet: fleetTab, timing: timingTab, people: peopleTab, pay: payTab })[S.tab]()}</div>
-    <p class="foot">Safe. Sharp. Swift. · <a href="/">driver portal</a></p></div>`;
+    <p class="foot">Safe. Sharp. Swift. · <a href="/">driver portal</a></p></div>${S.me.can("scorecard") ? `<button class="btn crit" id="quick-err" style="position:fixed;right:14px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:20;box-shadow:0 4px 14px rgba(0,0,0,.4)">＋ Record an error</button>` : ""}`;
   $("#signout").onclick = signOut;
+  $("#quick-err")?.addEventListener("click", () => errorCard());
   $$("[data-tab]").forEach(b => b.onclick = () => { S.tab = b.dataset.tab; location.hash = S.tab; render(); });
   if (S.tab !== "live") { /* the live board draws its own map */ }
   ({ live: wireLive2, runboard: wireRunBoard, classic: () => { }, scorecard: wireScorecard, fix: wireFix, routes: wireRoutes, allowances: wireAllowances, alerts: wireAlerts, messages: wireMessages, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople, pay: wirePay })[S.tab]?.();
