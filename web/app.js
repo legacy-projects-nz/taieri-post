@@ -5,7 +5,7 @@ import { VAPID_PUBLIC } from "/shared/config.js";
 import { cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, NET, PICKUP_RUNS, LEG_RUNS, effCalc, setEvidence } from "/shared/score.js";
 
 const app = $("#app");
-const S = { me: null, set: {}, C: null, runs: [], runsBy: {}, vans: {}, addons: [], rules: [], people: {}, shifts: [], sods: [], eods: [], marks: [], entries: [], feed: [], changes: [], acks: [], msgs: [], leave: [], alerts: [], loc: null, gotit: {} };
+const S = { me: null, set: {}, C: null, runs: [], runsBy: {}, vans: {}, addons: [], rules: [], people: {}, shifts: [], sods: [], eods: [], marks: [], entries: [], feed: [], changes: [], acks: [], msgs: [], leave: [], alerts: [], loc: null, gotit: {}, login: {} };
 try { S.gotit = JSON.parse(localStorage.getItem("tp-gotit") || "{}"); } catch { }
 
 /* ================= boot ================= */
@@ -58,6 +58,12 @@ async function viewAs() {
     if (p) { S.viewAs = p; S.me = { ...p, isOwner: false, isStaff: false, can: () => false }; }
   }
   S.drivers = S.viewer.isStaff ? await q(sb.from("people").select("id,name,role").eq("active", true).eq("cleared", false).order("name")) : [];
+  S.login = {}; if (S.viewer.isStaff) { const { data: ls } = await sb.rpc("login_status"); for (const l of ls || []) S.login[l.person_id] = l; }
+}
+function loginState(id) {   // is this person signed in to the app?
+  const L = S.login?.[id]; if (!L || !L.has_account) return { cls: "miss", tag: "not signed up", txt: "Has never signed in to the app" };
+  if (L.sessions > 0) return { cls: "ok", tag: "signed in", txt: `Signed in${L.last_active ? ` · last active ${ago(L.last_active)}` : ""}${L.push ? " · notifications on" : " · notifications off"}` };
+  return { cls: "late", tag: "signed out", txt: `Signed out${L.last_sign_in ? ` · last signed in ${ago(L.last_sign_in)}` : ""}` };
 }
 function viewBar() {
   if (!S.viewer?.isStaff) return "";
@@ -66,9 +72,10 @@ function viewBar() {
   const prev = i > 0 ? list[i - 1] : null, next = i >= 0 && i < list.length - 1 ? list[i + 1] : null;
   return `<div class="card" style="position:sticky;top:6px;z-index:5;border:2px solid var(--accent);background:var(--accent-fill);padding:8px 12px;gap:6px">
     <div class="row" style="align-items:center"><span class="mono" style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);flex:0">${S.viewAs ? "Viewing as" : "View as"}</span>
-      <select class="in" id="view-as" style="min-height:38px;font-size:14px;flex:1 1 140px"><option value="">— me (${esc(first(S.viewer.name))}) —</option>${list.map(d => `<option value="${d.id}" ${S.viewAs?.id === d.id ? "selected" : ""}>${esc(d.name)}${d.role !== "driver" ? ` (${d.role})` : ""}</option>`).join("")}</select>
+      <select class="in" id="view-as" style="min-height:38px;font-size:14px;flex:1 1 140px"><option value="">— me (${esc(first(S.viewer.name))}) —</option>${list.map(d => `<option value="${d.id}" ${S.viewAs?.id === d.id ? "selected" : ""}>${loginState(d.id).cls === "ok" ? "● " : "○ "}${esc(d.name)}${d.role !== "driver" ? ` (${d.role})` : ""}</option>`).join("")}</select>
       <button class="btn ghost sm" id="va-prev" ${prev ? `data-id="${prev.id}"` : "disabled"} style="flex:0">‹</button><button class="btn ghost sm" id="va-next" ${next ? `data-id="${next.id}"` : "disabled"} style="flex:0">›</button>
       <a class="btn ghost sm" href="/admin/" style="flex:0;text-decoration:none">Owner portal</a></div>
+    ${S.viewAs ? `<div class="row" style="align-items:center;gap:6px"><span class="chip ${loginState(S.viewAs.id).cls}">${loginState(S.viewAs.id).tag}</span><span class="meta">${esc(loginState(S.viewAs.id).txt)}</span></div>` : ""}
     ${S.viewAs ? `<div class="hint">This is exactly what ${esc(first(S.viewAs.name))} sees. You can post a SOD or EOD on their behalf; the other buttons are theirs alone.</div>` : ""}</div>`;
 }
 
