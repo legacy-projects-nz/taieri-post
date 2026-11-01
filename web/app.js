@@ -210,7 +210,7 @@ function timingRows(x, day, nowMin) {
     else if (gp && planned) { st = "✓ game plan in"; cls = "done"; }
     else if (isT) { if (t != null && nowMin > t) { st = `✗ not done by ${fmtT(t)}`; cls = "miss"; } else if (f != null && nowMin >= f) { tag = "now"; cls = "now"; } else if (t != null && t - nowMin <= 60) { tag = "due soon"; cls = "now"; } }
     else if (day < today() && key) { st = `✗ not marked done`; cls = "miss"; }
-    const btn = isT && key && !done && !S.viewAs && !(gp && planned) ? `<button class="btn sm ${cls === "miss" ? "warn" : "ghost"}" data-done="${esc(key)}" data-shift="${x.shift.id}" style="flex:0 0 auto;min-height:34px">Done ✓</button>` : "";
+    const btn = isT && key && !done && !S.viewAs && !(gp && planned) ? `<button class="btn sm ${cls === "miss" ? "warn" : "ghost"}" data-done="${esc(key)}" data-shift="${x.shift.id}" style="flex:0 0 auto;min-height:34px">Done</button>` : "";
     return `<div class="tw-r ${cls}"><div class="w">${winTxt(r)}${tag ? `<span class="tw-tag">${tag}</span>` : ""}</div><div class="row" style="justify-content:space-between;align-items:center;gap:6px;flex-wrap:nowrap"><div style="flex:1 1 auto"><span class="n">${esc(r.name)}</span>${r.note ? `<span class="x">${esc(r.note)}</span>` : ""}${st ? `<span class="x ${cls === "miss" ? "c-crit" : "c-ok"}" style="font-weight:600">${st}</span>` : ""}${gp && !planned && !done && isT ? `<span class="x">Set your planned times under Change what&#39;s on this run (that counts as the game plan), or tap Done.</span>` : ""}</div>${btn}</div></div>`; });
   return `<div class="tw"><h4>${isT ? "Timed tasks today · tap Done as you finish each one" : "Timed tasks"}</h4>${rows.join("")}${isT ? `<p class="hint" style="margin:4px 0 0">Jeremy sees each Done straight away; a window that passes without Done raises an alert for you both.</p>` : ""}</div>`;
 }
@@ -316,7 +316,7 @@ function tasksCard(D, n, next, bare = false) {
     const row = t => { const isDone = !!(t.doneAt || t.planned); let cls = "", st = "";
       if (isDone) { cls = "ok"; st = t.doneAt ? `✓ done ${fmtTime(t.doneAt)}` : "✓ game plan in"; }
       else if (isT) { if (t.closes != null && n.min > t.closes) { cls = "over"; st = `overdue · was due ${fmtT(t.closes)}`; } else if (t.closes != null && t.closes - n.min <= 60) { cls = "soon"; st = `due in ${t.closes - n.min} min`; } else { cls = "pend"; st = "not done yet"; } }
-      const btn = isT && !isDone && t.key && (!S.viewAs || S.viewer?.isStaff) ? `<button class="btn sm accent" data-done="${esc(t.key)}" data-shift="${x.shift.id}">Done ✓</button>` : "";
+      const btn = isT && !isDone && t.key && (!S.viewAs || S.viewer?.isStaff) ? `<button class="btn sm accent" data-done="${esc(t.key)}" data-shift="${x.shift.id}">Done</button>` : "";
       return `<div class="tk ${cls}"><div class="tkt"><div class="t">${esc(t.title)}</div><div class="d">${esc(t.desc || "")}</div><div class="w">${esc(t.time)}${st ? ` · ${st}` : ""}</div></div>${btn}</div>`; };
     return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${fmtT(x.st)} – ${fmtT(x.en)}${items.length && isT ? ` · ${nDone}/${items.length} done` : ""}</span></div>
       ${items.length ? `<div class="tks">${items.map(row).join("")}</div>` : `<p class="meta" style="margin:4px 0 0">Nothing extra on this run.</p>`}
@@ -327,7 +327,7 @@ function tasksCard(D, n, next, bare = false) {
   }).join("");
   if (bare) return `<h3 class="sub">Tasks</h3>${blocks || `<p class="hint">Nothing extra on this shift.</p>`}`;
   return `<div class="card${next ? " nextc" : ""}"><h2>${isT ? "Today's tasks" : "Next tasks"}<span>${isT ? "add-ons + timed tasks" : dayTag(D.day)}</span></h2>
-    ${blocks || `<p class="hint">Nothing extra on this shift.</p>`}${isT ? `<p class="hint" style="margin:0">Blue = not done yet · amber = due within the hour or overdue · green = done. Tap Done as you finish each one; Jeremy sees it straight away.</p>` : ""}</div>`;
+    ${blocks || `<p class="hint">Nothing extra on this shift.</p>`}</div>`;
 }
 
 /* ---------- Scores ---------- */
