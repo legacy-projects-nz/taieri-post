@@ -41,6 +41,7 @@ async function loadAll() {
     q((S.viewer?.isStaff ? sb.from("vehicle_checks").select("*").eq("driver", m) : sb.from("vehicle_checks").select("*")).order("at", { ascending: false }).limit(12)),
   ]);
   S.set = set; S.C = cfg(set); S.runs = runs; S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vans = Object.fromEntries(vans.map(v => [v.plate, v])); S.addons = addons; S.rules = rules;
+  try { const { data: ai } = await sb.from("access_info").select("body,updated_at").eq("id", 1).maybeSingle(); S.access = ai || { body: "" }; } catch { S.access = { body: "" }; }
   S.people = Object.fromEntries(people.map(p => [p.id, p])); S.shifts = shifts.filter(s => s.driver === m); S.trainee = shifts.filter(s => s.trainee === m && s.driver !== m);
   S.changes = changes; S.acks = acks; S.msgs = msgs; S.leave = leave; S.alerts = alerts; S.entries = entries; S.marks = marks; S.feed = feed; S.vchk = vchk || [];
   const ids = S.shifts.map(s => s.id);
@@ -104,6 +105,7 @@ function render() {
     ${pair(toFixCard(n), fromJeremy())}
     ${pair(leaveCard(), detailsCard())}
     ${moreCard()}
+    ${accessCard()}
     <p class="foot">Shift or score looks wrong? Message Jeremy.<br>Signed in as ${esc((S.viewer || S.me).email || "")}</p>
   </div>`;
   wire();
@@ -398,6 +400,19 @@ function detailsCard() {
   return `<div class="card"><h2>My details</h2><dl class="kv"><dt>Phone</dt><dd>${p.phone ? esc(p.phone) : pill("not on file", "grey")}</dd><dt>Email</dt><dd>${esc(p.email || "")}</dd><dt>Licence</dt><dd>${p.licence_class ? esc(p.licence_class) + " · " : ""}${d(p.licence_expiry)}</dd><dt>DG</dt><dd>${d(p.dg_expiry)}</dd></dl>
     <button class="btn ghost sm" id="prof-edit">Update my details</button></div>`;
 }
+function accessCard() {
+  const body = (S.access?.body || "").trim(); const canEdit = !!S.viewer?.can?.("people");
+  if (!body && !canEdit) return "";
+  return `<div class="card" id="access"><h2>Passwords &amp; logins<span>shared work logins only</span></h2>
+    ${body ? `<details><summary>Show</summary><pre class="msg" style="white-space:pre-wrap;user-select:all;margin:8px 0 0">${esc(body)}</pre></details>` : `<p class="meta">Nothing added yet.</p>`}
+    ${canEdit ? `<div class="row" style="margin-top:8px"><button class="btn ghost sm" id="access-edit" style="flex:0 0 auto">Update</button></div>` : ""}
+    <p class="hint" style="margin:6px 0 0">Keep these for work only. Don't share them outside the team.</p></div>`;
+}
+function editAccess() {
+  sheet(`<h3>Passwords &amp; logins</h3><form class="frm" id="acf"><label class="f full">What drivers see<textarea class="in" id="ac-body" rows="10" placeholder="e.g. Scanner PIN, shared logins, key-box codes">${esc(S.access?.body || "")}</textarea></label><button class="btn full" type="submit">Save</button></form><p class="hint">Every driver and staff member can see this box once signed in. Only add shared work logins, never your own personal passwords.</p>`, (bg, close) => {
+    bg.querySelector("#acf").addEventListener("submit", async e => { e.preventDefault(); const body = bg.querySelector("#ac-body").value; const { error } = await sb.from("access_info").upsert({ id: 1, body, updated_at: new Date().toISOString(), updated_by: S.viewer.id }); if (error) return toast(error.message, "err"); S.access = { body }; close(); toast("Saved", "ok"); render(); });
+  });
+}
 function moreCard() {
   const vault = S.set.links?.vault;
   return `<div class="card"><h2>More</h2><div class="row">
@@ -430,6 +445,7 @@ function wire() {
   $$("[data-eodedit]").forEach(b => b.onclick = () => eodForm(b.dataset.eodedit, !!b.dataset.sort, true));
   $$("[data-addon]").forEach(c => c.onchange = async () => { const shift = S.shifts.find(s => s.id === c.dataset.shift); const set = new Set(shift.addons || []); c.checked ? set.add(c.dataset.addon) : set.delete(c.dataset.addon); const { error } = await sb.rpc("set_my_addons", { p_shift: shift.id, p_addons: [...set] }); if (error) { toast(error.message, "err"); c.checked = !c.checked; } else { shift.addons = [...set]; render(); } });
   $$("[data-plan]").forEach(i => i.onchange = async () => { const shift = S.shifts.find(s => s.id === i.dataset.shift); const plan = { ...(shift.plan || {}), [i.dataset.plan]: i.value }; const { error } = await sb.rpc("set_my_plan", { p_shift: shift.id, p_plan: plan }); if (error) toast(error.message, "err"); else { shift.plan = plan; toast("Saved", "ok"); } });
+  $("#access-edit")?.addEventListener("click", editAccess);
   $$("[data-done]").forEach(b => b.onclick = async () => { const { error } = await sb.rpc("task_done", { p_shift: b.dataset.shift, p_addon: b.dataset.done }); if (error) toast(error.message, "err"); else { toast("Marked done ✓", "ok"); await loadAll(); render(); } });
   $$("[data-sc]").forEach(b => b.onclick = () => { S.scSel = S.scSel === b.dataset.sc ? null : b.dataset.sc; render(); setTimeout(() => $("#scores")?.scrollIntoView({ block: "nearest" }), 0); });
   $("#leave-new")?.addEventListener("click", leaveForm);
