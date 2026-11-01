@@ -7,6 +7,7 @@ import { runBoardTab, wireRunBoard } from "/admin/runboard.js";
 import { scorecardTab, wireScorecard } from "/admin/scorecard.js";
 import { fixTab, wireFix, fixCount } from "/admin/fix.js";
 import { routesTab, wireRoutes } from "/admin/routes.js";
+import { allowancesTab, wireAllowances } from "/admin/allowances.js";
 import { liveTab as liveTab2, wireLive as wireLive2 } from "/admin/live.js";
 import { bind } from "/admin/detail.js";
 
@@ -53,22 +54,22 @@ export async function loadAll() {
   setEvidence(S.shifts, S.eods);   // average figures per run & weekday → the estimate used until each EOD is in
 }
 
-const TABS = [["live", "Live", "alerts"], ["runboard", "Run Board", "roster"], ["classic", "Run Board (classic)", "roster"], ["scorecard", "Scorecard", "scorecard"], ["fix", "Fix posts", "scorecard"], ["routes", "Routes", "alerts"], ["alerts", "Alerts", "alerts"], ["messages", "Messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"], ["pay", "Penalties & pay", "people"]];
+const TABS = [["live", "Live", "alerts"], ["runboard", "Run Board", "roster"], ["classic", "Run Board (classic)", "roster"], ["scorecard", "Scorecard", "scorecard"], ["fix", "Fix posts", "scorecard"], ["routes", "Routes", "alerts"], ["allowances", "Allowances", "roster"], ["alerts", "Alerts", "alerts"], ["messages", "Messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"], ["pay", "Penalties & pay", "people"]];
 export function render(soft = false) {
   if (soft && (document.activeElement?.matches("input,textarea,select") || $(".sheet-bg"))) return;
   const n = nzNow(); const tabs = TABS.filter(([, , a]) => S.me.can(a));
   if (!tabs.some(([k]) => k === S.tab)) S.tab = tabs[0][0];
   const badge = { live: S.alerts.filter(a => !a.resolved_at).length, leave: S.leave.filter(l => l.status === "pending").length, runboard: S.items.filter(i => i.roster_changes.status === "awaiting_approval").length, fix: S.me.can("scorecard") ? fixCount() : 0, alerts: S.alerts.filter(a => !a.resolved_at).length };
   app.innerHTML = `<div class="wrap">
-    <div class="top"><div><div class="brand">Taieri Ops</div><h1>${({ live: "Live board", runboard: "Run Board", classic: "Run Board (classic)", scorecard: "Driver Scorecard", fix: "Fix posts", routes: "Routes", alerts: "Alerts & timings", messages: "Messages", leave: "Leave", fleet: "Fleet", timing: "Timing rules", people: "People & settings", pay: "Penalties & pay" })[S.tab]}</h1></div>
+    <div class="top"><div><div class="brand">Taieri Ops</div><h1>${({ live: "Live board", runboard: "Run Board", classic: "Run Board (classic)", scorecard: "Driver Scorecard", fix: "Fix posts", routes: "Routes", allowances: "Back-up & on-call allowances", alerts: "Alerts & timings", messages: "Messages", leave: "Leave", fleet: "Fleet", timing: "Timing rules", people: "People & settings", pay: "Penalties & pay" })[S.tab]}</h1></div>
       <div class="upd"><span class="dot live"></span>live · ${fmtT(n.min)}<br>${esc(first(S.me.name))} · <button class="linkbtn" id="signout">sign out</button></div></div>
     <nav class="nav">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? "on" : ""}">${l}${badge[k] ? `<span class="b ${k === "runboard" ? "warn" : ""}">${badge[k]}</span>` : ""}</button>`).join("")}</nav>
-    <div id="view">${({ live: liveTab2, runboard: runBoardTab, classic: classicTab, scorecard: scorecardTab, fix: fixTab, routes: routesTab, alerts: alertsTab, messages: messagesTab, leave: leaveTab, fleet: fleetTab, timing: timingTab, people: peopleTab, pay: payTab })[S.tab]()}</div>
+    <div id="view">${({ live: liveTab2, runboard: runBoardTab, classic: classicTab, scorecard: scorecardTab, fix: fixTab, routes: routesTab, allowances: allowancesTab, alerts: alertsTab, messages: messagesTab, leave: leaveTab, fleet: fleetTab, timing: timingTab, people: peopleTab, pay: payTab })[S.tab]()}</div>
     <p class="foot">Safe. Sharp. Swift. · <a href="/">driver portal</a></p></div>`;
   $("#signout").onclick = signOut;
   $$("[data-tab]").forEach(b => b.onclick = () => { S.tab = b.dataset.tab; location.hash = S.tab; render(); });
   if (S.tab !== "live") { /* the live board draws its own map */ }
-  ({ live: wireLive2, runboard: wireRunBoard, classic: () => { }, scorecard: wireScorecard, fix: wireFix, routes: wireRoutes, alerts: wireAlerts, messages: wireMessages, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople, pay: wirePay })[S.tab]?.();
+  ({ live: wireLive2, runboard: wireRunBoard, classic: () => { }, scorecard: wireScorecard, fix: wireFix, routes: wireRoutes, allowances: wireAllowances, alerts: wireAlerts, messages: wireMessages, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople, pay: wirePay })[S.tab]?.();
   wireRange();
   bind($("#view"));   // every tile, row and chip with a data-… attribute opens its detail sheet
 }
