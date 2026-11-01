@@ -20,7 +20,7 @@ function lineFor(bu: any, shifts: any[], runsBy: Record<string, any>) {
   if (!works) return { kind: "On-call phone window (not rostered)", amt: AMT.phone };
   if (bu.bu_kind === "committed") return bu.bu_block === 10 ? { kind: "Committed back-up, over 5 to 10 hours", amt: AMT.block10 } : { kind: "Committed back-up, up to 5 hours", amt: AMT.block5 };
   if (pm) return { kind: "Phone window (afternoon shift)", amt: AMT.phone };
-  return { kind: "Voluntary back-up (paid for hours worked only)", amt: 0 };
+  return { kind: "Non-compulsory back-up (paid for hours worked only)", amt: 0 };
 }
 
 Deno.serve(async (req) => {
@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
   const callIn = calledIn.length ? `<p><b>Called in (no allowance, paid for the hours worked on the timesheet):</b></p><ul>${calledIn.map(r => `<li>${esc(nm(r.driver))}: ${label(r.day)}</li>`).join("")}</ul>` : "";
   const und = undecided.length ? `<p style="background:#fff4d6;padding:10px 12px;border-radius:8px"><b>Not included yet (${undecided.length}):</b> Jeremy hasn't marked these days as needed or not needed in the Allowances tab, so they aren't in the totals above. If any are owed, a follow-up will come.</p><ul>${undecided.map(r => `<li>${esc(nm(r.driver))}: ${label(r.day)}, ${esc(r.kind)}, ${money(r.amt)}</li>`).join("")}</ul>` : "";
 
-  const html = wrap(`<p>Hi Alejandro,</p><p>Here are the on-call and back-up allowances owed for the pay period <b>${esc(range)}</b>. These are extra to normal wages. Amounts are in NZD.</p>${summary}${detail}${callIn}${und}<p style="color:#555;font-size:13px">The allowances are $5 for the phone window when not needed, $10 for committed back-up up to 5 hours, and $20 for committed back-up over 5 and up to 10 hours. Voluntary back-up is paid for hours worked only.</p><p>Thanks,<br>Jeremy<br>Taieri Post Limited</p>`);
+  const html = wrap(`<p>Hi Alejandro,</p><p>Here are the on-call and back-up allowances owed for the pay period <b>${esc(range)}</b>. These are extra to normal wages. Amounts are in NZD.</p>${summary}${detail}${callIn}${und}<p style="color:#555;font-size:13px">The allowances are $5 for the phone window when not needed, $10 for committed back-up up to 5 hours, and $20 for committed back-up over 5 and up to 10 hours. Non-compulsory back-up is paid for hours worked only.</p><p>Thanks,<br>Jeremy<br>Taieri Post Limited</p>`);
   const subject = `On-call and back-up payments: pay period ${label(start)} to ${label(end, true)}`;
   const toP = ppl["AL"]; const ccP = ppl["J"];
   if (body.dry) return json({ ok: true, dry: true, subject, to: toP?.email, cc: ccP?.email, grand, byDrv, calledIn: calledIn.length, undecided: undecided.length, html });

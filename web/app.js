@@ -250,7 +250,7 @@ function buSection(n) {
     const what = works
       ? (x.bu_kind === "committed"
         ? `Committed. Be ready for add-on hours before or after your shift${x.bu_block ? `, up to ${x.bu_block} hours` : ""}. Allowance if you're not needed; paid for hours worked if you are.`
-        : `Voluntary. You may be offered extra hours before or after your shift. Yes or no is your call; paid for hours worked.`) + (works && (S.days[x.day].start >= 720) ? " Your shift starts after midday, so check your phone 6:30 to 7:30am in case you're needed in the morning." : "")
+        : `Non-compulsory. You may be offered extra hours before or after your shift. Yes or no is your call; paid for hours worked.`) + (works && (S.days[x.day].start >= 720) ? " Your shift starts after midday, so check your phone 6:30 to 7:30am in case you're needed in the morning." : "")
       : `Check your phone between 6:30 and 7:30am and confirm you're available. Any call-in comes between 6:30 and 8am; after that you're free. Allowance if you're not needed; if called in, paid for the time worked (2 hour minimum).`;
     return `<div class="bu"><div class="meta"><b>${kind}</b> · ${dayTag(x.day)}</div><div class="hint" style="margin:2px 0 10px">${what}</div></div>`;
   }).join("");

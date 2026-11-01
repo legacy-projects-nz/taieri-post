@@ -1,10 +1,10 @@
 // Allowances tab: back-up and on-call allowances, tracked as their own item.
 // Each Back up (BU) slot on the Run Board becomes a line here. Amounts come from the rules; Jeremy marks what happened.
 //   Not rostered that day            -> on-call phone window  $5   (if not needed)
-//   Working, PM shift, voluntary     -> phone window          $5   (if not needed)
+//   Working, PM shift, non-compulsory     -> phone window          $5   (if not needed)
 //   Working, committed, up to 5 h    -> back-up allowance     $10  (if not needed)
 //   Working, committed, 6 to 10 h    -> back-up allowance     $20  (if not needed)
-//   Working, AM shift, voluntary     -> no allowance (paid for hours worked only)
+//   Working, AM shift, non-compulsory     -> no allowance (paid for hours worked only)
 // Called in = paid for hours worked (timesheet), no allowance on top. Declined = no allowance.
 import { sb, q, today, addDays, label, fmtT, esc, $$, toast } from "/shared/core.js";
 import { segTimes } from "/shared/score.js";
@@ -20,8 +20,8 @@ export function lineFor(bu, shifts, runsBy) {
   const pm = works && starts != null && starts >= 720;
   if (!works) return { kind: "On-call phone window", amt: AMT.phone, why: "Not rostered that day" };
   if (bu.bu_kind === "committed") return bu.bu_block === 10 ? { kind: "Committed back-up, over 5 to 10 h", amt: AMT.block10, why: "Working that day" } : { kind: "Committed back-up, up to 5 h", amt: AMT.block5, why: "Working that day" };
-  if (pm) return { kind: "Phone window (PM shift)", amt: AMT.phone, why: "Voluntary back-up, shift starts after midday" };
-  return { kind: "Voluntary back-up", amt: 0, why: "Paid for hours worked only" };
+  if (pm) return { kind: "Phone window (PM shift)", amt: AMT.phone, why: "Non-compulsory back-up, shift starts after midday" };
+  return { kind: "Non-compulsory back-up", amt: 0, why: "Paid for hours worked only" };
 }
 
 async function loadOutcomes() {
@@ -53,7 +53,7 @@ export function allowancesTab() {
       ${needs ? `<span class="meta c-warn" style="flex:0 0 auto">needs a decision</span>` : ""}</div>`; };
   return `${weekBar()}
   <div class="card"><h2>Allowances<span>back-up and on-call, owed this week: <b>$${grand}</b></span></h2>
-    <p class="hint">One line for every Back up slot on the Run Board. <b>Not needed</b> = the allowance is owed. <b>Called in</b> = paid for the hours worked (check the timesheet), no allowance on top. <b>Declined</b> = no allowance. Phone window $5, committed back-up $10 (up to 5 h) or $20 (over 5 up to 10 h). Voluntary back-up in the morning has no allowance.</p>
+    <p class="hint">One line for every Back up slot on the Run Board. <b>Not needed</b> = the allowance is owed. <b>Called in</b> = paid for the hours worked (check the timesheet), no allowance on top. <b>Declined</b> = no allowance. Phone window $5, committed back-up $10 (up to 5 h) or $20 (over 5 up to 10 h). Non-compulsory back-up in the morning has no allowance.</p>
     ${L.length ? L.map(row).join("") : `<div class="empty">No back-up or on-call slots on the Run Board this week.</div>`}
     ${Object.keys(tot).length ? `<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:10px"><div class="meta mono" style="margin-bottom:6px">OWED THIS WEEK, BY PERSON</div>${Object.entries(tot).map(([d, v]) => `<div class="row" style="justify-content:space-between"><span>${esc(nm(d))}</span><b>$${v}</b></div>`).join("")}</div>` : ""}
   </div>`;
