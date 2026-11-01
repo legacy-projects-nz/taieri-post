@@ -136,14 +136,12 @@ function rosterChanges(n) {
   const settled = i => ackBy[i.id]?.confirmed_at || ackBy[i.id]?.dismissed_at;   // confirmed by the driver or by Jeremy, or dismissed: no button
   const fresh = live_.filter(i => !settled(i) && !S.gotit[i.id]);
   const tapped = live_.filter(i => !settled(i) && S.gotit[i.id]);
-  const old = live_.filter(i => settled(i)).slice(0, 3);
-  if (!fresh.length && !tapped.length && !old.length) return "";
+  if (!fresh.length && !tapped.length) return "";   // all confirmed or cleared: the box goes away
   const grp = list => { const by = {}; for (const i of list) (by[i.change_id] ??= { at: i.roster_changes.sent_at, items: [] }).items.push(i); return Object.values(by); };
-  return `<div class="card ${fresh.length ? "hot" : ""}" id="rc"><h2>Roster changes<span>${fresh.length ? `${fresh.length} to confirm` : tapped.length ? "Got it sent" : "confirmed"}</span></h2>
+  return `<div class="card ${fresh.length ? "hot" : ""}" id="rc"><h2>Roster changes<span>${fresh.length ? `${fresh.length} to confirm` : "Got it sent"}</span></h2>
     ${grp(fresh).map(g => `<div><div class="meta mono">Sent ${fmtTs(g.at)}</div><ul style="margin:4px 0 0 18px;padding:0;color:var(--crit);font-weight:700">${g.items.map(i => `<li>${esc(i.summary)}</li>`).join("")}</ul></div>`).join("")}
     ${fresh.length ? `<button class="btn crit" id="gotit" data-ids="${fresh.map(i => i.id).join(",")}">Got it, I've read ${fresh.length === 1 ? "this change" : "these changes"}</button><p class="hint">One tap. Jeremy sees your ✓ straight away.</p>` : ""}
     ${tapped.length ? `<p class="hint c-ok">✓ Got it sent for ${tapped.length} change${tapped.length === 1 ? "" : "s"} · <button class="linkbtn" id="gotit-again">Didn't go through? Show again</button></p>` : ""}
-    ${grp(old).map(g => `<div><div class="meta mono c-ok">Sent ${fmtTs(g.at)} · ${ackBy[g.items[0].id].confirmed_at ? `✓ confirmed ${fmtTs(ackBy[g.items[0].id].confirmed_at)}` : "✓ cleared"}</div><ul style="margin:4px 0 0 18px;padding:0;color:var(--ink3)">${g.items.map(i => `<li>${esc(i.summary)}</li>`).join("")}</ul></div>`).join("")}
   </div>`;
 }
 
