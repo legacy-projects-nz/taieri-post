@@ -36,8 +36,8 @@ Deno.serve(async (req) => {
     if (!sod && now.min > start + R.sodGrace && now.min < end + R.eodHours * 60) raise({ kind: "sod_late", driver: drv, shift_id: segs[0].s.id, title: `${name}: no SOD yet`, body: `Rostered ${fmtT(start)} (${segs.filter(x => !x.sort).map(x => x.s.run).join(", ") || "sort"}) · due by ${fmtT(start + R.sodGrace)}`, dedupe_key: key, _push: { to: [drv], title: "Your SOD is due", body: `Tap Start of day in the app. It was due by ${fmtT(start + R.sodGrace)}.` }, _email: "sod" });
     if (sod) for (const a of alertsOpen) if (a.dedupe_key === key) resolve.push(a.id);
     const runSegs = segs.filter(x => !x.sort);
-    for (const x of runSegs) { const due = (x.en ?? x.st!) + R.eodHours * 60; const k = `eod_late|${t}|${drv}|${x.s.run}`; const e = eodBy[x.s.id];
-      if (!e && now.min > due) raise({ kind: "eod_late", driver: drv, shift_id: x.s.id, title: `${name}: EOD for ${x.s.run} not in`, body: `Run finished ${fmtT(x.en)} · EOD was due by ${fmtT(due)}`, dedupe_key: k, _push: { to: [drv], title: `EOD for ${x.s.run} is overdue`, body: `It was due by ${fmtT(due)}. Tap EOD in the app.` }, _email: "eod" });
+    for (const x of segs.filter(s => !s.sort || (s.s.addons || []).length)) { const due = (x.en ?? x.st!) + R.eodHours * 60; const k = `eod_late|${t}|${drv}|${x.s.run}`; const e = eodBy[x.s.id];
+      if (!x.sort && !e && now.min > due) raise({ kind: "eod_late", driver: drv, shift_id: x.s.id, title: `${name}: EOD for ${x.s.run} not in`, body: `Run finished ${fmtT(x.en)} · EOD was due by ${fmtT(due)}`, dedupe_key: k, _push: { to: [drv], title: `EOD for ${x.s.run} is overdue`, body: `It was due by ${fmtT(due)}. Tap EOD in the app.` }, _email: "eod" });
       if (e) for (const a of alertsOpen) if (a.dedupe_key === k) resolve.push(a.id);
       // timing windows
       for (const r of rules || []) { const d = dow(t) + 1; if (!r.days.includes(d)) continue; const all = r.runs.includes("ALL"); if (!all && !r.runs.includes(x.s.run)) continue;

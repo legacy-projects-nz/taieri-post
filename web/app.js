@@ -280,7 +280,7 @@ function shiftsCard(t) {
 }
 
 /* ---------- Add-ons (beside the shift: one button per add-on, tap = done) ---------- */
-function runSegOf(D) { return D && D.segs.filter(x => !x.sort && (S.addons.some(a => a.runs.includes(x.shift.run)) || x.shift.addons?.length || rulesFor(x, D.day).length)); }
+function runSegOf(D) { return D && D.segs.filter(x => (!x.sort || x.shift.addons?.length) && (S.addons.some(a => a.runs.includes(x.shift.run)) || x.shift.addons?.length || rulesFor(x, D.day).length)); }
 function addonsCard(T, N, n) {   // today's tasks, only while today's run is still going
   const rs = runSegOf(T); const done = !T || !rs?.length || n.min >= Math.max(...rs.map(x => x.en ?? x.st));
   return done ? "" : tasksCard(T, n, false);
