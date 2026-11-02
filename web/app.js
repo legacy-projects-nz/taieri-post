@@ -11,6 +11,8 @@ try { S.gotit = JSON.parse(localStorage.getItem("tp-gotit") || "{}"); } catch { 
 /* ================= boot ================= */
 (async () => {
   try { S.me = await requireUser(app); } catch { return; }
+  // office staff who don't drive (e.g. fleet) have no driver portal: send them to the owner portal
+  if (S.me.role !== "driver" && S.me.role !== "owner" && !S.me.can("scorecard")) { location.replace("/admin/"); return; }
   await viewAs();
   await loadAll();
   render();
