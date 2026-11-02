@@ -46,6 +46,7 @@ export async function loadAll() {
     q(sb.from("locations").select("*").gte("at", new Date(Date.now() - 12 * 3600e3).toISOString()).order("at", { ascending: false }).limit(2000)),
     q(sb.from("run_skills").select("*")), q(sb.from("week_notes").select("*")), q(sb.from("vehicle_checks").select("*").gte("week_start", addDays(monOf(t), -42))),
   ]);
+  S.login = {}; try { const { data: ls } = await sb.rpc("login_status"); for (const l of ls || []) S.login[l.person_id] = l; } catch { }   // who is signed in to the app
   Object.assign(S, { set, runs, vans, addons, rules, people, shifts, items, acks, sent, msgs, recips, leave, alerts, entries, marks, feed, ovs, locs, skills, notes, vchk });
   S.C = cfg(set); S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vansBy = Object.fromEntries(vans.map(v => [v.plate, v])); S.peopleBy = Object.fromEntries(people.map(p => [p.id, p]));
   const onRoster = new Set(shifts.map(s => s.driver)); // anyone who drives: drivers, Jeremy (owner, tracked separately), or whoever is on the roster
