@@ -178,4 +178,8 @@ export function scoreFor(driver, from, to, D, C) {
   return { driver, from, to, items, closed: closed.length, onTime, events, late: closed.filter(i => i.st === "late").length, missing: closed.filter(i => i.st === "miss").length, admin, adj, acc, feedPct, accItems: items_, accComp: comp, accDays, mistakes: mist, nMist: mist.length, safe, safeSet: safeE.length > 0, eff, effDays, overall, entries: ents, days };
 }
 export function band(eff) { if (eff == null) return null; return eff >= 100 ? 6 : eff >= 90 ? 5 : eff >= 80 ? 4 : eff >= 70 ? 3 : eff >= 60 ? 2 : eff >= 50 ? 1 : 0; }
-export function fortnight(iso) { const d = dow(iso); const mon = addDays(iso, -d); return { from: addDays(mon, -7), to: addDays(mon, 6), thisMon: mon }; }
+// Pay fortnights: first one Mon 2 Nov – Sun 15 Nov 2026, then every 14 days.
+export const PAY_START = "2026-11-02";
+export function fortnight(iso) { const mon = addDays(iso, -dow(iso)); const n = Math.floor(Math.round((new Date(mon) - new Date(PAY_START)) / 86400000) / 14); const from = addDays(PAY_START, n * 14); return { from, to: addDays(from, 13), thisMon: mon }; }
+/** A driver's pay band from their average efficiency over the pay fortnight containing `iso`. */
+export function fortnightBand(driver, iso, D, C) { const F = fortnight(iso); const s = scoreFor(driver, F.from, F.to, D, C); return { b: band(s.eff), eff: s.eff, ...F }; }

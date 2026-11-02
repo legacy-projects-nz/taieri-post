@@ -1,7 +1,7 @@
 // Live board: the old Scorecard dashboard, live. Day chips, KPIs, receivers & pick-ups, important points, team scores + labour,
 // add-ons & timings board, hours by day, admin action centre, roster changes not confirmed, drivers grid, posts board + live feed, map.
 import { sb, q, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, toast, pill, first, col, pct, isSort, avg, sum } from "/shared/core.js";
-import { scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, band, dayShifts, segTimes, addName } from "/shared/score.js";
+import { scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, band, fortnightBand, dayShifts, segTimes, addName } from "/shared/score.js";
 import { S, sheet, opt, nm, fnm, loadAll, render, scoreData, alertRow, fn, teamRange, rangeBar, teamStats } from "/admin/admin.js";
 import { itemKeyFor } from "/admin/detail.js";
 
@@ -37,7 +37,7 @@ export function liveTab() {
     <div class="grid2">${important(scores, n)}${teamAndLabour(scores, team, wk)}</div>
     <div class="grid2">${hoursByDay(wk)}${actionCentre(scores, n)}</div>
     ${notConfirmed(n)}
-    ${driversGrid(scores)}
+    ${driversGrid(scores, wk)}
     <div class="card"><h2>${one ? `Posts for ${label(days[0])}` : "Posts by driver and day"}<span>tap a chip to review</span></h2>${postsBoard(selScores, days, t)}</div>
     <div class="grid2"><div class="card"><h2>Live feed<span>today</span></h2>${feed(t)}</div><div class="card"><h2>Where everyone is<span>between SOD and EOD · app open</span></h2><div class="map" id="map"></div><p class="hint">Dots update every couple of minutes while a driver's app is on screen. Grey = older than 10 minutes.</p></div></div>`;
 }
@@ -189,10 +189,10 @@ function notConfirmed(n) {
 }
 
 /* ---- Drivers grid ---- */
-function driversGrid(scores) {
+function driversGrid(scores, wk) {
   const list = scores.filter(s => s.closed || s.effDays.length || s.nMist).sort((a, b) => (a.overall ?? 101) - (b.overall ?? 101));
   return `<div class="card"><h2>Drivers<span>this week · tap a name for history and results</span></h2>${list.length ? `<div class="dgrid">${list.map(s => { const d = S.peopleBy[s.driver]; const hrs = Object.values(s.days).reduce((a, x) => a + x.hours, 0);
-    return `<button class="dcard" data-driver="${s.driver}" style="border:0;color:inherit;text-align:left"><div class="ring" style="--p:${Math.round(s.overall || 0)};--c:var(--${col(s.overall) === "grey" ? "grey" : col(s.overall)})"><span>${pct(s.overall)}</span></div><div style="flex:1"><b>${esc(d.name)}</b>${band(s.eff) != null ? ` <span class="meta">Band ${band(s.eff) || "<1"}</span>` : ""}<div class="meta">${hrs.toFixed(1)} h rostered · ${s.onTime}/${s.closed} on time</div><div class="mini">${[["Adm", s.admin], ["Eff", s.eff], ["Acc", s.acc], ["Saf", s.safe]].map(([l, v]) => `<span>${l}</span><div class="bar"><i class="bg-${col(v)}" style="width:${Math.min(100, v || 0)}%"></i></div><span class="c-${col(v)}">${pct(v)}</span>`).join("")}</div><div class="meta">${[s.missing ? `<span class="c-crit">${s.missing} missing</span>` : "", s.late ? `<span class="c-warn">${s.late} late</span>` : "", s.nMist ? `<span class="c-crit">${s.nMist} mistake${s.nMist > 1 ? "s" : ""}</span>` : ""].filter(Boolean).join(" · ") || "no issues"}</div></div></button>`; }).join("")}</div>` : `<p class="empty">No driver data for this week yet. Scores appear once SODs and EODs come in.</p>`}</div>`;
+    return `<button class="dcard" data-driver="${s.driver}" style="border:0;color:inherit;text-align:left"><div class="ring" style="--p:${Math.round(s.overall || 0)};--c:var(--${col(s.overall) === "grey" ? "grey" : col(s.overall)})"><span>${pct(s.overall)}</span></div><div style="flex:1"><b>${esc(d.name)}</b>${(fb => fb.b != null ? ` ${pill(`Band ${fb.b || "<1"} · fortnight`, "accent")}` : "")(fortnightBand(s.driver, wk, scoreData(), S.C))}<div class="meta">${hrs.toFixed(1)} h rostered · ${s.onTime}/${s.closed} on time</div><div class="mini">${[["Adm", s.admin], ["Eff", s.eff], ["Acc", s.acc], ["Saf", s.safe]].map(([l, v]) => `<span>${l}</span><div class="bar"><i class="bg-${col(v)}" style="width:${Math.min(100, v || 0)}%"></i></div><span class="c-${col(v)}">${pct(v)}</span>`).join("")}</div><div class="meta">${[s.missing ? `<span class="c-crit">${s.missing} missing</span>` : "", s.late ? `<span class="c-warn">${s.late} late</span>` : "", s.nMist ? `<span class="c-crit">${s.nMist} mistake${s.nMist > 1 ? "s" : ""}</span>` : ""].filter(Boolean).join(" · ") || "no issues"}</div></div></button>`; }).join("")}</div>` : `<p class="empty">No driver data for this week yet. Scores appear once SODs and EODs come in.</p>`}</div>`;
 }
 function postsBoard(selScores, days, t) {
   if (days.length === 1) { const d = days[0]; const rows = selScores.filter(s => s.items.length).map(s => { const D = s.days[d]; const sod = s.items.find(i => i.kind === "SOD"); const eods = s.items.filter(i => i.kind === "EOD"); return `<tr><td class="clk" data-dayof="${s.driver}|${d}" title="Tap for ${esc(fnm(s.driver))}'s day"><b>${esc(nm(s.driver))}</b><div class="meta">${D ? `${fmtT(D.start)}–${fmtT(D.end)} · ${D.hours}h · ${D.segs.map(x => x.shift.run + (x.shift.trainee ? " (training " + fnm(x.shift.trainee) + ")" : "")).join(" · ")}` : ""}</div></td><td>${sod ? chip(sod) : ""}</td><td>${eods.map(e => `<div style="margin:2px 0"><span class="meta mono">${esc(e.code || "day")}</span> ${chip(e)}</div>`).join("")}</td></tr>`; });
