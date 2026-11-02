@@ -95,3 +95,15 @@ hr.gl{display:none}
 
 /* break button: full width under SOD / EOD */
 .qb.brk{grid-column:1/-1;min-height:56px}.qb.brk b{font-size:18px}.qb.brk.on{background:var(--warn);color:var(--on-warn);border-color:transparent}
+
+/* calendar */
+.calg{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.calg .ch{text-align:center;font:700 11px var(--fd);color:var(--ink3);padding:2px 0}
+.calg .cd{min-height:44px;border-radius:8px;background:var(--card2,rgba(127,127,127,.08));padding:3px 4px;display:flex;flex-direction:column;font:600 13px var(--fd)}
+.calg .cd i{font:600 9.5px var(--fd);font-style:normal;margin-top:auto;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.calg .cd.out{opacity:.35}.calg .cd.now{outline:2px solid var(--accent)}
+.calg .cd.stat{background:var(--accent-fill);color:var(--accent)}
+.calg .cd.lv-ok{background:var(--ok-fill);color:var(--ok)}.calg .cd.lv-wait{background:var(--warn-fill);color:var(--warn)}
+.calg .cd[data-leavev],.calg .cd[data-statv]{cursor:pointer}
+.calk{display:flex;gap:12px;flex-wrap:wrap;font:600 12px var(--fd);color:var(--ink2);margin-top:8px}.calk span{display:flex;align-items:center;gap:5px}
+.calk .k{width:12px;height:12px;border-radius:3px;display:inline-block}.calk .k.stat{background:var(--accent)}.calk .k.lv-ok{background:var(--ok)}.calk .k.lv-wait{background:var(--warn)}

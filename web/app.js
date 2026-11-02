@@ -105,6 +105,7 @@ function render() {
     ${pair(vanCard(T, null), shiftsCard(t))}
     ${pair(toFixCard(n), fromJeremy())}
     ${pair(leaveCard(), detailsCard())}
+    ${calendarCard(t)}
     ${moreCard()}
     ${pickupsCard()}
     ${accessCard()}
@@ -489,6 +490,8 @@ function wire() {
   $$("[data-done]").forEach(b => b.onclick = async () => { const { error } = await sb.rpc("task_done", { p_shift: b.dataset.shift, p_addon: b.dataset.done }); if (error) toast(error.message, "err"); else { toast("Marked done ✓", "ok"); await loadAll(); render(); } });
   $$("[data-sc]").forEach(b => b.onclick = () => { S.scSel = S.scSel === b.dataset.sc ? null : b.dataset.sc; render(); setTimeout(() => $("#scores")?.scrollIntoView({ block: "nearest" }), 0); });
   $("#leave-new")?.addEventListener("click", leaveForm);
+  $$("[data-cal]").forEach(b => b.onclick = () => { const [y, m] = (S.calMonth || today().slice(0, 7)).split("-").map(Number); const d = new Date(Date.UTC(y, m - 1 + +b.dataset.cal, 1)); S.calMonth = d.toISOString().slice(0, 7); render(); setTimeout(() => $("#cal")?.scrollIntoView({ block: "nearest" }), 0); });
+  $$("[data-statv]").forEach(c => c.onclick = () => toast(c.dataset.statv, "ok"));
   $("#prof-edit")?.addEventListener("click", profileForm);
   $("#vchk-btn")?.addEventListener("click", vehicleCheckForm);
   bindDetail(app);
@@ -690,6 +693,43 @@ function alertSheet(a) {
     (bg, close) => { bg.querySelector("#al-vchk")?.addEventListener("click", () => { close(); vehicleCheckForm(); }); bg.querySelector("#al-got")?.addEventListener("click", () => { close(); gotItAlert(a.id); }); });
 }
 async function gotItAlert(id) { const { error } = await sb.rpc("alert_ack", { p_id: id }); if (error) return toast(error.message, "err"); S.alerts = S.alerts.filter(x => x.id !== id); toast("Got it ✓", "ok"); render(); }
+/* ---------- Calendar: stat days (NZ + Otago Anniversary) and my leave, approved and waiting ---------- */
+function easter(y) { const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451), mo = Math.floor((h + l - 7 * m + 114) / 31), da = ((h + l - 7 * m + 114) % 31) + 1; return `${y}-${String(mo).padStart(2, "0")}-${String(da).padStart(2, "0")}`; }
+function nthMon(y, mo, n) { const first = `${y}-${String(mo).padStart(2, "0")}-01`; return addDays(first, (7 - dow(first)) % 7 + 7 * (n - 1)); }
+const MATARIKI = { 2025: "2025-06-20", 2026: "2026-07-10", 2027: "2027-06-25", 2028: "2028-07-14", 2029: "2029-07-06", 2030: "2030-06-21" };
+function statDays(y) {
+  const o = {}; const put = (d, n) => { o[d] = n; };
+  const wkMon = d => dow(d) === 5 ? addDays(d, 2) : dow(d) === 6 ? addDays(d, 1) : d;           // Sat/Sun → Monday
+  const pair = (a, b, na, nb) => { let x = a, z = b; if (dow(a) === 5) { x = addDays(a, 2); z = addDays(a, 3); } else if (dow(a) === 6) { x = addDays(a, 2); z = addDays(a, 1); } else if (dow(b) === 5) z = addDays(b, 2); put(x, na); put(z, nb); };
+  pair(`${y}-01-01`, `${y}-01-02`, "New Year's Day", "Day after New Year's");
+  put(wkMon(`${y}-02-06`), "Waitangi Day");
+  const e = easter(y); put(addDays(e, -2), "Good Friday"); put(addDays(e, 1), "Easter Monday");
+  const oa = (() => { const t = `${y}-03-23`, back = dow(t), m = back <= 3 ? addDays(t, -back) : addDays(t, 7 - back); return m === addDays(e, 1) ? addDays(m, 1) : m; })(); put(oa, "Otago Anniversary");
+  put(wkMon(`${y}-04-25`), "ANZAC Day");
+  put(nthMon(y, 6, 1), "King's Birthday");
+  if (MATARIKI[y]) put(MATARIKI[y], "Matariki");
+  put(nthMon(y, 10, 4), "Labour Day");
+  pair(`${y}-12-25`, `${y}-12-26`, "Christmas Day", "Boxing Day");
+  return o;
+}
+function calendarCard(t) {
+  const mon = S.calMonth || t.slice(0, 7); const [y, m] = mon.split("-").map(Number);
+  const stats = { ...statDays(y), ...Object.fromEntries(Object.entries(S.C.holidays || {}).map(([d, h]) => [d, h.name])) };
+  const leave = S.leave.filter(l => l.status === "approved" || l.status === "pending");
+  const first = `${mon}-01`; const start = monOf(first); const last = addDays(`${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}-01`, -1);
+  const cells = []; for (let d = start; d <= last || dow(d) !== 0; d = addDays(d, 1)) cells.push(d);
+  const MON = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const cell = d => { const out = d.slice(0, 7) !== mon; const st = stats[d]; const lv = leave.find(l => d >= l.date_from && d <= l.date_to); const cls = [out ? "out" : "", d === t ? "now" : "", st ? "stat" : "", lv ? (lv.status === "approved" ? "lv-ok" : "lv-wait") : ""].join(" ");
+    const tip = [st, lv ? `${LEAVE_T[lv.type] || lv.type} (${lv.status === "approved" ? "approved" : "waiting for approval"})` : ""].filter(Boolean).join(" · ");
+    return `<div class="cd ${cls}" ${lv ? `data-leavev="${lv.id}"` : st ? `data-statv="${esc(st)}"` : ""} title="${esc(tip)}"><span>${+d.slice(8)}</span>${st ? `<i>stat</i>` : lv ? `<i>${lv.status === "approved" ? "leave" : "asked"}</i>` : ""}</div>`; };
+  const inMonth = d => d.slice(0, 7) === mon;
+  const statList = Object.entries(stats).filter(([d]) => inMonth(d)).sort();
+  const lvList = leave.filter(l => l.date_to >= first && l.date_from <= last);
+  return `<div class="card" id="cal"><h2>Calendar<span><button class="ar" data-cal="-1">‹</button> ${MON[m - 1]} ${y} <button class="ar" data-cal="1">›</button></span></h2>
+    <div class="calg">${["M","T","W","T","F","S","S"].map(x => `<div class="ch">${x}</div>`).join("")}${cells.map(cell).join("")}</div>
+    <div class="calk"><span><b class="k stat"></b>Stat day</span><span><b class="k lv-ok"></b>Leave approved</span><span><b class="k lv-wait"></b>Leave waiting</span></div>
+    ${statList.length || lvList.length ? `<div class="list" style="margin-top:6px">${statList.map(([d, n]) => `<div class="item accent" style="padding:6px 10px"><b>${label(d)}</b> · ${esc(n)}</div>`).join("")}${lvList.map(l => `<div class="item clk ${l.status === "approved" ? "ok" : "warn"}" style="padding:6px 10px" data-leavev="${l.id}"><b>${label(l.date_from)}${l.date_to !== l.date_from ? ` – ${label(l.date_to)}` : ""}</b> · ${esc(LEAVE_T[l.type] || l.type)} · ${l.status === "approved" ? "approved" : "waiting for approval"}</div>`).join("")}</div>` : `<p class="hint">No stat days or leave this month.</p>`}</div>`;
+}
 function leaveSheet(l) {
   const days = []; for (let d = l.date_from; d <= l.date_to && days.length < 31; d = addDays(d, 1)) days.push(d); const clash = days.filter(d => S.days[d]);
   sheet(`<h3>${esc(LEAVE_T[l.type] || l.type)}</h3><p class="meta">${label(l.date_from, true)}${l.date_to !== l.date_from ? ` – ${label(l.date_to, true)}` : ""}${l.part !== "full" ? ` · ${l.part === "AM" ? "morning off" : "afternoon off"}` : ""} · asked ${fmtTs(l.created_at)}</p>
