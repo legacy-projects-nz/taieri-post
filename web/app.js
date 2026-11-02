@@ -26,8 +26,8 @@ try { S.gotit = JSON.parse(localStorage.getItem("tp-gotit") || "{}"); } catch { 
   // overdue alert: beep (and buzz) every 5 minutes while the app is open and something is still overdue
   let actx = null, lastBeep = 0; const unlock = () => { try { actx ||= new (window.AudioContext || window.webkitAudioContext)(); actx.resume?.(); } catch { } };
   ["click", "touchstart", "keydown"].forEach(ev => document.addEventListener(ev, unlock, { passive: true }));
-  const beep = () => { try { if (!actx || actx.state !== "running") return; for (let i = 0; i < 3; i++) { const o = actx.createOscillator(), g = actx.createGain(); o.type = "square"; o.frequency.value = 880; g.gain.value = 0.15; o.connect(g); g.connect(actx.destination); const t0 = actx.currentTime + i * 0.35; o.start(t0); o.stop(t0 + 0.2); } navigator.vibrate?.([400, 150, 400, 150, 400]); } catch { } };
-  setInterval(() => { if (S.viewAs || document.hidden) return; if (!(S.alerts || []).some(a => !a.resolved_at && ["sod_late", "sod_missing", "eod_late", "timing_missed"].includes(a.kind))) { lastBeep = 0; return; } if (Date.now() - lastBeep < 295000) return; lastBeep = Date.now(); beep(); }, 15000);
+  const beep = () => { try { if (!actx || actx.state !== "running") return false; for (let i = 0; i < 3; i++) { const o = actx.createOscillator(), g = actx.createGain(); o.type = "square"; o.frequency.value = 880; g.gain.value = 0.15; o.connect(g); g.connect(actx.destination); const t0 = actx.currentTime + i * 0.35; o.start(t0); o.stop(t0 + 0.2); } navigator.vibrate?.([400, 150, 400, 150, 400]); return true; } catch { return false; } };
+  setInterval(() => { if (S.viewAs || document.hidden) return; if (!(S.alerts || []).some(a => !a.resolved_at && ["sod_late", "sod_missing", "eod_late", "timing_missed"].includes(a.kind))) { lastBeep = 0; return; } if (Date.now() - lastBeep < 295000) return; if (beep()) lastBeep = Date.now(); }, 5000);
   ver(); setInterval(ver, 300000); document.addEventListener("visibilitychange", () => { if (!document.hidden) ver(); });
 })();
 
