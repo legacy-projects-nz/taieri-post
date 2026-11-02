@@ -184,3 +184,8 @@ export const PAY_START = "2026-11-02";
 export function fortnight(iso) { const mon = addDays(iso, -dow(iso)); const n = Math.floor(Math.round((new Date(mon) - new Date(PAY_START)) / 86400000) / 14); const from = addDays(PAY_START, n * 14); return { from, to: addDays(from, 13), thisMon: mon }; }
 /** A driver's pay band from their average efficiency over the pay fortnight containing `iso`. */
 export function fortnightBand(driver, iso, D, C) { const F = fortnight(iso); const s = scoreFor(driver, F.from, F.to, D, C); return { b: band(s.eff), eff: s.eff, ...F }; }
+/** The $/h a band pays, read from the band settings text (e.g. "$26" or "$24 + coaching"); null if not set. */
+export function bandRate(b, C) { if (b == null) return null; const m = /\$\s*(\d+(?:\.\d+)?)/.exec(String(C.bands?.[b] ?? "")); return m ? +m[1] : null; }
+/** Owner-portal pay line: fortnight band, the rate that band pays, and the driver's current rate. */
+export function payBand(drv, iso, D, C) { const fb = fortnightBand(drv.id, iso, D, C); const now = +(drv.rate || C.rules.hourRate); const r = bandRate(fb.b, C); return { ...fb, rate: r, now, diff: r != null ? r - now : null, note: fb.b != null ? String(C.bands?.[fb.b] ?? "").replace(/^\s*\$\s*\d+(?:\.\d+)?\s*/, "").replace(/^\+\s*/, "") : "" }; }
+export const money = v => "$" + (Number.isInteger(v) ? v : v.toFixed(2));
