@@ -199,6 +199,7 @@ function reviewSheet(id) {
 const ALERT_WHAT = { sod_late: "Your start of day wasn't posted on time. Post it now. Late is better than missing.", sod_missing: "No start of day was posted for this shift. Post it now so the day can be scored.", eod_late: "Your end of day wasn't posted on time. Post it now with your run figures.", timing_missed: "A timed task ran past its window. If you did it, tap Done on it under Today's tasks. If not, let Jeremy know.", timing_due: "A timed task on your run is due soon.", vchk_due: "Your weekly vehicle check is due.", change_unconfirmed: "A roster change is waiting for you." };
 const myAlerts = () => S.alerts.filter(a => !String(a.dedupe_key || "").startsWith("review|"));
 function alertsCard() {
+  return ""; // admin-task box removed for drivers: reminders come as the phone alert + beep; Today's tasks shows what is open
   const list = myAlerts(); if (!list.length) return "";
   return `<div class="card hot"><h2>Admin tasks<span>${list.length}</span></h2><div class="list">${list.map(a => `<div class="item ${a.kind.includes("missed") || a.kind === "sod_missing" ? "crit" : "warn"}"><b>${esc(a.title)}</b>${a.body ? `<div class="meta">${esc(a.body)}</div>` : ""}<div class="m">${ago(a.created_at)}</div><div class="row" style="margin-top:6px"><button class="btn sm" data-alertv="${a.id}">What to do</button>${S.viewAs && !S.viewer?.isStaff ? "" : `<button class="btn ghost sm" data-gotit-alert="${a.id}">Got it${S.viewAs ? " (for " + esc(first(S.viewAs.name)) + ")" : ""}</button>`}</div></div>`).join("")}</div></div>`;
 }
