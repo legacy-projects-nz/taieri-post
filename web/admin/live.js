@@ -37,6 +37,7 @@ export function liveTab() {
     <div class="grid2">${important(scores, n)}${teamAndLabour(scores, team, wk)}</div>
     <div class="grid2">${hoursByDay(wk)}${actionCentre(scores, n)}</div>
     ${notConfirmed(n)}
+    ${breaksCard(days, n)}
     ${driversGrid(scores, wk)}
     <div class="card"><h2>${one ? `Posts for ${label(days[0])}` : "Posts by driver and day"}<span>tap a chip to review</span></h2>${postsBoard(selScores, days, t)}</div>
     <div class="grid2"><div class="card"><h2>Live feed<span>today</span></h2>${feed(t)}</div><div class="card"><h2>Where everyone is<span>between SOD and EOD · app open</span></h2><div class="map" id="map"></div><p class="hint">Dots update every couple of minutes while a driver's app is on screen. Grey = older than 10 minutes.</p></div></div>`;
@@ -199,11 +200,23 @@ function postsBoard(selScores, days, t) {
     return rows.length ? `<div class="scroll"><table class="dt"><tr><th>Driver</th><th>SOD</th><th>EOD (one per run)</th></tr>${rows.join("")}</table></div><p class="hint">● on time · ● late · ● overdue / missing · ● due · struck = excused · outlined = set by hand</p>` : `<p class="empty">Nobody tracked is rostered on ${label(d)}.</p>`; }
   return `<div class="scroll"><table class="dt"><tr><th>Driver</th>${days.map(d => `<th class="${d === t ? "c-accent" : ""}">${label(d).slice(0, 6)}</th>`).join("")}<th>On time</th><th>Late</th><th>Missing</th><th>Rate</th><th>Admin</th></tr>${selScores.filter(s => s.items.length).map(s => `<tr><td class="clk" data-driver="${s.driver}" title="Tap for ${esc(fnm(s.driver))}'s sheet"><b>${esc(nm(s.driver))}</b></td>${days.map(d => `<td style="white-space:nowrap">${s.items.filter(i => i.day === d).map(it => `<button class="chip ${it.st}" data-item="${esc(it.key)}" title="${esc(it.label)} · ${itemNote(it)}" style="width:14px;height:14px;padding:0;border-radius:3px;margin:1px"></button>`).join("")}</td>`).join("")}<td class="num">${s.onTime}</td><td class="num">${s.late}</td><td class="num">${s.missing}</td><td class="num">${s.closed ? Math.round(s.onTime / s.closed * 100) + "%" : "—"}</td><td class="c-${col(s.admin)}">${pct(s.admin)}</td></tr>`).join("")}</table></div><p class="hint">One square per required post · tap a square to review it</p>`;
 }
+/* ---- Breaks · who's on a break right now, and every break on the selected days (staff only) ---- */
+function breaksCard(days, n) {
+  const B = S.breaks || []; const dayOf = b => nzNow(new Date(b.started_at)).date; const mins = b => Math.max(0, Math.round(((b.ended_at ? new Date(b.ended_at) : new Date()) - new Date(b.started_at)) / 60000));
+  const open = B.filter(b => !b.ended_at).sort((a, b) => a.started_at.localeCompare(b.started_at));
+  const list = B.filter(b => days.includes(dayOf(b))).sort((a, b) => b.started_at.localeCompare(a.started_at));
+  const runOf = b => S.shifts.find(s => s.id === b.shift_id)?.run || "";
+  const now = open.length ? `<div class="list">${open.map(b => `<div class="item warn"><div class="row" style="justify-content:space-between"><b>☕ ${esc(nm(b.driver))}</b><span class="meta">${esc(runOf(b))} · since ${fmtTime(b.started_at)} · ${mins(b)} min</span></div></div>`).join("")}</div>` : `<p class="empty">Nobody on a break right now</p>`;
+  const tbl = list.length ? `<div class="scroll"><table class="dt"><tr><th>Driver</th><th>Date</th><th>Run</th><th>Start</th><th>End</th><th>Length</th></tr>${list.map(b => `<tr><td><b>${esc(nm(b.driver))}</b></td><td>${label(dayOf(b))}</td><td>${esc(runOf(b))}</td><td class="mono">${fmtTime(b.started_at)}</td><td class="mono">${b.ended_at ? fmtTime(b.ended_at) : `<span class="c-warn">on break</span>`}</td><td class="mono">${mins(b)} min</td></tr>`).join("")}</table></div>` : `<p class="empty">No breaks on ${days.length === 1 ? label(days[0]) : "these days"}</p>`;
+  return `<div class="card ${open.length ? "warnc" : ""}"><h2>Breaks<span>${open.length ? `${open.length} on a break now` : "nobody on a break"}</span></h2>${now}<h3 style="margin:10px 0 4px;font-size:14px">${days.length === 1 ? label(days[0]) : `${label(days[0])} – ${label(days[days.length - 1])}`}</h3>${tbl}<p class="hint">Drivers tap Start break and End break in their app. Only staff can see this.</p></div>`;
+}
+
 function feed(t) {
   const ev = [];
   const nzDay = iso => iso ? nzNow(new Date(iso)).date : null;
   for (const s of S.sods) { const sh = S.shifts.find(x => x.id === s.shift_id); if (sh?.day === t) ev.push({ at: s.sent_at, txt: `${nm(s.driver)} · SOD${s.van ? ` · ${s.van}` : ""}${s.note ? ` · ${s.note}` : ""}`, cls: "ok", go: { k: "item", key: itemKeyFor(sh, "SOD") || "" } }); }
   for (const e of S.eods) { const sh = S.shifts.find(x => x.id === e.shift_id); if (sh?.day === t) ev.push({ at: e.sent_at, txt: `${nm(e.driver)} · EOD ${sh.run}${e.parcels != null ? ` · ${e.parcels} parcels` : ""}${e.stops != null ? ` · ${e.stops} stops` : ""}${e.note ? ` · ${e.note}` : ""}`, cls: "accent", go: { k: "item", key: itemKeyFor(sh, "EOD") || "" } }); }
+  for (const b of S.breaks || []) { if (nzDay(b.started_at) === t) ev.push({ at: b.started_at, txt: `${nm(b.driver)} · started a break`, cls: "", go: null }); if (nzDay(b.ended_at) === t) ev.push({ at: b.ended_at, txt: `${nm(b.driver)} · ended break (${Math.round((new Date(b.ended_at) - new Date(b.started_at)) / 60000)} min)`, cls: "", go: null }); }
   for (const a of S.acks) if (nzDay(a.confirmed_at) === t) ev.push({ at: a.confirmed_at, txt: `${nm(a.driver)} confirmed a roster change${a.confirmed_by ? ` (by ${fnm(a.confirmed_by)})` : ""}`, cls: "ok", go: { k: "changes", d: a.driver } });
   for (const r of S.recips) if (nzDay(r.read_at) === t) ev.push({ at: r.confirmed_at || r.read_at, txt: `${nm(r.person)} ${r.confirmed_at ? "confirmed" : "read"} a message`, cls: "", go: { k: "msg", id: r.message_id } });
   for (const l of S.leave) if (nzDay(l.created_at) === t) ev.push({ at: l.created_at, txt: `${nm(l.driver)} asked for leave · ${label(l.date_from)}`, cls: "warn", go: { k: "leave", id: l.id } });

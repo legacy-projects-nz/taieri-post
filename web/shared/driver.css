@@ -92,3 +92,6 @@ hr.gl{display:none}
 .tk.soon{border-left-color:#f5a623}.tk.soon .w{color:var(--ink)}
 .tk.over{border-left-color:#f5a623;box-shadow:inset 0 0 0 1px #f5a623}.tk.over .w{color:var(--ink);font-weight:800}
 .tk.ok{background:var(--ok-fill);border:1px solid var(--ok);border-left:5px solid var(--ok)}.tk.ok .w{color:var(--ok)}
+
+/* break button: full width under SOD / EOD */
+.qb.brk{grid-column:1/-1;min-height:56px}.qb.brk b{font-size:18px}.qb.brk.on{background:var(--warn);color:var(--on-warn);border-color:transparent}

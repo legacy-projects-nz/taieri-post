@@ -15,7 +15,7 @@ try { S.gotit = JSON.parse(localStorage.getItem("tp-gotit") || "{}"); } catch { 
   await loadAll();
   render();
   window.addEventListener("hashchange", async () => { await viewAs(); await loadAll(); render(); });
-  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons"], debounce(async () => { await loadAll(); render(); }, 400), "drv");
+  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons", "breaks"], debounce(async () => { await loadAll(); render(); }, 400), "drv");
   setInterval(render, 60000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadAll().then(render); } });
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => { });
@@ -47,6 +47,7 @@ async function loadAll() {
   S.changes = changes; S.acks = acks; S.msgs = msgs; S.leave = leave; S.alerts = alerts; S.entries = entries; S.marks = marks; S.feed = feed; S.vchk = vchk || [];
   const ids = S.shifts.map(s => s.id);
   if (ids.length) { const [sods, eods, ovs] = await Promise.all([q(sb.from("sod").select("*").in("shift_id", ids)), q(sb.from("eod").select("*").in("shift_id", ids)), S.viewer?.isStaff ? q(sb.from("eff_overrides").select("*").in("shift_id", ids)) : sb.rpc("my_eff_overrides").then(r => r.data || [])]); S.sods = sods; S.eods = eods; S.ovs = ovs; } else { S.sods = []; S.eods = []; S.ovs = []; }
+  try { const { data: br } = await sb.from("breaks").select("*").eq("driver", m).gte("started_at", new Date(Date.now() - 2 * 86400e3).toISOString()).order("started_at"); S.breaks = br || []; } catch { S.breaks = []; }
   setEvidence(S.shifts, S.eods);
   S.days = dayShifts(S.shifts, S.runsBy, m);
   for (const d of Object.values(S.days)) for (const x of d.segs) { x.sod = S.sods.find(s => s.shift_id === x.shift.id); x.eod = S.eods.find(e => e.shift_id === x.shift.id); x.ov = S.ovs.find(o => o.shift_id === x.shift.id); }
@@ -124,8 +125,24 @@ function quickBar(T, n) {
     : runs.map(x => { const due = (x.en ?? x.st) + S.C.rules.eodHours * 60; const late = sod && !x.eod && n.min > due;
         return x.eod ? `<div class="qb done"><b>✓ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${fmtTime(x.eod.sent_at)}${x.eod.finish_time ? ` · finished ${fmtT(toMin(x.eod.finish_time))}` : ""}</small></div>`
           : va ? offB(`■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}`, late ? "overdue" : "not posted yet") : `<button class="btn qb ${late ? "warn" : "accent"}" data-eod="${x.shift.id}" ${sod ? "" : "disabled"}><b>■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${!sod ? "after your SOD" : late ? "overdue" : "end of run"}</small></button>`; }).join("");
-  return `<div class="qbar">${sodBtn}${eodBtns}</div>`;
+  return `<div class="qbar">${sodBtn}${eodBtns}${breakBtn(T, sod)}</div>`;
 }
+/* Break: one button between SOD and the last EOD. Tap to start, tap again to end. */
+function breakBtn(T, sod) {
+  const runs = T.segs.filter(x => !x.sort); const allEod = runs.length ? runs.every(x => x.eod) : T.segs.some(x => x.eod);
+  const open = (S.breaks || []).find(b => !b.ended_at);
+  const ids = new Set(T.segs.map(x => x.shift.id)); const todays = (S.breaks || []).filter(b => ids.has(b.shift_id) && b.ended_at);
+  const mins = todays.reduce((a, b) => a + Math.round((new Date(b.ended_at) - new Date(b.started_at)) / 60000), 0);
+  const taken = todays.length ? `${todays.length} break${todays.length > 1 ? "s" : ""} today · ${mins} min` : "";
+  if (open) { const m = Math.max(0, Math.round((Date.now() - new Date(open.started_at)) / 60000));
+    return S.viewAs ? `<div class="qb brk on"><b>☕ On break</b><small>since ${fmtTime(open.started_at)} · ${m} min</small></div>`
+      : `<button class="btn qb brk on" id="brk-end"><b>■ End break</b><small>on break since ${fmtTime(open.started_at)} · ${m} min</small></button>`; }
+  if (!sod || allEod) return taken ? `<div class="qb brk off"><b>☕ Break</b><small>${taken}</small></div>` : "";
+  if (S.viewAs) return `<div class="qb brk off"><b>☕ Break</b><small>${taken || "none taken yet"}</small></div>`;
+  return `<button class="btn ghost qb brk" id="brk-start" data-shift="${(runs.find(x => !x.eod) || T.segs[T.segs.length - 1]).shift.id}"><b>☕ Start break</b><small>${taken || "tap when you stop for a break"}</small></button>`;
+}
+async function startBreak(shiftId) { const { error } = await sb.rpc("break_start", { p_shift: shiftId }); if (error) return toast(error.message, "err"); toast("Break started ☕", "ok"); await loadAll(); render(); }
+async function endBreak() { const { error } = await sb.rpc("break_end"); if (error) return toast(error.message, "err"); toast("Break ended ✓", "ok"); await loadAll(); render(); }
 
 /* ---------- Roster changes ---------- */
 function linePast(item, n) {
@@ -459,6 +476,8 @@ function wire() {
   $$("[data-confirm]").forEach(b => b.onclick = async () => { await q(sb.from("message_recipients").update({ confirmed_at: new Date().toISOString(), read_at: new Date().toISOString() }).eq("message_id", b.dataset.confirm).eq("person", S.me.id)); toast("Confirmed ✓", "ok"); });
   const unread = S.msgs.filter(m => !m.read_at).map(m => m.message_id); if (unread.length) sb.from("message_recipients").update({ read_at: new Date().toISOString() }).in("message_id", unread).eq("person", S.me.id).then(() => { });
   $("#sod")?.addEventListener("click", e => sendSod(e.currentTarget.dataset.shift));
+  $("#brk-start")?.addEventListener("click", e => { e.currentTarget.disabled = true; startBreak(e.currentTarget.dataset.shift); });
+  $("#brk-end")?.addEventListener("click", e => { e.currentTarget.disabled = true; endBreak(); });
   $("#sod-edit")?.addEventListener("click", e => editSod(e.currentTarget.dataset.shift));
   $$("[data-sod-late]").forEach(b => b.onclick = () => sendSod(b.dataset.sodLate, true));
   $$("[data-eod]").forEach(b => b.onclick = () => eodForm(b.dataset.eod, !!b.dataset.sort));

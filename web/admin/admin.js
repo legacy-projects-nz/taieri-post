@@ -21,7 +21,7 @@ export const fn = async (name, body) => { const { data, error } = await sb.funct
   try { S.me = await requireUser(app, { staff: true }); } catch { return; }
   if (!S.me.isStaff) { app.innerHTML = `<div class="wrap"><div class="card"><h2>Drivers' page is at the main link</h2><p><a href="/">Open the driver portal</a></p></div></div>`; return; }
   await loadAll(); render();
-  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "people", "settings", "timing_rules", "addons", "locations", "vehicle_checks", "eff_overrides", "run_skills", "week_notes", "roster_sent"], debounce(async (t) => { await loadAll(); render(true); }, 500), "ops");
+  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "people", "settings", "timing_rules", "addons", "locations", "vehicle_checks", "eff_overrides", "run_skills", "week_notes", "roster_sent", "breaks"], debounce(async (t) => { await loadAll(); render(true); }, 500), "ops");
   setInterval(() => render(true), 60000);
   window.addEventListener("hashchange", () => { S.tab = location.hash.slice(1) || "live"; render(); });
 })();
@@ -52,6 +52,7 @@ export async function loadAll() {
   S.drivers = people.filter(p => p.active && !p.cleared && (p.role === "driver" || p.role === "owner" || onRoster.has(p.id)));
   const ids = shifts.map(s => s.id);
   if (ids.length) { const [sods, eods] = await Promise.all([q(sb.from("sod").select("*").in("shift_id", ids)), q(sb.from("eod").select("*").in("shift_id", ids))]); S.sods = sods; S.eods = eods; } else { S.sods = []; S.eods = []; }
+  try { S.breaks = await q(sb.from("breaks").select("*").gte("started_at", new Date(from + "T00:00:00+13:00").toISOString()).order("started_at", { ascending: false }).limit(3000)); } catch { S.breaks = []; }
   S.sodBy = Object.fromEntries(S.sods.map(s => [s.shift_id, s])); S.eodBy = Object.fromEntries(S.eods.map(e => [e.shift_id, e]));
   setEvidence(S.shifts, S.eods);   // average figures per run & weekday → the estimate used until each EOD is in
 }
