@@ -23,6 +23,11 @@ try { S.gotit = JSON.parse(localStorage.getItem("tp-gotit") || "{}"); } catch { 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => { });
   // pick up new versions without a manual refresh: compare app.js's ETag now and whenever the app comes back to the front
   let tag = null; const ver = async () => { try { const r = await fetch("/app.js", { method: "HEAD", cache: "no-store" }); const t = r.headers.get("etag") || r.headers.get("last-modified"); if (!t) return; if (tag && t !== tag && !document.querySelector(".sheet-bg")) location.reload(); tag = tag || t; } catch { } };
+  // overdue alert: beep (and buzz) every 5 minutes while the app is open and something is still overdue
+  let actx = null, lastBeep = 0; const unlock = () => { try { actx ||= new (window.AudioContext || window.webkitAudioContext)(); actx.resume?.(); } catch { } };
+  ["click", "touchstart", "keydown"].forEach(ev => document.addEventListener(ev, unlock, { passive: true }));
+  const beep = () => { try { if (!actx || actx.state !== "running") return; for (let i = 0; i < 3; i++) { const o = actx.createOscillator(), g = actx.createGain(); o.type = "square"; o.frequency.value = 880; g.gain.value = 0.15; o.connect(g); g.connect(actx.destination); const t0 = actx.currentTime + i * 0.35; o.start(t0); o.stop(t0 + 0.2); } navigator.vibrate?.([400, 150, 400, 150, 400]); } catch { } };
+  setInterval(() => { if (S.viewAs || document.hidden) return; if (!(S.alerts || []).some(a => !a.resolved_at && ["sod_late", "sod_missing", "eod_late", "timing_missed"].includes(a.kind))) { lastBeep = 0; return; } if (Date.now() - lastBeep < 295000) return; lastBeep = Date.now(); beep(); }, 15000);
   ver(); setInterval(ver, 300000); document.addEventListener("visibilitychange", () => { if (!document.hidden) ver(); });
 })();
 
