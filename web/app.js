@@ -67,7 +67,12 @@ async function viewAs() {
   }
   S.drivers = S.viewer.isStaff ? await q(sb.from("people").select("id,name,role").eq("active", true).eq("cleared", false).in("role", ["driver", "owner"]).order("name")) : [];
   S.login = {}; if (S.viewer.isStaff) { const { data: ls } = await sb.rpc("login_status"); for (const l of ls || []) S.login[l.person_id] = l; }
+  await loadGps();
 }
+/** latest GPS point per person in the last 20 min (staff only) */
+async function loadGps() { S.gps = {}; if (!S.viewer?.isStaff) return; try { const { data } = await sb.from("locations").select("driver,at").gte("at", new Date(Date.now() - 20 * 60e3).toISOString()).order("at", { ascending: false }).limit(500); for (const l of data || []) S.gps[l.driver] ??= l.at; } catch { } }
+/** gps = GPS in the last 20 min · on = signed in to the app · "" = neither */
+function appState(id) { const g = S.gps?.[id]; if (g && Date.now() - new Date(g) <= 20 * 60e3) return "gps"; return S.login?.[id]?.sessions > 0 ? "on" : ""; }
 function loginState(id) {   // is this person signed in to the app?
   const L = S.login?.[id]; if (!L || !L.has_account) return { cls: "miss", tag: "not signed up", txt: "Has never signed in to the app" };
   if (L.sessions > 0) return { cls: "ok", tag: "signed in", txt: `Signed in${L.last_active ? ` · last active ${ago(L.last_active)}` : ""}${L.push ? " · notifications on" : " · notifications off"}` };
@@ -80,7 +85,7 @@ function viewBar() {
   const prev = i > 0 ? list[i - 1] : null, next = i >= 0 && i < list.length - 1 ? list[i + 1] : null;
   return `<div class="card" style="position:sticky;top:6px;z-index:5;border:2px solid var(--accent);background:var(--accent-fill);padding:8px 12px;gap:6px">
     <div class="row" style="align-items:center"><span class="mono" style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);flex:0">${S.viewAs ? "Viewing as" : "View as"}</span>
-      <select class="in" id="view-as" style="min-height:38px;font-size:14px;flex:1 1 140px"><option value="">— me (${esc(first(S.viewer.name))}) —</option>${list.map(d => `<option value="${d.id}" ${S.viewAs?.id === d.id ? "selected" : ""}>${loginState(d.id).cls === "ok" ? "● " : "○ "}${esc(d.name)}${d.role !== "driver" ? ` (${d.role})` : ""}</option>`).join("")}</select>
+      <button class="in vasel ${S.viewAs ? appState(S.viewAs.id) : ""}" id="view-as" type="button" style="min-height:38px;font-size:14px;flex:1 1 140px;text-align:left">${S.viewAs ? esc(S.viewAs.name) : `— me (${esc(first(S.viewer.name))}) —`} <span style="float:right">▾</span></button>
       <button class="btn ghost sm" id="va-prev" ${prev ? `data-id="${prev.id}"` : "disabled"} style="flex:0">‹</button><button class="btn ghost sm" id="va-next" ${next ? `data-id="${next.id}"` : "disabled"} style="flex:0">›</button>
       <a class="btn ghost sm" href="/admin/" style="flex:0;text-decoration:none">Owner portal</a></div>
     ${S.viewAs ? `<div class="row" style="align-items:center;gap:6px"><span class="chip ${loginState(S.viewAs.id).cls}">${loginState(S.viewAs.id).tag}</span><span class="meta">${esc(loginState(S.viewAs.id).txt)}</span></div>` : ""}</div>`;
@@ -466,7 +471,9 @@ function moreCard() {
 /* ================= wiring ================= */
 function wire() {
   $("#signout")?.addEventListener("click", signOut);
-  $("#view-as")?.addEventListener("change", e => { location.hash = e.target.value ? "as=" + e.target.value : ""; });
+  $("#view-as")?.addEventListener("click", async () => { await loadGps(); const list = S.drivers.filter(d => d.id !== S.viewer.id);
+    sheet(`<h3>View as</h3><p class="meta">White = not signed in · <span class="c-ok">light green</span> = signed in to the app · <b class="c-ok">dark green</b> = GPS in the last 20 min</p><div class="vagrid"><button class="vapick" data-va="">— me (${esc(first(S.viewer.name))}) —</button>${list.map(d => { const st = appState(d.id); return `<button class="vapick ${st} ${S.viewAs?.id === d.id ? "cur" : ""}" data-va="${d.id}"><b>${esc(d.name)}</b>${d.role !== "driver" ? ` <span class="meta">(${esc(d.role)})</span>` : ""}<span class="meta">${st === "gps" ? `GPS ${ago(S.gps[d.id])}` : esc(loginState(d.id).tag)}</span></button>`; }).join("")}</div>`,
+      (bg, close) => bg.querySelectorAll("[data-va]").forEach(b => b.onclick = () => { close(); location.hash = b.dataset.va ? "as=" + b.dataset.va : ""; })); });
   $$("#va-prev,#va-next").forEach(b => b.onclick = () => { if (b.dataset.id) location.hash = "as=" + b.dataset.id; });
   if (S.viewAs) { $$("#gotit,#gotit-again,[data-confirm],[data-addon],[data-plan],#leave-new,#push-btn,#vchk-btn").forEach(el => { el.disabled = true; el.title = "Only " + first(S.viewAs.name) + " can do this"; el.style.opacity = ".5"; }); }
   pushState().then(s => { const el = $("#push-state"); if (el) el.textContent = s === "on" ? "on" : s === "denied" ? "blocked in phone settings" : s === "unsupported" ? "add to Home Screen first" : "off, tap to turn on"; });

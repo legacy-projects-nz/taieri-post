@@ -107,3 +107,11 @@ hr.gl{display:none}
 .calg .cd[data-leavev],.calg .cd[data-statv]{cursor:pointer}
 .calk{display:flex;gap:12px;flex-wrap:wrap;font:600 12px var(--fd);color:var(--ink2);margin-top:8px}.calk span{display:flex;align-items:center;gap:5px}
 .calk .k{width:12px;height:12px;border-radius:3px;display:inline-block}.calk .k.stat{background:var(--accent)}.calk .k.lv-ok{background:var(--ok)}.calk .k.lv-wait{background:var(--warn)}
+
+/* View-as driver picker: white = not signed in · light green = signed in · dark green = GPS in the last 20 min */
+.vagrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:8px}
+.vapick{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;min-height:52px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;cursor:pointer}
+.vapick.cur{outline:2px solid var(--accent);outline-offset:1px}
+.vapick.on,.vasel.on{background:var(--ok-fill);border-color:var(--ok)}
+.vapick.gps,.vasel.gps{background:var(--go);border-color:var(--go);color:#fff}
+.vapick.gps .meta{color:rgba(255,255,255,.88)}
