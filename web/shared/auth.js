@@ -53,7 +53,9 @@ async function mfaScreen(root, a, person) {
         <label class="f">Code<input id="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" autofocus></label><button class="btn" type="submit">Continue</button></form>`);
       $("#mf", root).onsubmit = async e => { e.preventDefault(); try { const ch = await sb.auth.mfa.challenge({ factorId: totp.id }); if (ch.error) throw ch.error; const v = await sb.auth.mfa.verify({ factorId: totp.id, challengeId: ch.data.id, code: $("#code", root).value.trim() }); if (v.error) throw v.error; resolve(); } catch (err) { toast("That code didn't work.", "err"); } };
     } else {
-      sb.auth.mfa.enroll({ factorType: "totp", friendlyName: WHO + " staff" }).then(({ data, error }) => {
+      // a half-finished setup from an earlier visit blocks a new one ("factor already exists"), so clear it first
+      Promise.all((f?.all || []).filter(x => x.factor_type === "totp" && x.status !== "verified").map(x => sb.auth.mfa.unenroll({ factorId: x.id })))
+      .then(() => sb.auth.mfa.enroll({ factorType: "totp", friendlyName: WHO + " staff" })).then(({ data, error }) => {
         if (error) { wrap(`<div class="card hot"><p>${esc(error.message)}</p></div>`); return; }
         wrap(`<form class="card" id="mf"><p>Staff accounts need a second step. Install <b>Google Authenticator</b> or <b>Microsoft Authenticator</b> on your phone, scan this code, then type the 6 digits it shows.</p>
           <div class="center" style="background:#fff;border-radius:12px;padding:10px">${data.totp.qr_code.startsWith("<svg") ? data.totp.qr_code : `<img src="${esc(data.totp.qr_code)}" alt="QR code" style="width:220px;height:220px">`}</div>
