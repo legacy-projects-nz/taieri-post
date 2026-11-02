@@ -76,8 +76,10 @@ Deno.serve(async (req) => {
   // write alerts, push, email
   const staffAlerts = await staffWith(sb, "alerts"); const staffIds = staffAlerts.map(p => p.id);
   for (const a of newAlerts) { const { _push, _email, _rule, _staffOnly, _area, ...row } = a; const { data: ins, error } = await sb.from("alerts").upsert(row, { onConflict: "dedupe_key", ignoreDuplicates: true }).select().maybeSingle(); if (error) { console.error(error); continue; } if (!ins) continue; out.push(row.dedupe_key);
-    const staff = _area ? (await staffWith(sb, _area)).map(p => p.id) : staffIds;
-    await push(sb, sec, set, [...new Set(staff)], { title: row.title, body: row.body, url: "/admin/#live", tag: row.dedupe_key });
+    // fleet-only staff (alerts but no roster/scorecard, e.g. Stu) only hear about vehicle alerts
+    const fleetAlert = String(row.dedupe_key || "").startsWith("vchk|");
+    const staff = _area ? (await staffWith(sb, _area)).map(p => p.id) : staffAlerts.filter(p => fleetAlert || p.role === "owner" || (p.perms || []).some((x: string) => x === "roster" || x === "scorecard")).map(p => p.id);
+    await push(sb, sec, set, [...new Set(staff)], { title: row.title, body: row.body, url: fleetAlert ? "/admin/#alerts" : "/admin/#live", tag: row.dedupe_key });
     if (_push && !_staffOnly) await push(sb, sec, set, _push.to, { title: _push.title, body: _push.body, url: "/", tag: row.dedupe_key });
     if (_email && rem.enabled && inWindow) { const p = ppl[row.driver]; if (p?.email) { const what = _email === "sod" ? "SOD" : _email === "eod" ? `EOD for ${row.title.split(" for ")[1]?.split(" ")[0] || "your run"}` : (_rule?.name || "a timed task");
       await sendEmail(sec, set, p.email, `[TP SYSTEM EMAIL] Heads up: ${what} is overdue`, wrap(`<p>Hi ${esc(first(p.name))},</p><p>Quick one from the driver system (automatic, so nobody is chasing you personally).</p><p><b>${esc(row.title.replace(/^[^:]+: /, ""))}</b> — ${esc(row.body || "")}.</p><p>${_email === "timing" ? "If it's done, tap <b>Done</b> in the app. Otherwise let Jeremy know what's happening." : "If you can, pop it in now from the app: one tap for the SOD, or the EOD form for your run."}</p><p>Why it matters: every late or missing post counts against your Admin score. A post on time keeps you at 100%.</p><p>Thanks for keeping things tidy, it makes a real difference. 🙌</p>`), rem.cc || undefined); } }
