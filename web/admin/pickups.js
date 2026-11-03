@@ -7,6 +7,7 @@ import { sb, q, today, addDays, label, esc, $, $$, toast } from "/shared/core.js
 import { S, sheet, opt, nm, render } from "/admin/admin.js";
 
 export const AREAS = ["Rural", "Owaka", "Lawrence"];
+const SOURCES = [["depot", "Depot"], ["customer", "Customer"]];
 const AREA_SHORT = { Lawrence: "Law", Owaka: "Owaka", Rural: "Rural" };
 export const CUSTOMERS = {
   NZC: { name: "NZ Couriers - Aaron Johnston", short: "NZC", due: 7, acct: "200", tax: "15% GST on Income", small: { code: "NZCS", rate: 4.5, desc: "NZC - Small" }, large: { code: "NZCL", rate: 8, desc: "NZ Couriers - Large" } },
@@ -86,10 +87,11 @@ function invoicesView() {
 
 function entryView() {
   const inp = (r, k, extra = "") => `<input class="in" data-row="${r.id}" data-k="${k}" value="${esc(r[k] ?? "")}" ${extra}>`;
-  const table = rows.length ? `<div class="scroll"><table class="dt"><tr><th>Date</th><th>Area</th><th>Customer</th><th>Small</th><th>Large</th><th>Driver</th><th>Note</th><th></th></tr>${rows.map(r => `<tr>
+  const table = rows.length ? `<div class="scroll"><table class="dt"><tr><th>Date</th><th>Area</th><th>Customer</th><th>Pick-up at</th><th>Small</th><th>Large</th><th>Driver</th><th>Note</th><th></th></tr>${rows.map(r => `<tr>
       <td>${inp(r, "day", `type="date" style="width:140px"`)}</td>
       <td><select class="in" data-row="${r.id}" data-k="area">${opt(AREAS.map(a => [a, a]), r.area)}</select></td>
       <td><select class="in" data-row="${r.id}" data-k="customer">${opt(Object.entries(CUSTOMERS).map(([k, v]) => [k, v.short]), r.customer)}</select></td>
+      <td><select class="in" data-row="${r.id}" data-k="source">${opt(SOURCES, r.source || "depot")}</select></td>
       <td>${inp(r, "small", `inputmode="numeric" style="width:64px"`)}</td><td>${inp(r, "large", `inputmode="numeric" style="width:64px"`)}</td>
       <td><select class="in" data-row="${r.id}" data-k="driver">${opt([["", "—"], ...S.drivers.map(d => [d.id, d.name])], r.driver || "")}</select></td>
       <td>${inp(r, "note", `style="min-width:120px"`)}</td>
@@ -99,7 +101,7 @@ function entryView() {
       <form class="frm" id="pe-f"><label class="f">Date<input class="in" type="date" id="pe-day" value="${today() < ym + "-01" || today() > lastDay(ym) ? lastDay(ym) : today()}" required></label>
       <label class="f">Area<select class="in" id="pe-area">${opt(AREAS.map(a => [a, a]), "Lawrence")}</select></label>
       <label class="f">Driver<select class="in" id="pe-drv">${opt([["", "—"], ...S.drivers.map(d => [d.id, d.name])], "")}</select></label>
-      <div class="full scroll"><table class="dt"><tr><th>Customer</th><th>Small</th><th>Large</th></tr>${Object.entries(CUSTOMERS).map(([k, v]) => `<tr><td>${esc(v.name)}</td><td><input class="in" data-pe="${k}.small" inputmode="numeric" placeholder="0" style="width:80px"></td><td><input class="in" data-pe="${k}.large" inputmode="numeric" placeholder="0" style="width:80px"></td></tr>`).join("")}</table></div>
+      <div class="full scroll"><table class="dt"><tr><th rowspan="2">Customer</th><th colspan="2">Depot pick-ups</th><th colspan="2">Customer pick-ups</th></tr><tr><th>Small</th><th>Large</th><th>Small</th><th>Large</th></tr>${Object.entries(CUSTOMERS).map(([k, v]) => `<tr><td>${esc(v.name)}</td>${SOURCES.map(([src]) => `<td><input class="in" data-pe="${k}.${src}.small" inputmode="numeric" placeholder="0" style="width:64px"></td><td><input class="in" data-pe="${k}.${src}.large" inputmode="numeric" placeholder="0" style="width:64px"></td>`).join("")}</tr>`).join("")}</table></div>
       <label class="f full">Note (optional)<input class="in" id="pe-n"></label><button class="btn full" type="submit">Save pick-ups</button></form></div>
     <div class="card"><h2>Entries this month<span>${rows.length} · change a figure then tap Save on that line</span></h2>${table}</div>
     <div class="card"><h2>Extra items<span>added to that customer's invoice for ${MONTH_L[+ym.slice(5) - 1]}</span></h2>${xl}<div class="row" style="margin-top:8px"><button class="btn sm" data-x-add="" style="flex:0 0 auto">+ Extra item</button></div></div>`;
@@ -146,11 +148,12 @@ async function exportXero(c) { const L = csvLines(c); if (!L.length) return toas
 async function exportAll() { const L = Object.keys(CUSTOMERS).flatMap(csvLines); if (!L.length) return toast("Nothing to export", "err"); await saveRefs(); download(L, `xero-invoices-pickups-${ym}.csv`); }
 
 export function pickupSheet(existing = null, onSaved = null) {
-  const e = existing || { day: today(), area: "Lawrence", customer: "NZC", small: 0, large: 0, note: "" };
+  const e = existing || { day: today(), area: "Lawrence", customer: "NZC", source: "depot", small: 0, large: 0, note: "" };
   sheet(`<h3>${existing ? "Edit pick-up" : "Log a pick-up"}</h3><form class="frm" id="pf">
     <label class="f">Date<input class="in" type="date" id="pu-day" value="${e.day}" required></label>
     <label class="f">Area<select class="in" id="pu-area">${opt(AREAS.map(a => [a, a]), e.area)}</select></label>
     <label class="f">Customer<select class="in" id="pu-cust">${opt(Object.entries(CUSTOMERS).map(([k, v]) => [k, v.name]), e.customer)}</select></label>
+    <label class="f">Picked up at<select class="in" id="pu-src">${opt(SOURCES, e.source || "depot")}</select></label>
     <label class="f">Small parcels<input class="in" id="pu-s" inputmode="numeric" value="${e.small || ""}" placeholder="0"></label>
     <label class="f">Large parcels<input class="in" id="pu-l" inputmode="numeric" value="${e.large || ""}" placeholder="0"></label>
     <label class="f full">Note (optional)<input class="in" id="pu-n" value="${esc(e.note || "")}"></label>
@@ -158,7 +161,7 @@ export function pickupSheet(existing = null, onSaved = null) {
     bg.querySelector("#pf").addEventListener("submit", async ev => {
       ev.preventDefault(); const g = x => bg.querySelector("#" + x).value; const s = +g("pu-s") || 0, l = +g("pu-l") || 0;
       if (!s && !l) return toast("Enter at least one parcel", "err");
-      const row = { day: g("pu-day"), area: g("pu-area"), customer: g("pu-cust"), small: s, large: l, note: g("pu-n") || null };
+      const row = { day: g("pu-day"), area: g("pu-area"), customer: g("pu-cust"), source: g("pu-src"), small: s, large: l, note: g("pu-n") || null };
       const { error } = existing ? await sb.from("pickups").update(row).eq("id", existing.id) : await sb.from("pickups").insert({ ...row, driver: S.viewer?.id || S.me.id, created_by: S.viewer?.id || S.me.id });
       if (error) return toast(error.message, "err"); toast("Saved", "ok"); close(); if (onSaved) await onSaved(); });
   });
@@ -169,12 +172,12 @@ export function wirePickups() {
   $$("[data-pu-sub]").forEach(b => b.onclick = () => { sub = b.dataset.puSub; render(); });
   $$("[data-pu-del]").forEach(b => b.onclick = async () => { if (!confirm("Delete this pick-up?")) return; await q(sb.from("pickups").delete().eq("id", b.dataset.puDel)); await reload(); });
   $$("[data-save]").forEach(b => b.onclick = async () => { const id = b.dataset.save; const v = k => $(`[data-row="${id}"][data-k="${k}"]`).value;
-    const row = { day: v("day"), area: v("area"), customer: v("customer"), small: Math.max(0, parseInt(v("small")) || 0), large: Math.max(0, parseInt(v("large")) || 0), driver: v("driver") || null, note: v("note").trim() || null };
+    const row = { day: v("day"), area: v("area"), customer: v("customer"), source: v("source"), small: Math.max(0, parseInt(v("small")) || 0), large: Math.max(0, parseInt(v("large")) || 0), driver: v("driver") || null, note: v("note").trim() || null };
     if (!row.small && !row.large) return toast("Enter at least one parcel, or delete the line", "err");
     const { error } = await sb.from("pickups").update(row).eq("id", id); if (error) return toast(error.message, "err"); toast("Saved", "ok"); await reload(); });
   $("#pe-f")?.addEventListener("submit", async ev => { ev.preventDefault(); const v = k => Math.max(0, parseInt($(`[data-pe="${k}"]`).value) || 0);
     const base = { day: $("#pe-day").value, area: $("#pe-area").value, driver: $("#pe-drv").value || null, note: $("#pe-n").value.trim() || null, created_by: S.me.id };
-    const ins = Object.keys(CUSTOMERS).map(c => ({ ...base, customer: c, small: v(c + ".small"), large: v(c + ".large") })).filter(r => r.small || r.large);
+    const ins = Object.keys(CUSTOMERS).flatMap(c => SOURCES.map(([src]) => ({ ...base, customer: c, source: src, small: v(`${c}.${src}.small`), large: v(`${c}.${src}.large`) }))).filter(r => r.small || r.large);
     if (!ins.length) return toast("Enter at least one parcel", "err");
     const { error } = await sb.from("pickups").insert(ins); if (error) return toast(error.message, "err"); toast(`Saved ${ins.length} line${ins.length > 1 ? "s" : ""}`, "ok");
     if (monthOf(base.day) !== ym) ym = monthOf(base.day); await reload(); });
