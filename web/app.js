@@ -108,6 +108,7 @@ function render() {
     <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
     ${quickBar(T, n)}
     ${todayCard(T, nextDay, n)}
+    ${puToday(T) ? pickupsCard(T) : ""}
     ${addonsCard(T, nextDay, n)}
     ${rosterChanges(n)}
     ${alertsCard()}
@@ -119,7 +120,7 @@ function render() {
     ${pair(leaveCard(), detailsCard())}
     ${calendarCard(t)}
     ${moreCard()}
-    ${pickupsCard()}
+    ${puToday(T) ? "" : pickupsCard(T)}
     ${accessCard()}
     <p class="foot">Shift or score looks wrong? Message Jeremy.<br>Signed in as ${esc((S.viewer || S.me).email || "")}</p>
   </div>`;
@@ -433,23 +434,30 @@ function detailsCard() {
     <button class="btn ghost sm" id="prof-edit">Update my details</button></div>`;
 }
 const PU_CUST = { NZC: "NZ Couriers", PH: "Post Haste", TGE: "TGE (NZ National Network)" };
-function pickupsCard() {
+// Runs that do invoiced pick-ups, and the area they're usually in
+const PU_AREA = { TUA: "Rural", FLY: "Owaka", DB: "Owaka", LAW: "Lawrence" };
+const PU_AREAS = ["Rural", "Owaka", "Lawrence"];
+const puToday = T => (T?.segs || []).map(x => x.shift.run).find(r => PU_AREA[r]);
+function pickupsCard(T) {
   if (S.viewAs) return "";
-  const list = S.pickups || [];
+  const list = S.pickups || []; const run = puToday(T); const todays = list.filter(r => r.day === today());
   return `<div class="card" id="pickups"><h2>Parcel pick-ups<span>Rural · Owaka · Lawrence</span></h2>
-    <p class="meta" style="margin:0 0 8px">Log the parcels you picked up so they can be invoiced.</p>
-    <div class="row"><button class="btn sm" id="pu-log" style="flex:0 0 auto">+ Log a pick-up</button></div>
-    ${list.length ? `<details style="margin-top:8px"><summary>This month · ${list.length} logged</summary><div class="list" style="margin-top:6px">${list.map(r => `<div class="item"><div>${label(r.day)} · ${esc(r.area)} · ${esc(PU_CUST[r.customer] || r.customer)}</div><div class="meta">${r.small} small${r.large ? ` · ${r.large} large` : ""}${r.note ? ` · ${esc(r.note)}` : ""}</div></div>`).join("")}</div></details>` : ""}</div>`;
+    <p class="meta" style="margin:0 0 8px">${run ? "You're on a pick-up run today. " : ""}Enter how many parcels you picked up for each customer so they can be invoiced.</p>
+    ${todays.length ? `<p class="meta c-ok" style="margin:0 0 8px">✓ Today: ${todays.map(r => `${esc(r.area)} ${esc(PU_CUST[r.customer] || r.customer)} ${r.small} small${r.large ? ` + ${r.large} large` : ""}`).join(" · ")}</p>` : ""}
+    <div class="row"><button class="btn sm" id="pu-log" style="flex:0 0 auto">+ Enter pick-ups</button></div>
+    ${list.length ? `<details style="margin-top:8px"><summary>This month · ${list.length} logged</summary><div class="list" style="margin-top:6px">${list.map(r => `<div class="item"><div>${label(r.day)} · ${esc(r.area)} · ${esc(PU_CUST[r.customer] || r.customer)}</div><div class="meta">${r.small} small${r.large ? ` · ${r.large} large` : ""}${r.note ? ` · ${esc(r.note)}` : ""}</div></div>`).join("")}</div><p class="hint">Made a mistake? Message Jeremy or Alejandro and they'll fix it.</p></details>` : ""}</div>`;
 }
 function logPickup() {
-  sheet(`<h3>Log a pick-up</h3><form class="frm" id="pf"><label class="f">Date<input class="in" type="date" id="pu-day" value="${today()}" required></label>
-    <label class="f">Area<select class="in" id="pu-area"><option>Lawrence</option><option>Owaka</option><option>Rural</option></select></label>
-    <label class="f">Customer<select class="in" id="pu-cust">${Object.entries(PU_CUST).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></label>
-    <label class="f">Small parcels<input class="in" id="pu-s" inputmode="numeric" placeholder="0"></label><label class="f">Large parcels<input class="in" id="pu-l" inputmode="numeric" placeholder="0"></label>
-    <label class="f full">Note (optional)<input class="in" id="pu-n"></label><button class="btn full" type="submit">Save pick-up</button></form>`, (bg, close) => {
-    bg.querySelector("#pf").addEventListener("submit", async e => { e.preventDefault(); const g = x => bg.querySelector("#" + x).value; const sm = +g("pu-s") || 0, lg = +g("pu-l") || 0; if (!sm && !lg) return toast("Enter at least one parcel", "err");
-      const { error } = await sb.from("pickups").insert({ day: g("pu-day"), area: g("pu-area"), customer: g("pu-cust"), small: sm, large: lg, note: g("pu-n") || null, driver: S.me.id, created_by: S.me.id });
-      if (error) return toast(error.message, "err"); close(); toast("Pick-up logged ✓", "ok"); await loadAll(); render(); }); });
+  const area = PU_AREA[puToday(S.days[today()])] || "Lawrence";
+  sheet(`<h3>Enter pick-ups</h3><form class="frm" id="pf"><label class="f">Date<input class="in" type="date" id="pu-day" value="${today()}" required></label>
+    <label class="f">Area<select class="in" id="pu-area">${PU_AREAS.map(a => `<option ${a === area ? "selected" : ""}>${a}</option>`).join("")}</select></label>
+    <div class="full"><table class="dt" style="width:100%"><tr><th>Customer</th><th>Small</th><th>Large</th></tr>${Object.entries(PU_CUST).map(([k, v]) => `<tr><td>${esc(v)}</td><td><input class="in" data-pu="${k}.small" inputmode="numeric" placeholder="0" style="width:70px"></td><td><input class="in" data-pu="${k}.large" inputmode="numeric" placeholder="0" style="width:70px"></td></tr>`).join("")}</table></div>
+    <label class="f full">Note (optional)<input class="in" id="pu-n"></label><button class="btn full" type="submit">Save pick-ups</button></form>`, (bg, close) => {
+    bg.querySelector("#pf").addEventListener("submit", async e => { e.preventDefault(); const g = x => bg.querySelector("#" + x).value; const v = k => Math.max(0, parseInt(bg.querySelector(`[data-pu="${k}"]`).value) || 0);
+      const rows = Object.keys(PU_CUST).map(c => ({ day: g("pu-day"), area: g("pu-area"), customer: c, small: v(c + ".small"), large: v(c + ".large"), note: g("pu-n") || null, driver: S.me.id, created_by: S.me.id })).filter(r => r.small || r.large);
+      if (!rows.length) return toast("Enter at least one parcel", "err");
+      const { error } = await sb.from("pickups").insert(rows);
+      if (error) return toast(error.message, "err"); close(); toast("Pick-ups saved ✓", "ok"); await loadAll(); render(); }); });
 }
 function accessCard() {
   const body = (S.access?.body || "").trim(); const canEdit = !!S.viewer?.can?.("people");

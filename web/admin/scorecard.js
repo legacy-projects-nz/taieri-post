@@ -4,6 +4,7 @@ import { scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, band, bandRate, mo
 import { S, sheet, opt, nm, fnm, weekBar, wireWeek, loadAll, render, scoreData, fn, teamRange, rangeBar, teamStats } from "/admin/admin.js";
 import { dayRow } from "/admin/detail.js";
 import { labourWeek } from "/admin/live.js";
+import { wagesView, wireWages } from "/admin/wages.js";
 
 const KIND = { mistake: "Mistake", praise: "Praise", issue: "Went wrong", note: "Note", adjust: "Admin points", safety: "Safety", eff: "Efficiency set" };
 let sub = "dash";
@@ -12,9 +13,9 @@ export function scorecardTab() {
   const from = S.week, to = addDays(S.week, 6); const D = scoreData(); const C = S.C;
   const scores = S.drivers.filter(d => !d.pay_exclude || d.id === S.me.id || true).map(d => scoreFor(d.id, from, to, D, C)).filter(s => s.closed || s.effDays.length || s.nMist || s.accDays.length);
   const team = k => avg(scores.filter(s => !S.peopleBy[s.driver]?.pay_exclude).map(s => s[k]));
-  const tabs = [["dash", "Dashboard"], ["posts", "Posts"], ["review", `Review${reviewQueue(scores).length ? ` (${reviewQueue(scores).length})` : ""}`], ["eff", "Efficiency"], ["formulas", "Formulas"], ["entries", "Mistakes & entries"], ["labour", "Labour"], ["reports", "Reports"]];
+  const tabs = [["dash", "Dashboard"], ["posts", "Posts"], ["review", `Review${reviewQueue(scores).length ? ` (${reviewQueue(scores).length})` : ""}`], ["eff", "Efficiency"], ["formulas", "Formulas"], ["entries", "Mistakes & entries"], ["labour", "Labour"], ["wages", "Wages"], ["reports", "Reports"]];
   return `${weekBar()}<div class="nav" style="margin-top:-4px">${tabs.map(([k, l]) => `<button data-sub="${k}" class="${sub === k ? "on" : ""}">${l}</button>`).join("")}</div>
-    ${({ dash: () => dash(scores, team), posts: () => posts(scores), review: () => review(scores), eff: () => effView(), formulas: () => formulasView(), entries: () => entriesView(), labour: () => labour(), reports: () => reports(scores) })[sub]()}`;
+    ${({ dash: () => dash(scores, team), posts: () => posts(scores), review: () => review(scores), eff: () => effView(), formulas: () => formulasView(), entries: () => entriesView(), labour: () => labour(), wages: () => wagesView(), reports: () => reports(scores) })[sub]()}`;
 }
 export function tile(l, v, s = "", attrs = "") { return `<${attrs ? "button" : "div"} class="tile" ${attrs}><div class="l">${l}</div><div class="v c-${col(v)}">${pct(v)}</div>${s ? `<div class="s">${s}</div>` : ""}</${attrs ? "button" : "div"}>`; }
 function dash(scores, team) {
@@ -103,7 +104,7 @@ function reports(scoresWeek) {
 
 /* ---------- wiring ---------- */
 export function wireScorecard() {
-  wireWeek(); $$("[data-sub]").forEach(b => b.onclick = () => { sub = b.dataset.sub; render(); });
+  wireWeek(); wireWages(); $$("[data-sub]").forEach(b => b.onclick = () => { sub = b.dataset.sub; render(); });
   $$("td.ed").forEach(td => td.addEventListener("click", e => { e.stopPropagation(); editCell(td); }));
   $$("[data-mark]").forEach(b => b.onclick = async () => { const k = b.dataset.key; const m = b.dataset.mark; const row = { key: k, driver: b.dataset.drv, reviewed: true, by_person: S.me.id, at: new Date().toISOString(), ...(m === "exc" ? { status: "exc", note: "Excused in review" } : m === "ok" ? { status: "ok", note: "Marked OK in review" } : {}) }; await q(sb.from("marks").upsert(row)); });
   $$("[data-confirm-all]").forEach(b => b.onclick = async () => { const rows = b.dataset.keys.split("|").map(k => ({ key: k, driver: b.dataset.confirmAll, reviewed: true, by_person: S.me.id, at: new Date().toISOString() })); await q(sb.from("marks").upsert(rows)); toast("Confirmed", "ok"); });
