@@ -2,7 +2,7 @@
 import { sb, q, today, esc, $, toast } from "/shared/core.js";
 import { S, sheet, opt, nm, loadAll, render, fn } from "/admin/admin.js";
 
-export const ERROR_ISSUES = ["Parcels", "Driving", "Admin", "Communication", "Vehicle", "Safety", "Timing", "Other"];
+export const ERROR_ISSUES = ["Parcels", "Driving", "Admin", "Communication", "Vehicle", "Safety", "Timing", "Receivers", "Keys", "Other"];
 
 export function errorCard(driver = "") {
   const def = S.C.rules.mistakePct;
