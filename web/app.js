@@ -7,6 +7,7 @@ import { cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, a
 const app = $("#app");
 const S = { me: null, set: {}, C: null, runs: [], runsBy: {}, vans: {}, addons: [], rules: [], people: {}, shifts: [], sods: [], eods: [], marks: [], entries: [], feed: [], changes: [], acks: [], msgs: [], leave: [], alerts: [], loc: null, gotit: {}, login: {} };
 try { S.gotit = JSON.parse(localStorage.getItem("tp-gotit") || "{}"); } catch { }
+S.open = {};   // which folded boxes are open this visit (not saved: everything below Next shift starts collapsed when the app opens)
 
 /* ================= boot ================= */
 (async () => {
@@ -114,6 +115,7 @@ function render() {
     ${alertsCard()}
     ${messagesCard()}
     ${scoresCard()}
+    <div class="folds">
     ${nextShiftCard(nextDay, n)}
     ${pair(vanCard(T, null), shiftsCard(t))}
     ${pair(toFixCard(n), fromJeremy())}
@@ -122,9 +124,26 @@ function render() {
     ${moreCard()}
     ${puToday(T) ? "" : pickupsCard(T)}
     ${accessCard()}
+    </div>
     <p class="foot">Shift or score looks wrong? Message Jeremy.<br>Signed in as ${esc((S.viewer || S.me).email || "")}</p>
   </div>`;
+  folds();
   wire();
+}
+
+/* ---------- collapsible boxes: Next shift and everything below it (plus Parcel pick-ups) are one row until tapped ---------- */
+function folds() {
+  app.querySelectorAll(".folds .card, #pickups").forEach(c => {
+    const h = c.querySelector(":scope > h2"); if (!h) return;
+    const key = c.id || [...h.childNodes].filter(x => x.nodeType === 3).map(x => x.textContent).join("").trim();
+    if (!(key in S.open)) S.open[key] = c.dataset.foldOpen === "1";
+    c.classList.add("fold"); c.classList.toggle("shut", !S.open[key]);
+    h.setAttribute("role", "button"); h.tabIndex = 0; h.setAttribute("aria-expanded", String(!!S.open[key]));
+    const ch = document.createElement("i"); ch.className = "fchev" + (h.querySelector(":scope > span") ? "" : " solo"); ch.setAttribute("aria-hidden", "true"); h.appendChild(ch);
+    const flip = e => { if (e.target.closest("button, a, input, select")) return; if (e.type === "keydown" && e.key !== "Enter" && e.key !== " ") return; e.preventDefault();
+      S.open[key] = !S.open[key]; c.classList.toggle("shut", !S.open[key]); h.setAttribute("aria-expanded", String(S.open[key])); };
+    h.addEventListener("click", flip); h.addEventListener("keydown", flip);
+  });
 }
 
 /* ---------- SOD / EOD quick bar: always under the greeting on a work day ---------- */
@@ -292,8 +311,8 @@ function buSection(n) {
   return `<section class="ns"><h3 class="sub">Back-up and on-call</h3>${rows}</section>`;
 }
 function nextShiftCard(N, n) {   // one box: shift, tasks, vehicle, split by grey lines
-  if (!N) return `<div class="card nextc"><h2>Next shift</h2><div class="big">Not on the roster yet</div><p class="hint">Your next shift, tasks and van show here once the roster is out.</p>${buSection(n)}</div>`;
-  return `<div class="card nextc"><h2>Next shift<span>${dayTag(N.day)}</span></h2>
+  if (!N) return `<div class="card nextc"><h2>Next shift<span>not on the roster yet</span></h2><div class="big">Not on the roster yet</div><p class="hint">Your next shift, tasks and van show here once the roster is out.</p>${buSection(n)}</div>`;
+  return `<div class="card nextc"><h2>Next shift<span>${N.day === addDays(today(), 1) ? "Tomorrow" : label(N.day)} · ${fmtT(N.start)}–${fmtT(N.end)}</span></h2>
     <section class="ns"><h3 class="sub">Shift</h3><div class="big bigrow"><span>${fmtT(N.start)}–${fmtT(N.end)}</span>${vanChips(N)}</div><div class="meta" style="margin-top:-4px">${N.hours} h rostered</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}</section>
     <section class="ns shade">${tasksCard(N, n, true, true)}</section>
     <section class="ns"><h3 class="sub">Vehicle</h3>${vanInner(N)}</section>${buSection(n)}</div>`;
@@ -442,7 +461,7 @@ const puToday = T => (T?.segs || []).map(x => x.shift.run).find(r => PU_AREA[r])
 function pickupsCard(T) {
   if (S.viewAs) return "";
   const list = S.pickups || []; const run = puToday(T); const todays = list.filter(r => r.day === today());
-  return `<div class="card" id="pickups"><h2>Parcel pick-ups<span>Rural · Owaka · Lawrence</span></h2>
+  return `<div class="card" id="pickups"${run ? ` data-fold-open="1"` : ""}><h2>Parcel pick-ups<span>${todays.length ? `✓ ${todays.length} logged today` : run ? "pick-up run today" : "Rural · Owaka · Lawrence"}</span></h2>
     <p class="meta" style="margin:0 0 8px">${run ? "You're on a pick-up run today. " : ""}Enter how many parcels you picked up for each customer so they can be invoiced.</p>
     ${todays.length ? `<p class="meta c-ok" style="margin:0 0 8px">✓ Today: ${todays.map(r => `${esc(r.area)} ${esc(PU_CUST[r.customer] || r.customer)} (${PU_SRC_L[r.source] || "depot"}) ${r.small} small${r.large ? ` + ${r.large} large` : ""}`).join(" · ")}</p>` : ""}
     <div class="row"><button class="btn sm" id="pu-log" style="flex:0 0 auto">+ Enter pick-ups</button></div>
