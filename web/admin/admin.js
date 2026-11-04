@@ -59,6 +59,23 @@ export async function loadAll() {
 }
 
 const TABS = [["live", "Live", "scorecard"], ["runboard", "Run Board", "roster"], ["classic", "Run Board (classic)", "roster"], ["scorecard", "Scorecard", "scorecard"], ["fix", "Fix posts", "scorecard"], ["routes", "Routes", "alerts"], ["allowances", "Allowances", "roster"], ["pickups", "Pick-ups", "roster"], ["alerts", "Alerts", "alerts"], ["messages", "Messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"], ["pay", "Penalties & pay", "people"]];
+/* collapsible boxes: on every tab, every box after the first starts collapsed; tap its heading to open. Open/closed is kept while the page is open. */
+S.open ??= {};
+function folds() {
+  const cards = $$("#view .card").filter(c => !c.parentElement.closest(".card"));
+  cards.forEach((c, i) => {
+    if (i === 0) return; const h = c.querySelector(":scope > h2"); if (!h) return;
+    const key = S.tab + "|" + (c.id || [...h.childNodes].filter(x => x.nodeType === 3).map(x => x.textContent).join("").trim() || i);
+    if (!(key in S.open)) S.open[key] = false;
+    c.classList.add("fold"); c.classList.toggle("shut", !S.open[key]);
+    h.setAttribute("role", "button"); h.tabIndex = 0; h.setAttribute("aria-expanded", String(!!S.open[key]));
+    const ch = document.createElement("i"); ch.className = "fchev" + (h.querySelector(":scope > span") ? "" : " solo"); ch.setAttribute("aria-hidden", "true"); h.appendChild(ch);
+    const flip = e => { if (e.target.closest("button, a, input, select")) return; if (e.type === "keydown" && e.key !== "Enter" && e.key !== " ") return; e.preventDefault();
+      S.open[key] = !S.open[key]; c.classList.toggle("shut", !S.open[key]); h.setAttribute("aria-expanded", String(S.open[key]));
+      if (S.open[key]) window.dispatchEvent(new Event("resize")); };   // lets the map redraw once its box opens
+    h.addEventListener("click", flip); h.addEventListener("keydown", flip);
+  });
+}
 export function render(soft = false) {
   if (soft && (document.activeElement?.matches("input,textarea,select") || $(".sheet-bg"))) return;
   const n = nzNow(); const tabs = TABS.filter(([, , a]) => S.me.can(a));
@@ -76,6 +93,7 @@ export function render(soft = false) {
   if (S.tab !== "live") { /* the live board draws its own map */ }
   ({ live: wireLive2, runboard: wireRunBoard, classic: () => { }, scorecard: wireScorecard, fix: wireFix, routes: wireRoutes, allowances: wireAllowances, pickups: wirePickups, alerts: wireAlerts, messages: wireMessages, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople, pay: wirePay })[S.tab]?.();
   wireRange();
+  folds();
   bind($("#view"));   // every tile, row and chip with a data-… attribute opens its detail sheet
 }
 
