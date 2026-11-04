@@ -396,7 +396,8 @@ function scoresCard() {
   S.sc = SC.month; S.F = RG.month; S.SC = SC; S.RG = RG;                       // To fix and the day sheets read the month (it covers the week)
   const [selK, selR] = (S.scSel || "").split("|");
   const half = (k, r) => { const v = SC[r][k]; return `<button class="half ${selK === k && selR === r ? "sel" : ""}" data-sc="${k}|${r}"><div class="l">${RG[r].l}</div><div class="v c-${col(v)}">${pct(v)}</div><div class="bar"><i class="bg-${col(v)}" style="width:${Math.min(100, v || 0)}%"></i></div></button>`; };
-  const tile = (k, l) => `<div class="tile dual"><div class="l">${l} ▾</div><div class="halves">${half(k, "week")}${half(k, "month")}</div></div>`;
+  const sub = k => `<button class="half sub ${selK === k && selR === "month" ? "sel" : ""}" data-sc="${k}|month"><span class="l">${RG.month.l}</span><span class="v">${pct(SC.month[k])}</span></button>`; // month sits under the week, in grey
+  const tile = (k, l) => `<div class="tile dual"><div class="l">${l} ▾</div><div class="halves">${half(k, "week")}${sub(k)}</div></div>`;
   const sc = SC.week; const line = [`${sc.onTime} of ${sc.closed} posts on time this week`, sc.late ? `${sc.late} late` : "", sc.missing ? `${sc.missing} missing` : "", sc.nMist ? `${sc.nMist} mistake${sc.nMist === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
   const fresh = !SC.month.closed && !SC.month.effDays.length && !SC.month.accDays.length && RG.week.from < S.C.rules.startDate;
   return `<div class="card" id="scores"><h2>My scores<span>week of ${label(RG.week.from)} · ${new Date(RG.month.from + "T12:00:00Z").toLocaleString("en-NZ", { month: "long", timeZone: "UTC" })}</span></h2>
