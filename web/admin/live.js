@@ -59,7 +59,7 @@ function addonBoard(day, n) {
   for (const { s, st, en } of segs) {
     const chips = []; const seen = new Set(); const dn = s.done || {}; const plan = s.plan || {};
     for (const r of rulesForShift(s)) { const key = r.addon; const d = key ? dn[key] : null; const gp = key?.startsWith("tw_") && /game plan/i.test(r.name); const planned = gp && Object.keys(plan).length > 0; const closes = toMin(r.closes), opens = toMin(r.opens);
-      let cls = "due", txt = winTxt(r); if (d) { cls = "ok"; txt = `✓ ${fmtTime(d)}`; } else if (planned) { cls = "ok"; txt = "✓ game plan in"; } else if (closes != null && nowMin > closes) { cls = "miss"; txt = `✗ not done by ${fmtT(closes)}`; } else if (opens != null && nowMin >= opens) { cls = "over"; txt = `now · ${txt}`; }
+      let cls = "due", txt = winTxt(r); if (d) { cls = "ok"; txt = `✓ ${fmtTime(d)}`; } else if (planned) { cls = "ok"; txt = "✓ game plan in"; } else if (closes != null && nowMin > closes) { cls = "miss"; txt = `✗ not done by ${fmtT(closes)}`; } else if (closes != null && nowMin >= closes - 15 && nowMin >= (opens ?? -1)) { cls = "over"; txt = `due in ${closes - nowMin} min · ${txt}`; } else if (opens != null && nowMin >= opens) { cls = "now"; txt = `now · ${txt}`; }
       if (key) { seen.add(key); tot++; if (cls === "ok") done++; if (cls === "miss") missed++; }
       chips.push(`<span class="chip ${cls}" title="${esc(r.name)}">${esc(r.name)} <span style="font-weight:500">${esc(txt)}</span></span>`); }
     for (const id of s.addons || []) { if (seen.has(id)) continue; const a = S.addons.find(x => x.id === id); if (!a) continue; const d = dn[id]; const p = plan[id]; const ended = en != null && nowMin > en;
