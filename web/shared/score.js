@@ -51,7 +51,7 @@ export function itemsFor(driver, days, sods, eods, marks, C, nowRef) {
   const status = (it) => {
     const nowMin = now.date === it.day ? now.min : (now.date > it.day ? 1e9 : -1e9);
     if (it.at != null) { it.late = Math.max(0, it.at - it.due); it.st = it.late > 0 ? "late" : "ok"; }
-    else it.st = nowMin > it.closeAt ? "miss" : nowMin > it.due ? "over" : "due";
+    else it.st = nowMin > it.closeAt ? "miss" : nowMin > it.due ? "over" : it.sched != null && nowMin > it.sched ? "wait" : "due";   // wait = past the rostered time but still inside the allowance
     it.auto = it.st; const m = mk[it.key]; if (m?.status) { it.st = m.status; it.mark = m; } else if (m) it.mark = m;
     if (it.day < R.adminStart) { it.st = "exc"; it.pre = true; }
     return it;
@@ -60,25 +60,26 @@ export function itemsFor(driver, days, sods, eods, marks, C, nowRef) {
     if (d.day < R.startDate) continue;
     const firstSeg = d.segs[0];
     const sod = d.segs.map(x => sodBy[x.shift.id]).find(Boolean);
-    items.push(status({ key: `${d.day}|${driver}|day|SOD`, day: d.day, driver, kind: "SOD", shift: firstSeg.shift, code: null, due: d.start + R.sodGrace, closeAt: d.end + R.eodHours * 60, at: sod ? minsAt(sod.sent_at, d.day) : null, row: sod, label: "SOD" }));
+    items.push(status({ key: `${d.day}|${driver}|day|SOD`, day: d.day, driver, kind: "SOD", shift: firstSeg.shift, code: null, sched: d.start, due: d.start + R.sodGrace, closeAt: d.end + R.eodHours * 60, at: sod ? minsAt(sod.sent_at, d.day) : null, row: sod, label: "SOD" }));
     const runs = d.segs.filter(x => !x.sort);
     if (runs.length) for (const x of runs) {
       const e = eodBy[x.shift.id]; const due = (x.en ?? x.st) + R.eodHours * 60;
-      items.push(status({ key: `${d.day}|${driver}|${x.shift.run}|EOD`, day: d.day, driver, kind: "EOD", shift: x.shift, code: x.shift.run, due, closeAt: due + 1, at: e ? minsAt(e.sent_at, d.day) : null, row: e, label: `EOD · ${x.shift.run}` }));
+      items.push(status({ key: `${d.day}|${driver}|${x.shift.run}|EOD`, day: d.day, driver, kind: "EOD", shift: x.shift, code: x.shift.run, sched: x.en ?? x.st, due, closeAt: due + 1, at: e ? minsAt(e.sent_at, d.day) : null, row: e, label: `EOD · ${x.shift.run}` }));
     } else {
       const x = d.segs[d.segs.length - 1]; const e = d.segs.map(y => eodBy[y.shift.id]).find(Boolean); const due = d.end + R.eodHours * 60;
-      items.push(status({ key: `${d.day}|${driver}|day|EOD`, day: d.day, driver, kind: "EOD", shift: x.shift, code: null, due, closeAt: due + 1, at: e ? minsAt(e.sent_at, d.day) : null, row: e, label: "EOD" }));
+      items.push(status({ key: `${d.day}|${driver}|day|EOD`, day: d.day, driver, kind: "EOD", shift: x.shift, code: null, sched: d.end, due, closeAt: due + 1, at: e ? minsAt(e.sent_at, d.day) : null, row: e, label: "EOD" }));
     }
   }
   return items;
 }
-export const STATE_LABEL = { ok: "On time", late: "Late", part: "Incomplete", over: "Overdue", miss: "Missing", exc: "Excused", due: "Due" };
+export const STATE_LABEL = { ok: "On time", late: "Late", part: "Incomplete", over: "Overdue", miss: "Missing", exc: "Excused", due: "Due", wait: "Waiting" };
 export function itemNote(it) {
   if (it.st === "ok") return `posted ${fmtT(it.at % 1440)}`;
   if (it.st === "late") return `posted ${fmtT(it.at % 1440)}, late by ${late(it.late)}`;
   if (it.st === "miss") return "not posted";
   if (it.st === "over") return `not posted yet · due ${fmtT(it.due % 1440)}`;
   if (it.st === "due") return `by ${fmtT(it.due % 1440)}`;
+  if (it.st === "wait") return `waiting · allowed until ${fmtT(it.due % 1440)}`;
   if (it.st === "exc") return "excused";
   return "";
 }
@@ -143,7 +144,7 @@ export function scoreFor(driver, from, to, D, C) {
   // D: {shifts, sods, eods, marks, entries, feed, runsBy, nowRef}
   const days = dayShifts(D.shifts.filter(s => s.day >= from && s.day <= to), D.runsBy, driver);
   const items = itemsFor(driver, days, D.sods, D.eods, D.marks, C, D.nowRef);
-  const closed = items.filter(i => !["due", "over", "exc"].includes(i.st));
+  const closed = items.filter(i => !["due", "wait", "over", "exc"].includes(i.st));
   const onTime = closed.filter(i => i.st === "ok" || i.st === "part").length;
   const events = closed.filter(i => i.st === "late" || i.st === "miss").length;
   const nPart = closed.filter(i => i.st === "part").length;

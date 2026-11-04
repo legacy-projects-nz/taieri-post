@@ -49,7 +49,7 @@ export function wireFix() {
 const OUTCOME = `<label class="f full">Once saved<select class="in" id="oc"><option value="exc">Excuse it: no deduction</option><option value="err">Record as admin error: deduction stays, logged on the driver's record</option></select></label>`;
 async function settle(it, oc, what) {
   if (!oc) return; await loadAll(); const cur = findItem(it.key);
-  if (!cur || cur.st === "ok" || cur.st === "exc" || cur.st === "part" || cur.st === "due") return;   // fixed properly (nothing to excuse) or still incomplete (stays on the list)
+  if (!cur || cur.st === "ok" || cur.st === "exc" || cur.st === "part" || cur.st === "due" || cur.st === "wait") return;   // fixed properly (nothing to excuse) or still incomplete (stays on the list)
   const at = new Date().toISOString();
   await q(sb.from("marks").upsert({ key: it.key, driver: it.driver, reviewed: true, by_person: S.me.id, at, ...(oc === "exc" ? { status: "exc", note: `Excused after fix (${what})` } : { note: `Admin error recorded (${what})` }) }));
   if (oc === "err") await sb.from("entries").insert({ driver: it.driver, day: it.day, run: it.shift?.run || null, kind: "adjust", title: `Admin error · ${what}`, note: `${what} filled in by ${first(S.me.name)} in Fix posts`, admin_pts: 0, show_driver: false, created_by: S.me.id });
