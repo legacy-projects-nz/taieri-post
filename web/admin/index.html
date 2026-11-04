@@ -30,6 +30,11 @@
  .rb .slot .tr{font:600 10px var(--fm);color:var(--warn)}
  .rb .slot .ack{font:600 10px var(--fm);color:var(--crit)}.rb .slot .ack.ok{color:var(--ok)}
  .rb .slot .sod{font:600 10px var(--fm);color:var(--ok)}
+ /* Run Board "Today" tab: one day, so no 7-day min-width; run column a third of its normal 120px so it fits a phone */
+ .rb.today table{min-width:0}
+ .rb.today td{min-width:0}
+ .rb.today th.run,.rb.today td.run{width:40px;min-width:40px;max-width:40px;padding:4px 3px;overflow:hidden}
+ .rb.today td.run .code{font-size:13px;overflow-wrap:anywhere}.rb.today td.run .nm{font-size:8.5px;line-height:1.1;overflow-wrap:anywhere}
  .board{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
  .bcard{background:var(--soft);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:4px;font-size:13px;border-left:4px solid var(--line)}
  .bcard.ok{border-left-color:var(--ok)}.bcard.late{border-left-color:var(--warn)}.bcard.miss{border-left-color:var(--crit)}.bcard.done{opacity:.7}
