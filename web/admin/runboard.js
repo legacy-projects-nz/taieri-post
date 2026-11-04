@@ -48,6 +48,8 @@ export function summarize(ch) {
 
 /* ---------- render ---------- */
 export function runBoardTab() {
+  const isToday = S.rbView !== "week"; // first view is Today; the "This week" tab is the full grid with week navigation
+  if (isToday && S.week !== monOf(today())) S.week = monOf(today());
   const t = today(); const n = nzNow(); const ws = weekShifts(); const sb_ = sentBy(); const pend = pendingChanges(); const pendKeys = new Set(pend.map(p => p.k));
   const awaiting = S.items.filter(i => i.roster_changes.status === "awaiting_approval"); const awKeys = new Set(awaiting.map(i => `${i.day}|${i.run}|${i.after?.slot || 1}`));
   const leaveOn = (drv, day) => S.leave.find(l => l.driver === drv && l.status === "approved" && day >= l.date_from && day <= l.date_to);
@@ -56,7 +58,8 @@ export function runBoardTab() {
   const unconf = {}; for (const i of sentItems) for (const d of i.affects) { const a = ackOf[i.id]?.[d]; if (!a?.confirmed_at && !a?.dismissed_at) { const st = toMin(i.after?.start_at); const past = i.day < t || (i.day === t && st != null && n.min >= st); if (!past) (unconf[`${i.day}|${i.run}`] ??= []).push(d); } }
   const runs = S.runs.filter(r => r.active && r.code !== "BU").concat(S.runs.filter(r => r.code === "BU"));
   const sodLate = (s, day) => { if (day !== t || !s.driver || s.run === "BU") return false; const mine = ws.filter(x => x.day === day && x.driver === s.driver && x.run !== "BU"); if (mine.some(x => S.sodBy[x.id])) return false; const sts = mine.map(x => segTimes(x, S.runsBy).st).filter(v => v != null); return sts.length && n.min > Math.min(...sts) + (S.C.rules.sodGrace ?? 15); };
-  const rows = runs.map(r => `<tr><td class="run"><span class="code">${esc(r.label || r.code)}</span><span class="nm">${esc(r.name)}</span></td>${DAYS.map((D, di) => { const day = addDays(S.week, di); const w = r.windows?.[D]; const cell = ws.filter(s => s.run === r.code && s.day === day); const slots = Math.max(r.slots || 1, ...cell.map(s => s.slot));
+  const dayIdxs = DAYS.map((_, i) => i).filter(i => !isToday || addDays(S.week, i) === t);
+  const rows = runs.map(r => `<tr><td class="run"><span class="code">${esc(r.label || r.code)}</span><span class="nm">${esc(r.name)}</span></td>${dayIdxs.map(di => { const D = DAYS[di]; const day = addDays(S.week, di); const w = r.windows?.[D]; const cell = ws.filter(s => s.run === r.code && s.day === day); const slots = Math.max(r.slots || 1, ...cell.map(s => s.slot));
     const off = !w && !cell.length; const chg = cell.some(s => pendKeys.has(key(s))) || [...pendKeys].some(k => k.startsWith(`${day}|${r.code}|`)); const aw = [...awKeys].some(k => k.startsWith(`${day}|${r.code}|`));
     return `<td class="${off ? "off" : ""} ${chg ? "changed" : ""} ${aw ? "pending" : ""}">${Array.from({ length: slots }, (_, i) => i + 1).sort((a, b) => { if (r.code !== "BU") return 0; const sa = cell.find(x => x.slot === a), sb2 = cell.find(x => x.slot === b); return (sb2?.driver ? buFree(day, sb2.driver).mins : -1) - (sa?.driver ? buFree(day, sa.driver).mins : -1); }).map(slot => { const s = cell.find(x => x.slot === slot); const { st, en } = s ? segTimes(s, S.runsBy) : { st: w ? toMin(w[0][0]) : null, en: w ? toMin(w[0][1]) : null }; const u = unconf[`${day}|${r.code}`];
       if (!s || !s.driver) return `<div class="slot" data-day="${day}" data-run="${r.code}" data-slot="${slot}">${off && !s ? `<span class="w">—</span>` : `${r.code === "BU" ? "" : `<span class="w">${st != null ? `${fmtT(st)}–${fmtT(en)}` : ""}</span>`}<span class="meta">+ add</span>`}</div>`;
@@ -70,10 +73,11 @@ export function runBoardTab() {
     : pend.length && canSend ? `<button class="btn crit sm" id="send-changes">Push ${pend.length} change${pend.length === 1 ? "" : "s"} to drivers</button>`
     : pend.length ? `<span class="meta">${pend.length} change${pend.length === 1 ? "" : "s"} not pushed yet</span>`
     : `<span class="meta c-ok">✓ approved ${fmtTs(wi.published_at)} · drivers have the latest</span>`;
-  return `${weekBar(`${status}<button class="btn ghost sm" id="copy-prev">Copy last week</button><button class="btn ghost sm" id="run-times">Run times</button>`)}
+  const tabs = `<div class="seg-btns" style="margin:2px 0 8px">${[["today", "Today"], ["week", "This week"]].map(([k, l]) => `<button data-rbv="${k}" class="${(isToday ? "today" : "week") === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+  return `${tabs}${isToday ? `<div class="wkbar"><b>Today · ${label(t)}</b>${status}<button class="btn ghost sm" id="run-times">Run times</button></div>` : weekBar(`${status}<button class="btn ghost sm" id="copy-prev">Copy last week</button><button class="btn ghost sm" id="run-times">Run times</button>`)}
     ${!pub && filled ? `<div class="card warnc"><h2>Not in the drivers' app yet</h2><p class="meta">Drivers can't see this week until it's approved. "Approve roster" puts it in their app quietly — no email, no alert, nothing to confirm. After that, any edit you make shows up here as a change, and "Push changes" emails and alerts just the drivers affected, who tap Got it.</p></div>` : ""}
     ${awaiting.length ? approvalCard(awaiting, canApprove) : ""}
-    <div class="rb"><table><thead><tr><th class="run">Run</th>${DAYS.map((D, i) => { const day = addDays(S.week, i); const hol = S.C.holidays[day]; return `<th class="${day === t ? "c-accent" : ""}">${D} <span class="meta">${label(day).slice(4)}</span>${hol ? `<div class="meta c-warn">${esc(hol.name)}</div>` : ""}</th>`; }).join("")}</tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="rb"><table><thead><tr><th class="run">Run</th>${dayIdxs.map(i => { const D = DAYS[i]; const day = addDays(S.week, i); const hol = S.C.holidays[day]; return `<th class="${day === t ? "c-accent" : ""}">${D} <span class="meta">${label(day).slice(4)}</span>${hol ? `<div class="meta c-warn">${esc(hol.name)}</div>` : ""}</th>`; }).join("")}</tr></thead><tbody>${rows}</tbody></table></div>
     <p class="hint">Tap a slot to set the driver, van, times, add-ons or a trainee. ${pub ? `Red outline = changed since drivers were last told (push it to them when you're ready). ` : ""}Amber = waiting for Jeremy's OK. "? not confirmed" = the driver hasn't tapped Got it yet.</p>
     ${confirmCard(sentItems, ackOf, n)}
     ${ruleCheck(ws, leaveOn)}
@@ -138,6 +142,7 @@ const buCol = m => m <= BU_SHORT ? "var(--warn)" : "var(--go)";
 /* ---------- wiring ---------- */
 export function wireRunBoard() {
   wireWeek();
+  $$("[data-rbv]").forEach(b => b.onclick = () => { S.rbView = b.dataset.rbv; render(true); });
   $$(".slot").forEach(el => el.onclick = () => slotSheet(el.dataset.day, el.dataset.run, +el.dataset.slot));
   $$(".bu-tog").forEach(b => b.onclick = async ev => { ev.stopPropagation(); if (!S.me.can("roster")) return toast("You can view the roster but not change it", "err");
     const to = b.dataset.kind === "committed" ? "voluntary" : "committed"; const f = buFree(b.dataset.day, b.dataset.drv);
