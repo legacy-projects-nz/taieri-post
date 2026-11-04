@@ -22,6 +22,15 @@ const EXTRA_PRESETS = [
   { k: "nzc-l", cust: "NZC", code: "NZCL", acct: "200", desc: "NZ Couriers - Large", price: 8 },
   { k: "ph-s", cust: "PH", code: "PHS", acct: "200", desc: "Post Haste - Small", price: 4 },
   { k: "ph-l", cust: "PH", code: "PHL", acct: "200", desc: "Post Haste - Large", price: 8 },
+  // Owaka extras
+  { k: "nzc-telford", cust: "NZC", code: "", acct: "200", desc: "NZC - Telford Fee - Owaka", price: 5 },
+  { k: "nzc-owaka-min", cust: "NZC", code: "", acct: "200", desc: "NZC - Minimum Charge - Owaka - Bal Depot Pick Up", price: 2.5 },
+  { k: "ph-owaka-min", cust: "PH", code: "", acct: "200", desc: "Post Haste - Minimum Charge - Owaka - Bal Depot Pick Up", price: 2.5 },
+  // Balclutha depot pick-ups (priced at the current small/large rates)
+  { k: "nzc-bal-s", cust: "NZC", code: "NZCS", acct: "200", desc: "NZC - Small - Pick Ups - Bal Depot", price: () => rates().NZC.small.rate },
+  { k: "nzc-bal-l", cust: "NZC", code: "NZCL", acct: "200", desc: "NZ Couriers - Large - Pick Ups - Bal Depot", price: () => rates().NZC.large.rate },
+  { k: "ph-bal-s", cust: "PH", code: "PHS", acct: "200", desc: "Post Haste - Small - Pick Ups - Bal Depot", price: () => rates().PH.small.rate },
+  { k: "ph-bal-l", cust: "PH", code: "PHL", acct: "200", desc: "Post Haste - Large - Pick Ups - Bal Depot", price: () => rates().PH.large.rate },
   { k: "other", cust: "", code: "", acct: "200", desc: "", price: "" },
 ];
 const ACCOUNTS = [["200", "200 · Sales"], ["201", "201 · Sales - Other Post Companies"], ["202", "202 · Sales - TGE"], ["203", "203 · Sales - Other"], ["204", "204 · Sales - MFB"], ["260", "260 · Other Revenue"]];
@@ -110,7 +119,7 @@ function entryView() {
 function extraSheet(existing = null, cust = "") {
   const e = existing || { customer: cust || "TGE", item_code: "", description: "", qty: 1, price: "", account: "" };
   sheet(`<h3>${existing ? "Edit extra item" : "Add an extra item"}</h3><form class="frm" id="xf">
-    ${existing ? "" : `<label class="f full">Start from<select class="in" id="x-pre">${opt(EXTRA_PRESETS.map(p => [p.k, p.k === "other" ? "Other (type your own)" : `${p.desc} · ${p.code}`]), "")}</select></label>`}
+    ${existing ? "" : `<label class="f full">Start from<select class="in" id="x-pre">${opt(EXTRA_PRESETS.map(p => [p.k, p.k === "other" ? "Other (type your own)" : p.code ? `${p.desc} · ${p.code}` : p.desc]), "")}</select></label>`}
     <label class="f">Customer<select class="in" id="x-cust">${opt(Object.entries(CUSTOMERS).map(([k, v]) => [k, v.name]), e.customer)}</select></label>
     <label class="f">Xero item code<input class="in" id="x-code" value="${esc(e.item_code || "")}" placeholder="optional"></label>
     <label class="f full">Description (shows on the invoice)<input class="in" id="x-desc" value="${esc(e.description)}" required placeholder="e.g. TGE Request Additional Work (4 hours @ $35/hour)"></label>
@@ -119,7 +128,7 @@ function extraSheet(existing = null, cust = "") {
     <label class="f">Account<select class="in" id="x-acct">${opt(ACCOUNTS, e.account || CUSTOMERS[e.customer]?.acct || "200")}</select></label>
     <button class="btn full" type="submit">${existing ? "Save changes" : "Add to invoice"}</button></form>`, (bg, close) => {
     const g = id => bg.querySelector("#" + id);
-    g("x-pre")?.addEventListener("change", () => { const p = EXTRA_PRESETS.find(p => p.k === g("x-pre").value); if (!p) return; if (p.cust) g("x-cust").value = p.cust; g("x-code").value = p.code; g("x-desc").value = p.desc; g("x-price").value = p.price; g("x-acct").value = p.acct; });
+    g("x-pre")?.addEventListener("change", () => { const p = EXTRA_PRESETS.find(p => p.k === g("x-pre").value); if (!p) return; if (p.cust) g("x-cust").value = p.cust; g("x-code").value = p.code; g("x-desc").value = p.desc; g("x-price").value = typeof p.price === "function" ? p.price() : p.price; g("x-acct").value = p.acct; });
     g("x-pre")?.dispatchEvent(new Event("change"));
     if (!existing && cust) g("x-cust").value = cust;
     g("xf").addEventListener("submit", async ev => { ev.preventDefault();
