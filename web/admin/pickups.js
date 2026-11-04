@@ -110,7 +110,7 @@ function entryView() {
       <form class="frm" id="pe-f"><label class="f">Date<input class="in" type="date" id="pe-day" value="${today() < ym + "-01" || today() > lastDay(ym) ? lastDay(ym) : today()}" required></label>
       <label class="f">Area<select class="in" id="pe-area">${opt(AREAS.map(a => [a, a]), "Lawrence")}</select></label>
       <label class="f">Driver<select class="in" id="pe-drv">${opt([["", "—"], ...S.drivers.map(d => [d.id, d.name])], "")}</select></label>
-      <div class="full scroll"><table class="dt"><tr><th rowspan="2">Customer</th><th colspan="2">Depot pick-ups</th><th colspan="2">Customer pick-ups</th></tr><tr><th>Small</th><th>Large</th><th>Small</th><th>Large</th></tr>${Object.entries(CUSTOMERS).map(([k, v]) => `<tr><td>${esc(v.name)}</td>${SOURCES.map(([src]) => `<td><input class="in" data-pe="${k}.${src}.small" inputmode="numeric" placeholder="0" style="width:64px"></td><td><input class="in" data-pe="${k}.${src}.large" inputmode="numeric" placeholder="0" style="width:64px"></td>`).join("")}</tr>`).join("")}</table></div>
+      <div class="full scroll"><table class="dt"><tr><th rowspan="2">Customer</th><th colspan="2">Depot pick-ups</th><th colspan="2">Customer pick-ups</th></tr><tr><th>Small</th><th>Large</th><th>Small</th><th>Large</th></tr>${Object.entries(CUSTOMERS).map(([k, v]) => `<tr${k === "TGE" ? ` data-tge-row hidden` : ""}><td>${esc(v.name)}</td>${SOURCES.map(([src]) => `<td><input class="in" data-pe="${k}.${src}.small" inputmode="numeric" placeholder="0" style="width:64px"></td><td><input class="in" data-pe="${k}.${src}.large" inputmode="numeric" placeholder="0" style="width:64px"></td>`).join("")}</tr>`).join("")}</table></div>
       <label class="f full">Note (optional)<input class="in" id="pe-n"></label><button class="btn full" type="submit">Save pick-ups</button></form></div>
     <div class="card"><h2>Entries this month<span>${rows.length} · change a figure then tap Save on that line</span></h2>${table}</div>
     <div class="card"><h2>Extra items<span>added to that customer's invoice for ${MONTH_L[+ym.slice(5) - 1]}</span></h2>${xl}<div class="row" style="margin-top:8px"><button class="btn sm" data-x-add="" style="flex:0 0 auto">+ Extra item</button></div></div>`;
@@ -171,6 +171,7 @@ export function pickupSheet(existing = null, onSaved = null) {
       ev.preventDefault(); const g = x => bg.querySelector("#" + x).value; const s = +g("pu-s") || 0, l = +g("pu-l") || 0;
       if (!s && !l) return toast("Enter at least one parcel", "err");
       const row = { day: g("pu-day"), area: g("pu-area"), customer: g("pu-cust"), source: g("pu-src"), small: s, large: l, note: g("pu-n") || null };
+      if (row.customer === "TGE" && row.area !== "Rural") return toast("TGE pick-ups are Rural (South) only", "err");
       const { error } = existing ? await sb.from("pickups").update(row).eq("id", existing.id) : await sb.from("pickups").insert({ ...row, driver: S.viewer?.id || S.me.id, created_by: S.viewer?.id || S.me.id });
       if (error) return toast(error.message, "err"); toast("Saved", "ok"); close(); if (onSaved) await onSaved(); });
   });
@@ -183,13 +184,15 @@ export function wirePickups() {
   $$("[data-save]").forEach(b => b.onclick = async () => { const id = b.dataset.save; const v = k => $(`[data-row="${id}"][data-k="${k}"]`).value;
     const row = { day: v("day"), area: v("area"), customer: v("customer"), source: v("source"), small: Math.max(0, parseInt(v("small")) || 0), large: Math.max(0, parseInt(v("large")) || 0), driver: v("driver") || null, note: v("note").trim() || null };
     if (!row.small && !row.large) return toast("Enter at least one parcel, or delete the line", "err");
+    if (row.customer === "TGE" && row.area !== "Rural") return toast("TGE pick-ups are Rural (South) only", "err");
     const { error } = await sb.from("pickups").update(row).eq("id", id); if (error) return toast(error.message, "err"); toast("Saved", "ok"); await reload(); });
   $("#pe-f")?.addEventListener("submit", async ev => { ev.preventDefault(); const v = k => Math.max(0, parseInt($(`[data-pe="${k}"]`).value) || 0);
     const base = { day: $("#pe-day").value, area: $("#pe-area").value, driver: $("#pe-drv").value || null, note: $("#pe-n").value.trim() || null, created_by: S.me.id };
-    const ins = Object.keys(CUSTOMERS).flatMap(c => SOURCES.map(([src]) => ({ ...base, customer: c, source: src, small: v(`${c}.${src}.small`), large: v(`${c}.${src}.large`) }))).filter(r => r.small || r.large);
+    const ins = Object.keys(CUSTOMERS).filter(c => c !== "TGE" || base.area === "Rural").flatMap(c => SOURCES.map(([src]) => ({ ...base, customer: c, source: src, small: v(`${c}.${src}.small`), large: v(`${c}.${src}.large`) }))).filter(r => r.small || r.large);
     if (!ins.length) return toast("Enter at least one parcel", "err");
     const { error } = await sb.from("pickups").insert(ins); if (error) return toast(error.message, "err"); toast(`Saved ${ins.length} line${ins.length > 1 ? "s" : ""}`, "ok");
     if (monthOf(base.day) !== ym) ym = monthOf(base.day); await reload(); });
+  const tgeRow = () => { const r = $("[data-tge-row]"); if (r) r.hidden = $("#pe-area")?.value !== "Rural"; }; $("#pe-area")?.addEventListener("change", tgeRow); tgeRow();
   $$("[data-x-add]").forEach(b => b.onclick = () => extraSheet(null, b.dataset.xAdd));
   $$("[data-x-edit]").forEach(b => b.onclick = () => extraSheet(extras.find(x => x.id === b.dataset.xEdit)));
   $$("[data-x-del]").forEach(b => b.onclick = async () => { if (!confirm("Remove this extra item?")) return; await q(sb.from("invoice_extras").delete().eq("id", b.dataset.xDel)); await reload(); });

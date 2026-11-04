@@ -4,6 +4,7 @@ import { sb, q, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, 
 import { scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, band, fortnightBand, payBand, money, dayShifts, segTimes, addName } from "/shared/score.js";
 import { S, sheet, opt, nm, fnm, loadAll, render, scoreData, alertRow, fn, teamRange, rangeBar, teamStats } from "/admin/admin.js";
 import { itemKeyFor } from "/admin/detail.js";
+import { moneyCard, wireMoney } from "/admin/money.js";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 /** The week the live board is showing: this week by default, back 8 weeks or forward 1 */
@@ -34,6 +35,7 @@ export function liveTab() {
   const cur = monOf(t);
   return `${weekNav(wk)}${wk > cur ? `<p class="hint" style="margin:0 0 6px">Next week: the planned roster. Nothing is posted yet, so scores fill in as the days come.</p>` : ""}<div class="card">${chips}${kpi}</div>
     ${addonBoard(one ? days[0] : t, n)}
+    ${moneyCard(one ? days[0] : t)}
     <div class="grid2">${important(scores, n)}${teamAndLabour(scores, team, wk)}</div>
     <div class="grid2">${hoursByDay(wk)}${actionCentre(scores, n)}</div>
     ${notConfirmed(n)}
@@ -233,6 +235,7 @@ function feed(t) {
 
 /* ---- wiring ---- */
 export function wireLive() {
+  { const ds = sel(); wireMoney(ds.length === 1 ? ds[0] : today()); }
   $$("[data-day]").forEach(b => b.onclick = () => { const d = b.dataset.day; const cur = sel(); S.daySel = cur.includes(d) ? (cur.length > 1 ? cur.filter(x => x !== d) : cur) : [...cur, d].sort(); render(); });
   $$("[data-days]").forEach(b => b.onclick = () => { const today_ = b.dataset.days === "today"; if (today_) S.liveWk = monOf(today()); const wk = liveWk(); S.daySel = today_ ? [today()] : DAYS.map((_, i) => addDays(wk, i)); S.daySelWk = wk; render(); });
   $$("[data-lwk]").forEach(b => b.onclick = () => { const cur = monOf(today()); const v = b.dataset.lwk; S.liveWk = v === "0" ? cur : v === "next" ? addDays(cur, 7) : addDays(liveWk(), +v * 7); render(); });
