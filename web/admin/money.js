@@ -31,8 +31,9 @@ const COSTS = [["fuel", "Fuel", 4251.46], ["ruc", "Road user charges", 590.78], 
   ["loan", "Loan fees & interest", 1078.66], ["soft", "Software", 897.35], ["staffx", "Staff training, uniforms, meetings", 1660.74], ["acct", "Accountancy", 496.57], ["office", "Office, phone, rent, marketing, bank", 597.8]];
 const COST_DAYS = 6;   // working days a week the monthly costs are spread over
 const PARCEL_RUNS = ["TUA", "FLY", "DB", "RAM", "PCB", "RSB", "LAW", "S", "T"];
-const DEF = { small: 5, large: 8, target: 70000, parcel: { TUA: 0, FLY: 0, DB: 6, RAM: 1.8, PCB: 0, RSB: 0, LAW: 0, S: 0, T: 0 }, groups: Object.fromEntries(Object.entries(GROUPS).map(([k, g]) => [k, { per: g.per, amt: g.amt, days: g.days }])), costs: Object.fromEntries(COSTS.map(([k, , a]) => [k, a])) };
+const DEF = { small: 5, large: 8, target: 70000, oncost: 11, parcel: { TUA: 0, FLY: 0, DB: 6, RAM: 1.8, PCB: 0, RSB: 0, LAW: 0, S: 0, T: 0 }, groups: Object.fromEntries(Object.entries(GROUPS).map(([k, g]) => [k, { per: g.per, amt: g.amt, days: g.days }])), costs: Object.fromEntries(COSTS.map(([k, , a]) => [k, a])) };
 const model = () => { const v = S.set?.money_model || {}; return { ...DEF, ...v, parcel: { ...DEF.parcel, ...(v.parcel || {}) }, groups: Object.fromEntries(Object.keys(GROUPS).map(k => [k, { ...DEF.groups[k], ...(v.groups?.[k] || {}) }])), costs: { ...DEF.costs, ...(v.costs || {}) } }; };
+const onc = () => 1 + (+model().oncost || 0) / 100;   // holiday pay 8% + KiwiSaver 3% on top of gross wages
 const costMonth = () => Object.values(model().costs).reduce((a, b) => a + (+b || 0), 0);
 const costDay = rows => rows.some(r => !r.noRun) ? costMonth() / WK_PER_MONTH / COST_DAYS : 0;   // charged on any day a run is rostered
 const perDay = g => !g.amt ? 0 : g.per === "month" ? g.amt / WK_PER_MONTH / (g.days || 5) : g.per === "week" ? g.amt / (g.days || 5) : g.amt;
@@ -85,12 +86,12 @@ function breakdown(d) {
   const M = model(); const rows = []; const byRun = {};
   for (const drv of S.drivers) {
     const r = driverDay(drv, d);
-    if (r?.sick && !r.D) { if (r.spend && !drv.pay_exclude) rows.push({ run: `Sick pay · ${nm(drv.id)}`, driver: drv.id, staff: r.spend, staffHow: `${r.exp.toFixed(2)} h × $${(+r.rate).toFixed(2)}/h = ${money(r.spend)} · ${r.actHow}`, unpaid: false, est: false, fees: 0, feeEst: false, feeLines: [], noRun: true }); continue; }   // off sick and no longer on the roster: the sick pay still counts
+    if (r?.sick && !r.D) { if (r.spend && !drv.pay_exclude) rows.push({ run: `Sick pay · ${nm(drv.id)}`, driver: drv.id, staff: r.spend * onc(), staffHow: `${r.exp.toFixed(2)} h × $${(+r.rate).toFixed(2)}/h = ${money(r.spend)} + ${model().oncost}% holiday pay & KiwiSaver = ${money(r.spend * onc())} · ${r.actHow}`, unpaid: false, est: false, fees: 0, feeEst: false, feeLines: [], noRun: true }); continue; }   // off sick and no longer on the roster: the sick pay still counts
     if (!r || r.holiday || !r.D) continue;
     const segs = r.D.segs; const mins = segs.map(x => Math.max(0, (x.en ?? x.st) - x.st)); const tot = mins.reduce((a, b) => a + b, 0);
     const cost = drv.pay_exclude ? 0 : r.spend;
     segs.forEach((x, i) => { const share = tot ? mins[i] / tot : 1 / segs.length;
-      const row = { run: x.shift.run, shift: x.shift, sort: !!x.sort, driver: drv.id, st: x.st, en: x.en, staff: cost * share, staffHow: drv.pay_exclude ? "unpaid (owner)" : `${(r.actEst ?? r.exp).toFixed(2)} h × $${(+r.rate).toFixed(2)}/h = ${money(r.spend)}${segs.length > 1 ? ` · ${Math.round(share * 100)}% of the day (rostered time)` : ""} · ${r.actHow}`, unpaid: !!drv.pay_exclude, est: !drv.pay_exclude && r.actIsEst, fees: 0, feeEst: false, feeLines: [] };
+      const row = { run: x.shift.run, shift: x.shift, sort: !!x.sort, driver: drv.id, st: x.st, en: x.en, staff: cost * onc() * share, staffHow: drv.pay_exclude ? "unpaid (owner)" : `${(r.actEst ?? r.exp).toFixed(2)} h × $${(+r.rate).toFixed(2)}/h = ${money(r.spend)} + ${model().oncost}% holiday pay & KiwiSaver = ${money(r.spend * onc())}${segs.length > 1 ? ` · ${Math.round(share * 100)}% of the day (rostered time)` : ""} · ${r.actHow}`, unpaid: !!drv.pay_exclude, est: !drv.pay_exclude && r.actIsEst, fees: 0, feeEst: false, feeLines: [] };
       rows.push(row); if (!x.sort) (byRun[row.run] ??= row); });
   }
   // a run's figures are final once its EOD is in (or the day has gone), otherwise estimated
@@ -132,14 +133,14 @@ export function moneyCard(d) {
   const M = model(); const rows = breakdown(d); const T = totals(rows); cur = { d, rows };
   const C = costDay(rows); const wkRows = Array.from({ length: 7 }, (_, i) => breakdown(addDays(wk, i))); const week = wkRows.map(totals); const wkFees = week.reduce((a, t) => a + t.fees, 0), wkStaff = week.reduce((a, t) => a + t.staff, 0), wkCost = wkRows.reduce((a, r) => a + costDay(r), 0); const wkEst = week.some(t => t.fe || t.se);
   const Y = yearAhead(wk, week); const month = Y.fees / 12; const monthProfit = Y.left / 12;
-  const yHow = `Next 12 months from ${label(wk)}: ${Y.n.wd} weekdays, ${Y.n.sat} Saturdays, ${Y.n.sun} Sundays (food bag), ${Y.n.hol} public holidays (no income, staff still paid). Each day uses that weekday's figures from the week of ${label(wk)}.`;
+  const yHow = `Next 12 months from ${label(wk)}: ${Y.n.wd} weekdays, ${Y.n.sat} Saturdays, ${Y.n.sun} Sundays (food bag), ${Y.n.hol} public holidays (no income, staff still paid). Staff include the ${M.oncost}% holiday pay & KiwiSaver. Each day uses that weekday's figures from the week of ${label(wk)}.`;
   const tr = (r, i) => { const net = r.fees - r.staff; const fe = r.feeEst && r.fees > 0, se = r.est && r.staff > 0;
     return `<tr class="mn-row" data-mnrow="${i}" title="Tap for the detail"><td><b>${esc(r.run)}</b>${r.st != null ? `<div class="meta">${fmtT(r.st)}–${fmtT(r.en)}</div>` : ""}</td><td>${r.driver ? esc(nm(r.driver)) : `<span class="meta">not rostered</span>`}</td>
       <td align="right">${r.fees ? amt(r.fees, fe) : `<span class="meta">—</span>`}</td><td align="right">${r.fees ? amt(r.fees * (1 + GST), fe) : ""}</td>
       <td align="right">${r.unpaid ? `<span class="meta">unpaid</span>` : amt(r.staff, se)}</td><td align="right"><b>${amt(net, fe || se)}</b></td></tr>`; };
   return `${STYLE}<div class="card"><h2>Day budget<span>${label(d)} · income − staff − costs · <span class="mn-est">≈ grey = estimate</span> · <span class="mn-fin">green = final</span> · tap for detail</span></h2>
     <div class="tiles"><button class="tile mn-t" data-mnall="1"><div class="l">Income</div><div class="v ${cls(T.fe)}">${T.fe ? "≈" : ""}${money(T.fees)}</div><div class="s">+ GST ${money(T.fees * GST)} = ${money(T.fees * (1 + GST))}</div>${yearLine(Y.fees, yHow)}</button>
-      <button class="tile mn-t" data-mnall="1"><div class="l">Staff costs</div><div class="v ${cls(T.se)}">${T.se ? "≈" : ""}${money(T.staff)}</div><div class="s">hours × each driver's rate</div>${yearLine(Y.staff, yHow)}</button>
+      <button class="tile mn-t" data-mnall="1"><div class="l">Staff costs</div><div class="v ${cls(T.se)}">${T.se ? "≈" : ""}${money(T.staff)}</div><div class="s">hours × each driver's rate + ${M.oncost}% holiday pay & KiwiSaver</div>${yearLine(Y.staff, yHow)}</button>
       <button class="tile mn-t" data-mnall="1"><div class="l">Business costs</div><div class="v mn-est">≈${money(C)}</div><div class="s">${money0(costMonth())}/month ÷ ${COST_DAYS} days · Xero + cashflow</div>${yearLine(Y.costs, `${money0(costMonth())}/month × 12`)}</button>
       <button class="tile mn-t" data-mnall="1"><div class="l">Left after costs</div><div class="v ${cls(T.fe || T.se || C > 0)}">${T.fe || T.se || C > 0 ? "≈" : ""}${money(T.fees - T.staff - C)}</div><div class="s">income − staff − costs, before GST</div>${yearLine(Y.left, yHow)}</button>
       <button class="tile mn-t" data-mnweek="${wk}"><div class="l">Month at this pace</div><div class="v ${cls(wkEst)}">${wkEst ? "≈" : ""}${money0(month)}</div><div class="s">week of ${label(wk)}: ${money0(wkFees)} in · ${money0(wkStaff)} staff · ${money0(wkCost)} costs · ≈${money0(monthProfit)}/month left · target ${money0(M.target)}/month (${month >= M.target ? "+" : "−"}${money0(Math.abs(month - M.target))}) · month = year ÷ 12</div>${yearLine(Y.fees, yHow)}</button></div>
