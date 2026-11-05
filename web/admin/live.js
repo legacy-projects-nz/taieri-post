@@ -49,7 +49,7 @@ export function liveTab() {
 function rulesForShift(s) {
   const d = dow(s.day) + 1; const out = [];
   for (const r of S.rules) { if (!r.active || !(r.days || []).includes(d)) continue; const all = r.runs.includes("ALL"); if (!all && !r.runs.includes(s.run)) continue;
-    const ad = r.addon ? S.addons.find(a => a.id === r.addon) : null; if (ad && ad.runs.includes(s.run)) { if (!(s.addons || []).includes(r.addon)) continue; } else if (!all && r.runs.length > 1) continue; out.push(r); }
+    const ad = r.addon ? S.addons.find(a => a.id === r.addon) : null; if (ad?.always && ad.runs.includes(s.run)) { out.push(r); continue; } if (ad && ad.runs.includes(s.run)) { if (!(s.addons || []).includes(r.addon)) continue; } else if (!all && r.runs.length > 1) continue; out.push(r); }
   return out.sort((a, b) => (toMin(a.closes) ?? toMin(a.opens) ?? 0) - (toMin(b.closes) ?? toMin(b.opens) ?? 0));
 }
 const winTxt = r => { const f = toMin(r.opens), t = toMin(r.closes); return f != null && t != null ? `${fmtT(f)}–${fmtT(t)}` : t != null ? `by ${fmtT(t)}` : f != null ? `from ${fmtT(f)}` : ""; };

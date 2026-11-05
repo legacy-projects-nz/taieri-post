@@ -185,7 +185,7 @@ function classicTab() {
 function timingsToday() {
   const n = nzNow(); const t = n.date; const rows = [];
   for (const s of S.shifts.filter(x => x.day === t && x.driver && x.run !== "BU" && (!isSort(x.run) || (x.addons || []).length))) for (const r of S.rules) { if (!r.active || !r.days.includes(dow(t) + 1)) continue; const all = r.runs.includes("ALL"); if (!all && !r.runs.includes(s.run)) continue;
-    const ad = r.addon ? S.addons.find(a => a.id === r.addon) : null; if (ad && ad.runs.includes(s.run)) { if (!(s.addons || []).includes(r.addon)) continue; } else if (!all && r.runs.length > 1) continue;
+    const ad = r.addon ? S.addons.find(a => a.id === r.addon) : null; if (ad?.always && ad.runs.includes(s.run)) { /* standing task */ } else if (ad && ad.runs.includes(s.run)) { if (!(s.addons || []).includes(r.addon)) continue; } else if (!all && r.runs.length > 1) continue;
     const done = s.done?.[r.addon] || (r.addon?.startsWith("tw_") && /game plan/i.test(r.name) && Object.keys(s.plan || {}).length ? (s.plan && Object.values(s.plan)[0] ? "plan" : null) : null);
     const f = toMin(r.opens), c = toMin(r.closes); const win = f != null && c != null ? `${fmtT(f)}–${fmtT(c)}` : c != null ? `by ${fmtT(c)}` : f != null ? `from ${fmtT(f)}` : "any time";
     let st, cls; if (done) { st = done === "plan" ? "game plan in" : `done ${fmtTime(done)}`; cls = "ok"; } else if (c != null && n.min > c) { st = `PASSED · due ${fmtT(c)}`; cls = "miss"; } else if (c != null && c - n.min <= 60) { st = `due soon · ${fmtT(c)}`; cls = "late"; } else if (f != null && n.min >= f) { st = "window open"; cls = "due"; } else { st = "later"; cls = "due"; }

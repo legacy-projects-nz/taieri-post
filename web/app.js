@@ -249,6 +249,7 @@ function rulesFor(x, day) {
     if (!r.days.includes(d)) continue;
     const all = r.runs.includes("ALL"); if (!all && !r.runs.includes(code)) continue;
     const ad = r.addon ? S.addons.find(a => a.id === r.addon) : null;
+    if (ad?.always && ad.runs.includes(code)) { out.push(r); continue; }   // standing task: on every one of its runs, no ticking needed
     if (ad && ad.runs.includes(code)) { if (!(x.shift.addons || []).includes(r.addon)) continue; }
     else if (!all && r.runs.length > 1) continue;
     out.push(r);

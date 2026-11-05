@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
       if (e) for (const a of alertsOpen) if (a.dedupe_key === k) resolve.push(a.id);
       // timing windows
       for (const r of rules || []) { const d = dow(t) + 1; if (!r.days.includes(d)) continue; const all = r.runs.includes("ALL"); if (!all && !r.runs.includes(x.s.run)) continue;
-        const ad = r.addon ? (addons || []).find(a => a.id === r.addon) : null; if (ad && ad.runs.includes(x.s.run)) { if (!(x.s.addons || []).includes(r.addon)) continue; } else if (!all && r.runs.length > 1) continue;
+        const ad = r.addon ? (addons || []).find(a => a.id === r.addon) : null; if (ad?.always && ad.runs.includes(x.s.run)) { /* standing task: every one of its runs */ } else if (ad && ad.runs.includes(x.s.run)) { if (!(x.s.addons || []).includes(r.addon)) continue; } else if (!all && r.runs.length > 1) continue;
         const done = !!(x.s.done?.[r.addon]) || (r.addon?.startsWith("tw_") && /game plan/i.test(r.name) && Object.keys(x.s.plan || {}).length > 0);
         const closes = toMin(r.closes); if (closes == null) continue;
         const kd = `timing_due|${t}|${drv}|${r.id}`, km = `timing_missed|${t}|${drv}|${r.id}`;
