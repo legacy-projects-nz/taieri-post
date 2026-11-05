@@ -23,7 +23,7 @@ const GROUPS = {
   "PCB + RSB": { runs: ["PCB", "RSB", "WH"], per: "month", amt: 17000, days: 6 },
   "TUA + Flyer": { runs: ["TUA", "FLY"], per: "day", amt: 400, days: 5 },
   "Lawrence": { runs: ["LAW"], per: "month", amt: 4500, days: 5 },
-  "TGE": { runs: ["S", "T"], per: "week", amt: 2000, days: 5 },
+  "TGE": { runs: ["S", "T"], per: "week", amt: 4500, days: 5, split: { T: 55, S: 45 } },   // about $4,500 a week all in, a bit more of it on T
   "Food bag": { runs: ["FB", "FBP", "FB2", "FB2P", "MFB1", "MFB2"], per: "month", amt: 2000, days: 1 },
 };
 // business costs, $ a month excl GST — Xero Aug–Oct 2026 average (the Biz CashFlow sheet assumes less: fuel $1,739, RUC $479, insurance $617)
@@ -31,7 +31,7 @@ const COSTS = [["fuel", "Fuel", 4251.46], ["ruc", "Road user charges", 590.78], 
   ["loan", "Loan fees & interest", 1078.66], ["soft", "Software", 897.35], ["staffx", "Staff training, uniforms, meetings", 1660.74], ["acct", "Accountancy", 496.57], ["office", "Office, phone, rent, marketing, bank", 597.8]];
 const COST_DAYS = 6;   // working days a week the monthly costs are spread over
 const PARCEL_RUNS = ["TUA", "FLY", "DB", "RAM", "PCB", "RSB", "LAW", "S", "T"];
-const DEF = { small: 5, large: 8, target: 70000, parcel: { TUA: 0, FLY: 0, DB: 6, RAM: 1.8, PCB: 0, RSB: 0, LAW: 0, S: 1.25, T: 1.25 }, groups: Object.fromEntries(Object.entries(GROUPS).map(([k, g]) => [k, { per: g.per, amt: g.amt, days: g.days }])), costs: Object.fromEntries(COSTS.map(([k, , a]) => [k, a])) };
+const DEF = { small: 5, large: 8, target: 70000, parcel: { TUA: 0, FLY: 0, DB: 6, RAM: 1.8, PCB: 0, RSB: 0, LAW: 0, S: 0, T: 0 }, groups: Object.fromEntries(Object.entries(GROUPS).map(([k, g]) => [k, { per: g.per, amt: g.amt, days: g.days }])), costs: Object.fromEntries(COSTS.map(([k, , a]) => [k, a])) };
 const model = () => { const v = S.set?.money_model || {}; return { ...DEF, ...v, parcel: { ...DEF.parcel, ...(v.parcel || {}) }, groups: Object.fromEntries(Object.keys(GROUPS).map(k => [k, { ...DEF.groups[k], ...(v.groups?.[k] || {}) }])), costs: { ...DEF.costs, ...(v.costs || {}) } }; };
 const costMonth = () => Object.values(model().costs).reduce((a, b) => a + (+b || 0), 0);
 const costDay = rows => rows.some(r => !r.noRun) ? costMonth() / WK_PER_MONTH / COST_DAYS : 0;   // charged on any day a run is rostered
@@ -53,7 +53,9 @@ function avgDays(byDay, d) { const all = Object.entries(byDay); const wd = all.f
 function breakdown(d) {
   const M = model(); const rows = []; const byRun = {};
   for (const drv of S.drivers) {
-    const r = driverDay(drv, d); if (!r || r.holiday || !r.D) continue;
+    const r = driverDay(drv, d);
+    if (r?.sick && !r.D) { if (r.spend && !drv.pay_exclude) rows.push({ run: `Sick pay · ${nm(drv.id)}`, driver: drv.id, staff: r.spend, staffHow: `${r.exp.toFixed(2)} h × $${(+r.rate).toFixed(2)}/h = ${money(r.spend)} · ${r.actHow}`, unpaid: false, est: false, fees: 0, feeEst: false, feeLines: [], noRun: true }); continue; }   // off sick and no longer on the roster: the sick pay still counts
+    if (!r || r.holiday || !r.D) continue;
     const segs = r.D.segs; const mins = segs.map(x => Math.max(0, (x.en ?? x.st) - x.st)); const tot = mins.reduce((a, b) => a + b, 0);
     const cost = drv.pay_exclude ? 0 : r.spend;
     segs.forEach((x, i) => { const share = tot ? mins[i] / tot : 1 / segs.length;
@@ -65,7 +67,8 @@ function breakdown(d) {
   const add = (r, amt, line, est) => { r.fees += amt; if (est) r.feeEst = true; r.feeLines.push({ amt, line, est }); };
   for (const r of rows) { if (r.sort) continue;
     for (const [g, G] of Object.entries(GROUPS)) { if (!G.runs.includes(r.run)) continue; const m = M.groups[g]; const day = perDay(m); if (!day) continue;
-      const on = rows.filter(y => !y.sort && G.runs.includes(y.run)).length; add(r, day / on, `${g} base · ${perTxt(m)}${on > 1 ? ` ÷ ${on} runs on` : ""}`, !done(r)); }
+      const onRows = rows.filter(y => !y.sort && G.runs.includes(y.run)); const on = onRows.length; const sp = G.split; const wsum = sp ? onRows.reduce((a, y) => a + (sp[y.run] ?? 0), 0) : 0; const share = sp && wsum ? (sp[r.run] ?? 0) / wsum : 1 / on;
+      add(r, day * share, `${g} base · ${perTxt(m)}${on > 1 ? (sp && wsum ? ` · ${Math.round(share * 100)}% to ${r.run}` : ` ÷ ${on} runs on`) : ""}`, !done(r)); }
     const rate = +(M.parcel[r.run] || 0); if (rate) { const n = parcelsOf(r.shift);
       if (n != null) add(r, n * rate, `${n} parcels × $${rate}`, false);
       else { const ev = evidenceFor(r.run, d); if (ev?.parcels != null) add(r, Math.round(ev.parcels) * rate, `${Math.round(ev.parcels)} parcels × $${rate} (average ${ev.scope === "weekday" ? "for this weekday" : "of recent days"})`, true); else { r.feeEst = true; r.feeLines.push({ amt: 0, line: `parcels × $${rate} · no history yet`, est: true }); } } } }

@@ -124,9 +124,20 @@ function teamAndLabour(scores, team, wk) {
       <div class="tiles"><button class="tile" ${lb}><div class="l">Jeremy · week (tracked, unpaid)</div><div class="v">${L.own.At.toFixed(1)} h</div><div class="s">actual · expected ${L.own.E.toFixed(1)} h · not in the totals above or in spend</div></button></div></div>`;
 }
 /** One expected figure per driver-day: the run formula on the EOD figures once they're in, otherwise on the average figures for that run and weekday (estimated, shown orange). Actual = SOD to last EOD. */
+export const sickLeave = (id, d) => (S.leave || []).find(l => l.driver === id && l.type === "sick" && l.status === "approved" && d >= l.date_from && d <= l.date_to);
+// paid hours for a sick day: the hours set on it, otherwise the driver's average worked day over the 4 weeks before (never less than what was rostered that day)
+export function sickHours(drv, d, sk) {
+  if (sk?.hours != null) return +sk.hours;
+  const D = dayShifts(S.shifts.filter(s => s.day === d && s.driver === drv.id), S.runsBy, drv.id)[d]; const rost = D ? D.hours || 0 : 0;
+  const hs = []; for (let i = 1; i <= 28; i++) { const x = addDays(d, -i); if (S.C.holidays[x] || sickLeave(drv.id, x)) continue; const r = driverDay(drv, x); const h = r ? (r.act ?? r.actEst ?? r.exp ?? 0) : 0; if (h > 0) hs.push(h); }
+  const avg = hs.length ? hs.reduce((a, b) => a + b, 0) / hs.length : 0; return Math.round(Math.max(avg, rost) * 100) / 100;
+}
 export function driverDay(drv, d) {
   const R = S.C.rules; const rate = +(drv.rate || R.hourRate); const hol = S.C.holidays[d];
   if (hol) { const hh = Math.min(R.holidayCap ?? 8, hol.hours?.[drv.id] || 0); if (!hh) return null; return { d, drv, hol, holiday: true, exp: hh, est: false, act: hh, actEst: hh, actIsEst: false, actHow: "public holiday · paid", tracked: false, train: 0, spend: hh * rate, runs: 0, done: 0, effRows: [], D: null }; }
+  const sk = sickLeave(drv.id, d);
+  if (sk) { const D0 = dayShifts(S.shifts.filter(s => s.day === d && s.driver === drv.id), S.runsBy, drv.id)[d] || null; const hh = sk.paid ? sickHours(drv, d, sk) : 0;   // paid sick day = staff cost; unpaid = nothing
+    return { d, drv, sick: sk, holiday: false, exp: hh, est: false, act: hh, actEst: hh, actIsEst: false, actHow: sk.paid ? `sick · paid ${hh.toFixed(2)} h${sk.hours != null ? "" : " (average day)"}` : "sick · unpaid", tracked: false, train: 0, spend: hh * rate, rate, runs: 0, done: 0, effRows: [], runSegs: [], eods: [], D: D0 }; }
   const D = dayShifts(S.shifts.filter(s => s.day === d && s.driver === drv.id), S.runsBy, drv.id)[d]; if (!D) return null;
   const runSegs = D.segs.filter(x => !x.sort); const sod = D.segs.map(x => S.sodBy[x.shift.id]).find(Boolean); const eods = runSegs.map(x => S.eodBy[x.shift.id]).filter(Boolean);
   const sortRost = D.segs.filter(x => x.sort).reduce((a, x) => a + ((x.en ?? x.st) - x.st), 0);

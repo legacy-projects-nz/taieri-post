@@ -3,6 +3,7 @@
 // The owner can override either way; other staff with the leave area get the default.
 import { sb, q, label, esc, toast, first } from "/shared/core.js";
 import { S, sheet, nm, fn } from "/admin/admin.js";
+import { sickHours } from "/admin/live.js";
 
 export const SIX_MONTHS_NOTE = "Sick leave is paid once someone has been employed for 6 months.";
 
@@ -27,21 +28,25 @@ export function sickSheet(driver, day) {
   const canLeave = S.me.isOwner || S.me.can("leave"); if (!canLeave) return toast("You need the Leave area to mark someone sick", "err");
   const cur = sickOn(driver, day); const def = sickDefault(driver, day); const owner = S.me.isOwner;
   let paid = cur ? cur.paid : def.paid;
+  const auto = sickHours(S.peopleBy[driver] || { id: driver }, day, null); const hrs0 = cur?.hours != null ? +cur.hours : auto;
   const btn = (v, txt) => `<button type="button" class="btn ${paid === v ? "" : "ghost"}" data-paid="${v}" ${owner ? "" : "disabled"} style="flex:1">${txt}</button>`;
   sheet(`<h3>${esc(nm(driver))} · ${label(day)}</h3>
     <p class="meta">${cur ? "Already off sick this day." : "Mark off sick for the whole day."}</p>
     <div class="card" style="margin:10px 0"><div class="row" style="gap:6px" id="pd">${btn(true, "Paid")}${btn(false, "Unpaid")}</div>
+      <label class="f" id="hrs-w" style="margin-top:8px;${paid === false ? "display:none" : ""}">Paid hours for the day<input class="in" id="sk-hrs" inputmode="decimal" value="${hrs0}" ${owner ? "" : "disabled"}></label>
+      <p class="hint" style="margin-top:4px" id="hrs-why">${cur?.hours != null ? "Set by hand." : `Their average worked day over the last 4 weeks (at least what was rostered). Counts as staff cost at $${(+(S.peopleBy[driver]?.rate || S.C.rules.hourRate)).toFixed(2)}/h.`}</p>
       <p class="hint" style="margin-top:8px">${esc(def.why)}<br>${SIX_MONTHS_NOTE}${owner ? " You can change it either way." : " Only the owner can change paid / unpaid."}</p></div>
     <input class="in" id="sk-note" placeholder="Note (optional), e.g. texted at 5:40am" value="${esc(cur?.notes && !/^Entered by/.test(cur.notes) ? cur.notes : "")}" style="width:100%;margin-bottom:10px">
     <div class="row" style="gap:6px"><button class="btn" id="sk-go" style="flex:2">${cur ? "Save" : "Mark off sick"}</button>${cur ? `<button class="btn crit ghost" id="sk-del" style="flex:1">Not sick</button>` : ""}</div>
     <p class="hint">Their shift stays on the board marked "sick" so you can see who to cover. Tap the tile as normal to put someone else on it.</p>`, (bg, close) => {
-    bg.querySelectorAll("[data-paid]").forEach(b => b.onclick = () => { paid = b.dataset.paid === "true"; bg.querySelectorAll("[data-paid]").forEach(x => x.classList.toggle("ghost", x !== b)); });
+    bg.querySelectorAll("[data-paid]").forEach(b => b.onclick = () => { paid = b.dataset.paid === "true"; bg.querySelectorAll("[data-paid]").forEach(x => x.classList.toggle("ghost", x !== b)); bg.querySelector("#hrs-w").style.display = paid ? "" : "none"; });
     bg.querySelector("#sk-go").onclick = async () => {
       if (paid == null) return toast("Pick paid or unpaid", "err");
+      const hv = bg.querySelector("#sk-hrs").value.trim(); const hours = !paid ? null : hv === "" || +hv === auto ? null : +hv; if (hv !== "" && !(+hv >= 0)) return toast("Hours must be a number", "err");
       const note = bg.querySelector("#sk-note").value.trim(); const notes = note || `Entered by ${first(S.me.name)}`;
-      if (cur) await q(sb.from("leave_requests").update({ paid, notes }).eq("id", cur.id));
-      else await q(sb.from("leave_requests").insert({ driver, type: "sick", date_from: day, date_to: day, part: "full", notes, status: "approved", decided_by: S.me.id, decided_at: new Date().toISOString(), acked_email_at: new Date().toISOString(), paid }));
-      close(); toast(`${first(nm(driver))} off sick · ${paid ? "paid" : "unpaid"}`, "ok"); };
+      if (cur) await q(sb.from("leave_requests").update({ paid, notes, hours }).eq("id", cur.id));
+      else await q(sb.from("leave_requests").insert({ driver, type: "sick", date_from: day, date_to: day, part: "full", notes, status: "approved", decided_by: S.me.id, decided_at: new Date().toISOString(), acked_email_at: new Date().toISOString(), paid, hours }));
+      close(); toast(`${first(nm(driver))} off sick · ${paid ? `paid ${hours ?? auto} h` : "unpaid"}`, "ok"); };
     bg.querySelector("#sk-del")?.addEventListener("click", async () => { await q(sb.from("leave_requests").update({ status: "cancelled", reply: `Not sick after all · ${first(S.me.name)}` }).eq("id", cur.id)); close(); toast("Sick day removed", "ok"); });
   });
 }

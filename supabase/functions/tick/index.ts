@@ -26,7 +26,12 @@ Deno.serve(async (req) => {
 
   // per driver today
   const byDrv: Record<string, any[]> = {}; for (const s of todays) (byDrv[s.driver] ??= []).push(s);
+  // off for the whole day (sick, annual leave…): don't chase their SOD / EODs, and clear anything already raised
+  const { data: offRows } = await sb.from("leave_requests").select("driver").eq("status", "approved").eq("part", "full").lte("date_from", t).gte("date_to", t);
+  const offToday = new Set((offRows || []).map((l: any) => l.driver));
+  for (const a of alertsOpen) if (a.driver && offToday.has(a.driver) && /^(sod_late|eod_late)\|/.test(a.dedupe_key || "") && (a.dedupe_key || "").includes(`|${t}|`)) resolve.push(a.id);
   for (const [drv, list] of Object.entries(byDrv)) {
+    if (offToday.has(drv)) continue;
     const segs = list.map(s => ({ s, ...win(s), sort: isSort(s.run) })).filter(x => x.st != null).sort((a, b) => a.st! - b.st!);
     segs.forEach((x, i) => { if (x.sort && (x.en == null || x.en <= x.st!)) { const nx = segs.slice(i + 1).find(y => !y.sort); x.en = nx ? Math.min(nx.st!, x.st! + 180) : x.st! + 90; } });
     if (!segs.length) continue;
