@@ -41,6 +41,37 @@ const perTxt = g => g.per === "month" ? `$${(+g.amt).toLocaleString()}/month ÷ 
 const parcelsOf = shift => { if (!shift) return null; const ov = S.ovs.find(o => o.shift_id === shift.id); if (ov?.parcels != null) return +ov.parcels; const e = S.eodBy?.[shift.id]; return e?.parcels != null ? +e.parcels : null; };
 const tgeSouth = d => +(S.set?.tge_south?.[d] || 0);
 
+// NZ public holidays (observed dates) for a year, with Otago Anniversary for Dunedin. Matariki is set by law year by year.
+const MATARIKI = { 2025: "06-20", 2026: "07-10", 2027: "06-25", 2028: "07-14", 2029: "07-06", 2030: "06-21", 2031: "07-11", 2032: "07-02", 2033: "06-24", 2034: "07-07", 2035: "06-29" };
+const holCache = {};
+function nzHolidays(y) {
+  if (holCache[y]) return holCache[y];
+  const iso = (m, d) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`; const wd = (m, d) => new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 Sun … 6 Sat
+  const H = new Set(); const pair = (m, d) => { const w = wd(m, d); const x = w === 5 ? [d, d + 3] : w === 6 ? [d + 2, d + 3] : w === 0 ? [d + 1, d + 2] : [d, d + 1]; x.forEach(v => H.add(iso(m, v))); };   // two-day pairs: Christmas/Boxing, 1–2 January
+  const mon = (m, d) => { const w = wd(m, d); H.add(iso(m, w === 6 ? d + 2 : w === 0 ? d + 1 : d)); };   // Mondayised: Waitangi, ANZAC
+  const nthMon = (m, n) => { let d = 1; while (wd(m, d) !== 1) d++; return d + 7 * (n - 1); };
+  pair(1, 1); pair(12, 25); mon(2, 6); mon(4, 25); H.add(iso(6, nthMon(6, 1))); H.add(iso(10, nthMon(10, 4)));
+  // Easter (anonymous Gregorian algorithm) → Good Friday, Easter Monday
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, dd = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - dd - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451), em = Math.floor((h + l - 7 * m + 114) / 31), ed = ((h + l - 7 * m + 114) % 31) + 1;
+  const easter = new Date(Date.UTC(y, em - 1, ed)); const off = n => new Date(easter.getTime() + n * 86400000).toISOString().slice(0, 10); H.add(off(-2)); const eMon = off(1); H.add(eMon);
+  // Otago Anniversary: the Monday nearest 23 March (Tuesday after if that's Easter Monday)
+  { const w = wd(3, 23); let d = 23 + (w === 1 ? 0 : w <= 4 ? 1 - w : 8 - w); let o = iso(3, d); if (o === eMon) o = off(2); H.add(o); }
+  if (MATARIKI[y]) H.add(`${y}-${MATARIKI[y]}`);
+  return (holCache[y] = H);
+}
+const isHoliday = d => nzHolidays(+d.slice(0, 4)).has(d);
+// the next 12 months from the week shown, day by day: each day takes that weekday's figures from the week on screen
+// (so weekdays, Saturdays and Sunday food bag each count the right number of times). Public holidays: no income, staff still paid.
+function yearAhead(wk, week) {
+  let fees = 0, staff = 0, est = false; const n = { wd: 0, sat: 0, sun: 0, hol: 0 };
+  for (let i = 0; i < 365; i++) { const d = addDays(wk, i); const w = dow(d); const t = week[w]; const hol = isHoliday(d);
+    if (hol) n.hol++; else if (w < 5) n.wd++; else if (w === 5) n.sat++; else n.sun++;
+    if (!hol) fees += t.fees; staff += t.staff; est = est || t.fe || t.se; }
+  const costs = costMonth() * 12;
+  return { fees, staff, costs, left: fees - staff - costs, est, n };
+}
+const yearLine = (v, how) => `<div class="s mn-est" style="font-size:11px;margin-top:2px" title="${esc(how)}">≈${money0(v)} a year</div>`;
+
 const cache = {};   // day → pick-up rows for that day + the 8 weeks before it (for estimates)
 async function loadDay(d) {
   if (cache[d]) return; cache[d] = { loading: true, rows: [], hist: [] };
@@ -100,17 +131,18 @@ export function moneyCard(d) {
   const wk = monOf(d); for (let i = 0; i < 7; i++) if (!cache[addDays(wk, i)]) loadDay(addDays(wk, i));
   const M = model(); const rows = breakdown(d); const T = totals(rows); cur = { d, rows };
   const C = costDay(rows); const wkRows = Array.from({ length: 7 }, (_, i) => breakdown(addDays(wk, i))); const week = wkRows.map(totals); const wkFees = week.reduce((a, t) => a + t.fees, 0), wkStaff = week.reduce((a, t) => a + t.staff, 0), wkCost = wkRows.reduce((a, r) => a + costDay(r), 0); const wkEst = week.some(t => t.fe || t.se);
-  const month = wkFees * WK_PER_MONTH; const monthProfit = (wkFees - wkStaff - wkCost) * WK_PER_MONTH;
+  const Y = yearAhead(wk, week); const month = Y.fees / 12; const monthProfit = Y.left / 12;
+  const yHow = `Next 12 months from ${label(wk)}: ${Y.n.wd} weekdays, ${Y.n.sat} Saturdays, ${Y.n.sun} Sundays (food bag), ${Y.n.hol} public holidays (no income, staff still paid). Each day uses that weekday's figures from the week of ${label(wk)}.`;
   const tr = (r, i) => { const net = r.fees - r.staff; const fe = r.feeEst && r.fees > 0, se = r.est && r.staff > 0;
     return `<tr class="mn-row" data-mnrow="${i}" title="Tap for the detail"><td><b>${esc(r.run)}</b>${r.st != null ? `<div class="meta">${fmtT(r.st)}–${fmtT(r.en)}</div>` : ""}</td><td>${r.driver ? esc(nm(r.driver)) : `<span class="meta">not rostered</span>`}</td>
       <td align="right">${r.fees ? amt(r.fees, fe) : `<span class="meta">—</span>`}</td><td align="right">${r.fees ? amt(r.fees * (1 + GST), fe) : ""}</td>
       <td align="right">${r.unpaid ? `<span class="meta">unpaid</span>` : amt(r.staff, se)}</td><td align="right"><b>${amt(net, fe || se)}</b></td></tr>`; };
   return `${STYLE}<div class="card"><h2>Day budget<span>${label(d)} · income − staff − costs · <span class="mn-est">≈ grey = estimate</span> · <span class="mn-fin">green = final</span> · tap for detail</span></h2>
-    <div class="tiles"><button class="tile mn-t" data-mnall="1"><div class="l">Income</div><div class="v ${cls(T.fe)}">${T.fe ? "≈" : ""}${money(T.fees)}</div><div class="s">+ GST ${money(T.fees * GST)} = ${money(T.fees * (1 + GST))}</div></button>
-      <button class="tile mn-t" data-mnall="1"><div class="l">Staff costs</div><div class="v ${cls(T.se)}">${T.se ? "≈" : ""}${money(T.staff)}</div><div class="s">hours × each driver's rate</div></button>
-      <button class="tile mn-t" data-mnall="1"><div class="l">Business costs</div><div class="v mn-est">≈${money(C)}</div><div class="s">${money0(costMonth())}/month ÷ ${COST_DAYS} days · Xero + cashflow</div></button>
-      <button class="tile mn-t" data-mnall="1"><div class="l">Left after costs</div><div class="v ${cls(T.fe || T.se || C > 0)}">${T.fe || T.se || C > 0 ? "≈" : ""}${money(T.fees - T.staff - C)}</div><div class="s">income − staff − costs, before GST</div></button>
-      <button class="tile mn-t" data-mnweek="${wk}"><div class="l">Month at this pace</div><div class="v ${cls(wkEst)}">${wkEst ? "≈" : ""}${money0(month)}</div><div class="s">week of ${label(wk)}: ${money0(wkFees)} in · ${money0(wkStaff)} staff · ${money0(wkCost)} costs · ≈${money0(monthProfit)}/month left · target ${money0(M.target)}/month (${month >= M.target ? "+" : "−"}${money0(Math.abs(month - M.target))})</div></button></div>
+    <div class="tiles"><button class="tile mn-t" data-mnall="1"><div class="l">Income</div><div class="v ${cls(T.fe)}">${T.fe ? "≈" : ""}${money(T.fees)}</div><div class="s">+ GST ${money(T.fees * GST)} = ${money(T.fees * (1 + GST))}</div>${yearLine(Y.fees, yHow)}</button>
+      <button class="tile mn-t" data-mnall="1"><div class="l">Staff costs</div><div class="v ${cls(T.se)}">${T.se ? "≈" : ""}${money(T.staff)}</div><div class="s">hours × each driver's rate</div>${yearLine(Y.staff, yHow)}</button>
+      <button class="tile mn-t" data-mnall="1"><div class="l">Business costs</div><div class="v mn-est">≈${money(C)}</div><div class="s">${money0(costMonth())}/month ÷ ${COST_DAYS} days · Xero + cashflow</div>${yearLine(Y.costs, `${money0(costMonth())}/month × 12`)}</button>
+      <button class="tile mn-t" data-mnall="1"><div class="l">Left after costs</div><div class="v ${cls(T.fe || T.se || C > 0)}">${T.fe || T.se || C > 0 ? "≈" : ""}${money(T.fees - T.staff - C)}</div><div class="s">income − staff − costs, before GST</div>${yearLine(Y.left, yHow)}</button>
+      <button class="tile mn-t" data-mnweek="${wk}"><div class="l">Month at this pace</div><div class="v ${cls(wkEst)}">${wkEst ? "≈" : ""}${money0(month)}</div><div class="s">week of ${label(wk)}: ${money0(wkFees)} in · ${money0(wkStaff)} staff · ${money0(wkCost)} costs · ≈${money0(monthProfit)}/month left · target ${money0(M.target)}/month (${month >= M.target ? "+" : "−"}${money0(Math.abs(month - M.target))}) · month = year ÷ 12</div>${yearLine(Y.fees, yHow)}</button></div>
     ${rows.length ? `<div class="scroll"><table class="dt"><tr><th>Run</th><th>Driver</th><th align="right">Income</th><th align="right">Incl GST</th><th align="right">Staff</th><th align="right">Income − staff</th></tr>${rows.map(tr).join("")}
       <tr class="mn-row" data-mnall="1"><td colspan="2"><b>Total</b></td><td align="right"><b>${amt(T.fees, T.fe)}</b></td><td align="right"><b>${amt(T.fees * (1 + GST), T.fe)}</b></td><td align="right"><b>${amt(T.staff, T.se)}</b></td><td align="right"><b>${amt(T.fees - T.staff, T.fe || T.se)}</b></td></tr>
       <tr class="mn-row" data-mnall="1"><td colspan="5">Business costs <span class="meta">(estimate)</span></td><td align="right">${amt(-C, true)}</td></tr>
