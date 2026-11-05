@@ -1,7 +1,8 @@
 // Taieri Post · driver app
-import { sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, longLabel, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, enablePush, pushState, nzToIso, settings as loadSettings, signOut } from "/shared/core.js";
+import { DEMO, sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, longLabel, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, enablePush, pushState, nzToIso, settings as loadSettings, signOut } from "/shared/core.js";
 import { requireUser } from "/shared/auth.js";
 import { VAPID_PUBLIC } from "/shared/config.js";
+import { resetDemo, newRuns } from "/shared/demo.js";
 import { cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, NET, PICKUP_RUNS, LEG_RUNS, effCalc, setEvidence } from "/shared/score.js";
 
 const app = $("#app");
@@ -97,6 +98,15 @@ function viewBar() {
     ${S.viewAs ? `<div class="row" style="align-items:center;gap:6px"><span class="chip ${loginState(S.viewAs.id).cls}">${loginState(S.viewAs.id).tag}</span><span class="meta">${esc(loginState(S.viewAs.id).txt)}</span></div>` : ""}</div>`;
 }
 
+/* ================= demo profile bar ================= */
+function demoBar() {
+  if (!DEMO) return "";
+  return `<div class="card" style="position:sticky;top:6px;z-index:5;border:2px solid var(--warn);padding:8px 12px;gap:6px">
+    <div class="row" style="align-items:center;gap:8px"><span class="mono" style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--warn);flex:1 1 auto">Demo · play with it, nothing is saved to Taieri Post</span>
+      <button class="btn ghost sm" id="demo-reset" style="flex:0 0 auto" title="Put today's data back how it started">↺ Reset</button>
+      <button class="btn ghost sm" id="demo-new" style="flex:0 0 auto" title="A different roster, van and history">🎲 New runs</button></div></div>`;
+}
+
 /* ================= render ================= */
 const pair = (a, b) => a && b ? `<div class="pair">${a}${b}</div>` : (a || b || "");   // two boxes across wherever both exist, on phones too
 function render() {
@@ -105,7 +115,7 @@ function render() {
   const T = S.days[t];
   const nextDay = Object.values(S.days).filter(d => d.day > t).sort((a, b) => a.day < b.day ? -1 : 1)[0];
   app.innerHTML = `<div class="wrap">
-    ${viewBar()}
+    ${demoBar()}${viewBar()}
     <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
     ${quickBar(T, n)}
     ${todayCard(T, nextDay, n)}
@@ -509,6 +519,8 @@ function moreCard() {
 /* ================= wiring ================= */
 function wire() {
   $("#signout")?.addEventListener("click", signOut);
+  $("#demo-reset")?.addEventListener("click", async () => { resetDemo(); S.open = {}; S.scSel = null; await loadAll(); render(); toast("Demo reset ↺", "ok"); });
+  $("#demo-new")?.addEventListener("click", async () => { newRuns(); S.open = {}; S.scSel = null; await loadAll(); render(); toast("New runs 🎲", "ok"); });
   $("#view-as")?.addEventListener("click", async () => { await loadGps(); const list = S.drivers.filter(d => d.id !== S.viewer.id);
     sheet(`<h3>View as</h3><p class="meta">White = not signed in · <span class="c-ok">light green</span> = signed in to the app · <b class="c-ok">dark green</b> = GPS in the last 20 min</p><div class="vagrid"><button class="vapick" data-va="">— me (${esc(first(S.viewer.name))}) —</button>${list.map(d => { const st = appState(d.id); return `<button class="vapick ${st} ${S.viewAs?.id === d.id ? "cur" : ""}" data-va="${d.id}"><b>${esc(d.name)}</b>${d.role !== "driver" ? ` <span class="meta">(${esc(d.role)})</span>` : ""}<span class="meta">${st === "gps" ? `GPS ${ago(S.gps[d.id])}` : esc(loginState(d.id).tag)}</span></button>`; }).join("")}</div>`,
       (bg, close) => bg.querySelectorAll("[data-va]").forEach(b => b.onclick = () => { close(); location.hash = b.dataset.va ? "as=" + b.dataset.va : ""; })); });

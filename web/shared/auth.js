@@ -1,5 +1,6 @@
 // Sign-in screen (email code / link) and two-factor for staff
 import { sb, session, sendCode, verifyCode, me, aal, esc, $, h, toast } from "./core.js";
+import { DEMO_EMAILS, startDemo } from "./demo.js";
 
 const WHO = "Taieri Post";
 
@@ -34,6 +35,7 @@ function signInScreen(root) {
       <p class="foot">Safe. Sharp. Swift.</p></div>`;
     const f1 = $("#f1", root), f2 = $("#f2", root); let email = "";
     f1.onsubmit = async e => { e.preventDefault(); email = $("#em", root).value.trim().toLowerCase(); const b = f1.querySelector("button"); b.disabled = true; b.textContent = "Sending…";
+      if (DEMO_EMAILS.includes(email)) { startDemo(); location.reload(); return; }   // demo profile: no code needed, nothing real behind it
       try { await sendCode(email); $("#emb", root).textContent = email; f1.classList.add("hidden"); f2.classList.remove("hidden"); $("#code", root).focus(); }
       catch (err) { toast(err.message || "Couldn't send the email", "err"); b.disabled = false; b.textContent = "Email me a sign-in code"; } };
     $("#again", root).onclick = async () => { try { await sendCode(email); toast("Sent again", "ok"); } catch (err) { toast(err.message, "err"); } };

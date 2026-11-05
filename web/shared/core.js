@@ -1,8 +1,11 @@
 // Shared runtime: Supabase client, sign-in, NZ time, formatting, realtime, small UI helpers
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/+esm";
 import { SUPABASE_URL, SUPABASE_KEY, TZ } from "./config.js";
+import { isDemo, demoClient } from "./demo.js";
 
-export const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" } });
+// Demo profile (made-up driver, data kept only in this browser) swaps in a pretend client; everything else talks to Supabase
+export const DEMO = isDemo();
+export const sb = DEMO ? demoClient() : createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" } });
 
 /* ---------- NZ time ---------- */
 const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
