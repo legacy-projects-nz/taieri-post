@@ -1,4 +1,4 @@
-// Pick-ups tab: Rural / Owaka / Lawrence parcel pick-ups that are invoiced separately.
+// Pick-ups tab: Rural / South / Owaka / Lawrence parcel pick-ups that are invoiced separately.
 // Drivers log counts in the app. Two sub-tabs:
 //   Invoices   – month totals per customer + extra lines, exported as a Xero sales-invoice CSV (one invoice per customer)
 //   Data entry – owner/admin enter counts for any driver, edit or delete entries, and add extra invoice lines
@@ -6,9 +6,10 @@
 import { sb, q, today, addDays, label, esc, $, $$, toast } from "/shared/core.js";
 import { S, sheet, opt, nm, render } from "/admin/admin.js";
 
-export const AREAS = ["Rural", "Owaka", "Lawrence"];
+export const AREAS = ["Rural", "South", "Owaka", "Lawrence"];
+const TGE_AREAS = ["Rural", "South"];   // TGE pick-ups only happen on these
 const SOURCES = [["depot", "Depot"], ["customer", "Customer"]];
-const AREA_SHORT = { Lawrence: "Law", Owaka: "Owaka", Rural: "Rural" };
+const AREA_SHORT = { Lawrence: "Law", Owaka: "Owaka", Rural: "Rural", South: "South" };
 export const CUSTOMERS = {
   NZC: { name: "NZ Couriers - Aaron Johnston", short: "NZC", due: 7, acct: "200", tax: "15% GST on Income", small: { code: "NZCS", rate: 4.5, desc: "NZC - Small" }, large: { code: "NZCL", rate: 8, desc: "NZ Couriers - Large" } },
   PH: { name: "Post Haste", short: "Post Haste", due: 7, acct: "200", tax: "15% GST on Income", small: { code: "PHS", rate: 4, desc: "Post Haste - Small" }, large: { code: "PHL", rate: 8, desc: "Post Haste - Large" } },
@@ -87,7 +88,7 @@ function invoicesView() {
       ${L.length ? `<div class="scroll"><table class="dt"><tr><th>Item</th><th>Description</th><th>Acct</th><th align="right">Qty</th><th align="right">Rate</th><th align="right">Amount</th></tr>${L.map(l => `<tr><td class="meta">${esc(l.code)}</td><td>${esc(l.desc)}${l.extra ? ` <span class="meta">· extra</span>` : ""}</td><td>${esc(l.acct)}</td><td align="right">${l.qty}</td><td align="right">${money(l.price)}</td><td align="right">${money(l.qty * l.price)}</td></tr>`).join("")}</table></div>` : `<p class="meta">No pick-ups or extras for ${MONTH_L[m - 1]}.</p>`}
       <div class="row" style="margin-top:8px;align-items:flex-end"><label class="f" style="flex:1 1 200px">Reference${c === "TGE" ? " (PO number)" : ""}<input class="in" data-ref="${c}" value="${esc(refFor(c))}" placeholder="${c === "TGE" ? "e.g. PO100022976" : ""}"></label>
         ${canEdit() ? `<button class="btn ghost sm" data-x-add="${c}" style="flex:0 0 auto">+ Extra item</button>` : ""}${L.length ? `<button class="btn sm" data-xero="${c}" style="flex:0 0 auto">Export to Xero (CSV)</button>` : ""}</div></div>`; }).join("");
-  return `<div class="card"><h2>Pick-ups to invoice<span>Rural · Owaka · Lawrence</span></h2>
+  return `<div class="card"><h2>Pick-ups to invoice<span>Rural · South · Owaka · Lawrence</span></h2>
     <p class="hint">Drivers enter counts in their app; you can add or fix them under Data entry. Each month becomes one invoice per customer, dated the last day of the month, using the same Xero items, accounts and wording as your existing invoices. Export, then in Xero go to Sales › Invoices › Import and upload the file; invoices come in as drafts to check and approve.</p>
     ${any ? `<div class="row"><button class="btn sm" id="xero-all" style="flex:0 0 auto">Export all customers to Xero (one CSV)</button></div>` : ""}</div>
     ${cards}
@@ -171,7 +172,7 @@ export function pickupSheet(existing = null, onSaved = null) {
       ev.preventDefault(); const g = x => bg.querySelector("#" + x).value; const s = +g("pu-s") || 0, l = +g("pu-l") || 0;
       if (!s && !l) return toast("Enter at least one parcel", "err");
       const row = { day: g("pu-day"), area: g("pu-area"), customer: g("pu-cust"), source: g("pu-src"), small: s, large: l, note: g("pu-n") || null };
-      if (row.customer === "TGE" && row.area !== "Rural") return toast("TGE pick-ups are Rural (South) only", "err");
+      if (row.customer === "TGE" && !TGE_AREAS.includes(row.area)) return toast("TGE pick-ups are Rural or South only", "err");
       const { error } = existing ? await sb.from("pickups").update(row).eq("id", existing.id) : await sb.from("pickups").insert({ ...row, driver: S.viewer?.id || S.me.id, created_by: S.viewer?.id || S.me.id });
       if (error) return toast(error.message, "err"); toast("Saved", "ok"); close(); if (onSaved) await onSaved(); });
   });
@@ -184,15 +185,15 @@ export function wirePickups() {
   $$("[data-save]").forEach(b => b.onclick = async () => { const id = b.dataset.save; const v = k => $(`[data-row="${id}"][data-k="${k}"]`).value;
     const row = { day: v("day"), area: v("area"), customer: v("customer"), source: v("source"), small: Math.max(0, parseInt(v("small")) || 0), large: Math.max(0, parseInt(v("large")) || 0), driver: v("driver") || null, note: v("note").trim() || null };
     if (!row.small && !row.large) return toast("Enter at least one parcel, or delete the line", "err");
-    if (row.customer === "TGE" && row.area !== "Rural") return toast("TGE pick-ups are Rural (South) only", "err");
+    if (row.customer === "TGE" && !TGE_AREAS.includes(row.area)) return toast("TGE pick-ups are Rural or South only", "err");
     const { error } = await sb.from("pickups").update(row).eq("id", id); if (error) return toast(error.message, "err"); toast("Saved", "ok"); await reload(); });
   $("#pe-f")?.addEventListener("submit", async ev => { ev.preventDefault(); const v = k => Math.max(0, parseInt($(`[data-pe="${k}"]`).value) || 0);
     const base = { day: $("#pe-day").value, area: $("#pe-area").value, driver: $("#pe-drv").value || null, note: $("#pe-n").value.trim() || null, created_by: S.me.id };
-    const ins = Object.keys(CUSTOMERS).filter(c => c !== "TGE" || base.area === "Rural").flatMap(c => SOURCES.map(([src]) => ({ ...base, customer: c, source: src, small: v(`${c}.${src}.small`), large: v(`${c}.${src}.large`) }))).filter(r => r.small || r.large);
+    const ins = Object.keys(CUSTOMERS).filter(c => c !== "TGE" || TGE_AREAS.includes(base.area)).flatMap(c => SOURCES.map(([src]) => ({ ...base, customer: c, source: src, small: v(`${c}.${src}.small`), large: v(`${c}.${src}.large`) }))).filter(r => r.small || r.large);
     if (!ins.length) return toast("Enter at least one parcel", "err");
     const { error } = await sb.from("pickups").insert(ins); if (error) return toast(error.message, "err"); toast(`Saved ${ins.length} line${ins.length > 1 ? "s" : ""}`, "ok");
     if (monthOf(base.day) !== ym) ym = monthOf(base.day); await reload(); });
-  const tgeRow = () => { const r = $("[data-tge-row]"); if (r) r.hidden = $("#pe-area")?.value !== "Rural"; }; $("#pe-area")?.addEventListener("change", tgeRow); tgeRow();
+  const tgeRow = () => { const r = $("[data-tge-row]"); if (r) r.hidden = !TGE_AREAS.includes($("#pe-area")?.value); }; $("#pe-area")?.addEventListener("change", tgeRow); tgeRow();
   $$("[data-x-add]").forEach(b => b.onclick = () => extraSheet(null, b.dataset.xAdd));
   $$("[data-x-edit]").forEach(b => b.onclick = () => extraSheet(extras.find(x => x.id === b.dataset.xEdit)));
   $$("[data-x-del]").forEach(b => b.onclick = async () => { if (!confirm("Remove this extra item?")) return; await q(sb.from("invoice_extras").delete().eq("id", b.dataset.xDel)); await reload(); });

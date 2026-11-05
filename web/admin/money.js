@@ -10,7 +10,7 @@ import { S, nm, render } from "/admin/admin.js";
 import { driverDay } from "/admin/live.js";
 
 const GST = 0.15;
-const AREA_RUNS = { Rural: ["TUA"], Lawrence: ["LAW"], Owaka: ["DB", "FLY"] };   // which run a pick-up area's fees land on
+const AREA_RUNS = { Rural: ["TUA"], South: ["TUA", "DB"], Lawrence: ["LAW"], Owaka: ["DB", "FLY"] };   // which run a pick-up area's fees land on
 const money = n => (n < 0 ? "−$" : "$") + Math.abs(n).toFixed(2);
 const DEF = { small: 5, large: 8, base: { RSB: 400, PCB: 400, TUA: 400, FLY: 400 }, ramParcel: 1.8, dbParcel: 6, tgeWeek: 2000, tgeDays: 5, tgeParcel: 1.25 };
 const dayRates = () => { const v = S.set?.money_rates || {}; return { ...DEF, ...v, base: { ...DEF.base, ...(v.base || {}) } }; };
@@ -49,7 +49,7 @@ function breakdown(d) {
   const pu = {}; for (const p of cache[d]?.rows || []) { if (p.customer === "TGE") continue; const a = (pu[p.area] ??= { small: 0, large: 0 }); a.small += p.small || 0; a.large += p.large || 0; }
   for (const [area, a] of Object.entries(pu)) { const fee = a.small * R.small + a.large * R.large; if (!fee) continue; const row = feeRow(area); row.fees += fee;
     row.feeLines.push(`${area}: ${a.small} small × $${R.small}${a.large ? ` + ${a.large} large × $${R.large}` : ""}`); }
-  const tge = tgeSouth(d); if (tge) { const row = feeRow("Rural"); row.fees += tge; row.feeLines.push(`TGE South total $${tge.toFixed(2)}`); }
+  const tge = tgeSouth(d); if (tge) { const row = feeRow("South"); row.fees += tge; row.feeLines.push(`TGE South total $${tge.toFixed(2)}`); }
   rows.sort((a, b) => (a.noRun ? 1 : 0) - (b.noRun ? 1 : 0) || (a.sort ? 1 : 0) - (b.sort ? 1 : 0) || (a.st ?? 0) - (b.st ?? 0));
   return rows;
 }
@@ -82,7 +82,7 @@ export function moneyCard(d) {
         <label class="f" style="flex:1 1 110px">TGE $/parcel<input class="in" id="mn-tp" inputmode="decimal" value="${R.tgeParcel}"></label>
         <label class="f" style="flex:1 1 110px">Pick-up small $<input class="in" id="mn-s" inputmode="decimal" value="${R.small}"></label><label class="f" style="flex:1 1 110px">Pick-up large $<input class="in" id="mn-l" inputmode="decimal" value="${R.large}"></label>
         <button class="btn sm" type="submit" style="flex:0 0 auto">Save rates</button></div></details></form>
-    <p class="hint">Run income: RSB, PCB, TUA and Flyer a day base each; Outram and D>B per parcel; TGE runs the weekly base shared over the TGE runs each day, plus per parcel. Parcels come from the EOD, so those lines fill in once it's posted. Pick-up fees cover NZ Couriers and Post Haste on Rural, Lawrence and Owaka. TGE goes in as one total for South and sits on the Rural run. Staff cost is each driver's day split across their runs by rostered time.</p></div>`;
+    <p class="hint">Run income: RSB, PCB, TUA and Flyer a day base each; Outram and D>B per parcel; TGE runs the weekly base shared over the TGE runs each day, plus per parcel. Parcels come from the EOD, so those lines fill in once it's posted. Pick-up fees cover NZ Couriers and Post Haste on Rural, South, Lawrence and Owaka. TGE goes in as one total for South, on the same line as the South pick-ups. Staff cost is each driver's day split across their runs by rostered time.</p></div>`;
 }
 
 export function wireMoney(d) {
