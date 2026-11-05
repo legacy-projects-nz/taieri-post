@@ -456,7 +456,7 @@ function detailsCard() {
 const PU_CUST = { NZC: "NZ Couriers", PH: "Post Haste", TGE: "TGE (NZ National Network)" };
 // Runs that do invoiced pick-ups, and the area they're usually in
 const PU_AREA = { TUA: "Rural", FLY: "Owaka", DB: "Owaka", LAW: "Lawrence" };
-const PU_AREAS = ["Rural", "South", "Owaka", "Lawrence"]; const PU_TGE = ["Rural", "South"];   // TGE pick-ups only on these
+const PU_AREAS = ["Rural", "South", "Owaka", "Lawrence"]; const puCust = a => a === "South" ? ["TGE"] : a === "Rural" ? ["NZC", "PH", "TGE"] : ["NZC", "PH"];   // South = TGE only; TGE also on Rural; never on Owaka / Lawrence
 const PU_SRC = ["depot", "customer"]; const PU_SRC_L = { depot: "depot", customer: "customer" };
 const puToday = T => (T?.segs || []).map(x => x.shift.run).find(r => PU_AREA[r]);
 function pickupsCard(T) {
@@ -472,12 +472,12 @@ function logPickup() {
   const area = PU_AREA[puToday(S.days[today()])] || "Lawrence";
   sheet(`<h3>Enter pick-ups</h3><form class="frm" id="pf"><label class="f">Date<input class="in" type="date" id="pu-day" value="${today()}" required></label>
     <label class="f">Area<select class="in" id="pu-area">${PU_AREAS.map(a => `<option ${a === area ? "selected" : ""}>${a}</option>`).join("")}</select></label>
-    <div class="full"><table class="dt" style="width:100%"><tr><th rowspan="2">Customer</th><th colspan="2">Depot</th><th colspan="2">Customer</th></tr><tr><th>Small</th><th>Large</th><th>Small</th><th>Large</th></tr>${Object.entries(PU_CUST).map(([k, v]) => `<tr${k === "TGE" ? ` data-tge-row${PU_TGE.includes(area) ? "" : ` hidden`}` : ""}><td>${esc(v)}</td>${PU_SRC.map(src => `<td><input class="in" data-pu="${k}.${src}.small" inputmode="numeric" placeholder="0" style="width:54px"></td><td><input class="in" data-pu="${k}.${src}.large" inputmode="numeric" placeholder="0" style="width:54px"></td>`).join("")}</tr>`).join("")}</table></div>
+    <div class="full"><table class="dt" style="width:100%"><tr><th rowspan="2">Customer</th><th colspan="2">Depot</th><th colspan="2">Customer</th></tr><tr><th>Small</th><th>Large</th><th>Small</th><th>Large</th></tr>${Object.entries(PU_CUST).map(([k, v]) => `<tr data-cust="${k}"${puCust(area).includes(k) ? "" : " hidden"}><td>${esc(v)}</td>${PU_SRC.map(src => `<td><input class="in" data-pu="${k}.${src}.small" inputmode="numeric" placeholder="0" style="width:54px"></td><td><input class="in" data-pu="${k}.${src}.large" inputmode="numeric" placeholder="0" style="width:54px"></td>`).join("")}</tr>`).join("")}</table></div>
     <label class="f full">Note (optional)<input class="in" id="pu-n"></label><button class="btn full" type="submit">Save pick-ups</button></form>`, (bg, close) => {
-    const tgeRow = () => { const r = bg.querySelector("[data-tge-row]"); if (r) r.hidden = !PU_TGE.includes(bg.querySelector("#pu-area").value); };
+    const tgeRow = () => { const ok = puCust(bg.querySelector("#pu-area").value); bg.querySelectorAll("[data-cust]").forEach(r => r.hidden = !ok.includes(r.dataset.cust)); };
     bg.querySelector("#pu-area").addEventListener("change", tgeRow);
     bg.querySelector("#pf").addEventListener("submit", async e => { e.preventDefault(); const g = x => bg.querySelector("#" + x).value; const v = k => Math.max(0, parseInt(bg.querySelector(`[data-pu="${k}"]`).value) || 0);
-      const rows = Object.keys(PU_CUST).filter(c => c !== "TGE" || PU_TGE.includes(g("pu-area"))).flatMap(c => PU_SRC.map(src => ({ day: g("pu-day"), area: g("pu-area"), customer: c, source: src, small: v(`${c}.${src}.small`), large: v(`${c}.${src}.large`), note: g("pu-n") || null, driver: S.me.id, created_by: S.me.id }))).filter(r => r.small || r.large);
+      const rows = Object.keys(PU_CUST).filter(c => puCust(g("pu-area")).includes(c)).flatMap(c => PU_SRC.map(src => ({ day: g("pu-day"), area: g("pu-area"), customer: c, source: src, small: v(`${c}.${src}.small`), large: v(`${c}.${src}.large`), note: g("pu-n") || null, driver: S.me.id, created_by: S.me.id }))).filter(r => r.small || r.large);
       if (!rows.length) return toast("Enter at least one parcel", "err");
       const { error } = await sb.from("pickups").insert(rows);
       if (error) return toast(error.message, "err"); close(); toast("Pick-ups saved ✓", "ok"); await loadAll(); render(); }); });

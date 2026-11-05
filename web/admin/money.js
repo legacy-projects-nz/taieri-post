@@ -85,7 +85,7 @@ export function moneyCard(d) {
         <label class="f" style="flex:1 1 110px">TGE $/parcel<input class="in" id="mn-tp" inputmode="decimal" value="${R.tgeParcel}"></label>
         <label class="f" style="flex:1 1 110px">Pick-up small $<input class="in" id="mn-s" inputmode="decimal" value="${R.small}"></label><label class="f" style="flex:1 1 110px">Pick-up large $<input class="in" id="mn-l" inputmode="decimal" value="${R.large}"></label>
         <button class="btn sm" type="submit" style="flex:0 0 auto">Save rates</button></div></details></form>
-    <p class="hint">Run income: $400 a day for PCB + RSB together and $400 a day for TUA + Flyer together, whether one or both run (split between them when both are on); Outram and D>B per parcel; TGE runs the weekly base shared over the TGE runs each day, plus per parcel. Parcels come from the EOD, so those lines fill in once it's posted. Pick-up fees cover NZ Couriers and Post Haste on Rural, South, Lawrence and Owaka. TGE goes in as one total for South, on the same line as the South pick-ups. Staff cost is each driver's day split across their runs by rostered time.</p></div>`;
+    <p class="hint">Run income: $400 a day for PCB + RSB together and $400 a day for TUA + Flyer together, whether one or both run (split between them when both are on); Outram and D>B per parcel; TGE runs the weekly base shared over the TGE runs each day, plus per parcel. Parcels come from the EOD, so those lines fill in once it's posted. Pick-up fees cover NZ Couriers and Post Haste on Rural, Lawrence and Owaka. TGE goes in as one total for South (TUA, or D>B if TUA is off). Staff cost is each driver's day split across their runs by rostered time.</p></div>`;
 }
 
 export function wireMoney(d) {
