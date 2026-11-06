@@ -1,6 +1,7 @@
 // Day budget (owner only, on the Live board when one day is picked): income − staff costs, run by run.
 //   Income – each run's base (a day, week or month figure, shared between the runs in its group whichever of them are on)
-//            plus so much a parcel on top where the run is paid by the parcel (parcels from the EOD). TGE also has a weekly base.
+//            For the runs with a total (PCB+RSB, TUA+Flyer, Lawrence, TGE, food bag) the base is half the total and the other half is
+//            parcels × a rate worked out from the 8-week average parcels (see groupRate). Parcels come from the EOD, the average until it's in.
 //            Plus Rural / Lawrence / Owaka / Balclutha pick-ups (NZ Couriers + Post Haste) and the TGE South total typed in. GST 15% on top.
 //   Staff  – each driver's cost for the day (the same hours × rate as Labour), split across their runs by rostered minutes.
 //            Jeremy's hours are unpaid, so his runs show $0 staff cost.
@@ -9,7 +10,7 @@
 //   Anything not in yet is estimated from the past 8 weeks (same weekday where there's enough) and shown grey; real figures show green.
 //   Tap a run (or a total) for the full detail. The "month at this pace" tile adds up the whole week and scales it to a month.
 import { sb, q, esc, $, $$, toast, fmtT, today, addDays, dow, monOf, label } from "/shared/core.js";
-import { evidenceFor } from "/shared/score.js";
+import { evidenceFor, evidence } from "/shared/score.js";
 import { S, nm, render, sheet } from "/admin/admin.js";
 import { driverDay } from "/admin/live.js";
 
@@ -24,20 +25,41 @@ const GROUPS = {
   "TUA + Flyer": { runs: ["TUA", "FLY"], per: "month", amt: 17000, days: 5 },   // about $17,000 a month between them, split roughly evenly → ~$785/day combined
   "Lawrence": { runs: ["LAW"], per: "month", amt: 4500, days: 5 },
   "TGE": { runs: ["S", "T"], per: "week", amt: 4500, days: 5, split: { T: 55, S: 45 } },   // about $4,500 a week all in, a bit more of it on T
-  "Food bag": { runs: ["FB", "FBP", "FB2", "FB2P", "MFB1", "MFB2"], per: "month", amt: 2000, days: 1 },
+  "Food bag": { runs: ["FB", "FBP", "FB2", "FB2P", "MFB1", "MFB2"], per: "month", amt: 2000, days: 1, alt: true },   // alt: only one of these goes out on a food bag day
 };
+// Each total above is split: basePct % is a fixed base, the rest is paid by the parcel. The per-parcel rate is that parcel share of the total
+// divided by the parcels the group's runs normally carry in the same period (8-week EOD average per run-day × days a week), so an average
+// period comes back to the total; days with more or fewer parcels than average earn more or less.
+const BASE_PCT = 50;
+const RUN_DAYS = { FLY: 4 };   // days a week a run goes out, where it's fewer than its group's (Flyer: Mon, Tue, Wed, Fri)
 // business costs, $ a month excl GST — Xero Aug–Oct 2026 average (the Biz CashFlow sheet assumes less: fuel $1,739, RUC $479, insurance $617)
 const COSTS = [["fuel", "Fuel", 4251.46], ["ruc", "Road user charges", 590.78], ["veh", "Vehicle costs & repairs", 336.22], ["sub", "Subcontractors", 573.91], ["ins", "Insurance", 1569.09], ["acc", "ACC levy", 714.93],
   ["loan", "Loan fees & interest", 1078.66], ["soft", "Software", 897.35], ["staffx", "Staff training, uniforms, meetings", 1660.74], ["acct", "Accountancy", 496.57], ["office", "Office, phone, rent, marketing, bank", 597.8]];
 const COST_DAYS = 6;   // working days a week the monthly costs are spread over
 const PARCEL_RUNS = ["TUA", "FLY", "DB", "RAM", "PCB", "RSB", "LAW", "S", "T"];
-const DEF = { small: 5, large: 8, target: 70000, oncost: 11, parcel: { TUA: 0, FLY: 0, DB: 6, RAM: 1.8, PCB: 0, RSB: 0, LAW: 0, S: 0, T: 0 }, groups: Object.fromEntries(Object.entries(GROUPS).map(([k, g]) => [k, { per: g.per, amt: g.amt, days: g.days }])), costs: Object.fromEntries(COSTS.map(([k, , a]) => [k, a])) };
+const DEF = { small: 5, large: 8, target: 70000, oncost: 11, parcel: { TUA: 0, FLY: 0, DB: 6, RAM: 1.8, PCB: 0, RSB: 0, LAW: 0, S: 0, T: 0 }, groups: Object.fromEntries(Object.entries(GROUPS).map(([k, g]) => [k, { per: g.per, amt: g.amt, days: g.days, basePct: BASE_PCT }])), costs: Object.fromEntries(COSTS.map(([k, , a]) => [k, a])) };
 const model = () => { const v = S.set?.money_model || {}; return { ...DEF, ...v, parcel: { ...DEF.parcel, ...(v.parcel || {}) }, groups: Object.fromEntries(Object.keys(GROUPS).map(k => [k, { ...DEF.groups[k], ...(v.groups?.[k] || {}) }])), costs: { ...DEF.costs, ...(v.costs || {}) } }; };
 const onc = () => 1 + (+model().oncost || 0) / 100;   // holiday pay 8% + KiwiSaver 3% on top of gross wages
 const costMonth = () => Object.values(model().costs).reduce((a, b) => a + (+b || 0), 0);
 const costDay = rows => rows.some(r => !r.noRun) ? costMonth() / WK_PER_MONTH / COST_DAYS : 0;   // charged on any day a run is rostered
 const perDay = g => !g.amt ? 0 : g.per === "month" ? g.amt / WK_PER_MONTH / (g.days || 5) : g.per === "week" ? g.amt / (g.days || 5) : g.amt;
 const perTxt = g => g.per === "month" ? `$${(+g.amt).toLocaleString()}/month ÷ ${(+(WK_PER_MONTH)).toFixed(2)} wk ÷ ${g.days} days` : g.per === "week" ? `$${(+g.amt).toLocaleString()}/week ÷ ${g.days} days` : `$${(+g.amt).toLocaleString()}/day`;
+// a group's per-parcel rate from its total: (total × parcel share) ÷ average parcels in the same period
+const periodWeeks = m => m.per === "month" ? WK_PER_MONTH : m.per === "week" ? 1 : 1 / (m.days || 5);
+function groupRate(g, m) {
+  const G = GROUPS[g]; const pct = Math.min(100, Math.max(0, m.basePct ?? BASE_PCT)); if (!m.amt || pct >= 100) return null;
+  const E = evidence() || {}; const per = G.runs.map(c => ({ c, a: E[c]?.all?.parcels, n: E[c]?.all?.n || 0 })).filter(x => x.a != null);
+  if (!per.length) return { rate: 0, none: true };
+  let wk, how;
+  if (G.alt) { const n = per.reduce((a, x) => a + x.n, 0); const avg = per.reduce((a, x) => a + x.a * x.n, 0) / n; wk = avg * (m.days || 1); how = `${avg.toFixed(1)} parcels a day × ${m.days} day${m.days > 1 ? "s" : ""}`; }
+  else { wk = per.reduce((a, x) => a + x.a * Math.min(RUN_DAYS[x.c] ?? m.days ?? 5, m.days ?? 5), 0); how = per.map(x => `${x.c} ${x.a.toFixed(1)} × ${Math.min(RUN_DAYS[x.c] ?? m.days ?? 5, m.days ?? 5)}d`).join(" + ") + " a week"; }
+  const parcels = wk * periodWeeks(m); const share = m.amt * (100 - pct) / 100; if (!parcels) return { rate: 0, none: true };
+  return { rate: share / parcels, parcels, share, how: `$${Math.round(share).toLocaleString()} (${100 - pct}% of $${(+m.amt).toLocaleString()}/${m.per}) ÷ ${Math.round(parcels).toLocaleString()} parcels a ${m.per} (${how}, 8-week average)` };
+}
+const groupOf = code => Object.keys(GROUPS).find(g => GROUPS[g].runs.includes(code));
+// the per-parcel rate for a run: a figure typed in the editor wins, otherwise the one worked out from its group's total
+function rateFor(code, M) { const typed = +(M.parcel[code] || 0); if (typed) return { rate: typed, how: "typed in" };
+  const g = groupOf(code); if (!g) return { rate: 0 }; const R = groupRate(g, M.groups[g]); return R && R.rate ? { rate: R.rate, how: R.how } : { rate: 0 }; }
 // parcels delivered on a run: the fixed figure if one was set on the EOD, otherwise what the driver posted; null = EOD not in yet
 const parcelsOf = shift => { if (!shift) return null; const ov = S.ovs.find(o => o.shift_id === shift.id); if (ov?.parcels != null) return +ov.parcels; const e = S.eodBy?.[shift.id]; return e?.parcels != null ? +e.parcels : null; };
 const tgeSouth = d => +(S.set?.tge_south?.[d] || 0);
@@ -98,12 +120,12 @@ function breakdown(d) {
   const past = d < today(); const done = r => past || !!S.eodBy?.[r.shift?.id];
   const add = (r, amt, line, est) => { r.fees += amt; if (est) r.feeEst = true; r.feeLines.push({ amt, line, est }); };
   for (const r of rows) { if (r.sort) continue;
-    for (const [g, G] of Object.entries(GROUPS)) { if (!G.runs.includes(r.run)) continue; const m = M.groups[g]; const day = perDay(m); if (!day) continue;
+    for (const [g, G] of Object.entries(GROUPS)) { if (!G.runs.includes(r.run)) continue; const m = M.groups[g]; const pct = groupRate(g, m)?.none ? 100 : Math.min(100, Math.max(0, m.basePct ?? BASE_PCT)); const day = perDay(m) * pct / 100; if (!day) continue;
       const onRows = rows.filter(y => !y.sort && G.runs.includes(y.run)); const on = onRows.length; const sp = G.split; const wsum = sp ? onRows.reduce((a, y) => a + (sp[y.run] ?? 0), 0) : 0; const share = sp && wsum ? (sp[r.run] ?? 0) / wsum : 1 / on;
-      add(r, day * share, `${g} base · ${perTxt(m)}${on > 1 ? (sp && wsum ? ` · ${Math.round(share * 100)}% to ${r.run}` : ` ÷ ${on} runs on`) : ""}`, !done(r)); }
-    const rate = +(M.parcel[r.run] || 0); if (rate) { const n = parcelsOf(r.shift);
-      if (n != null) add(r, n * rate, `${n} parcels × $${rate}`, false);
-      else { const ev = evidenceFor(r.run, d); if (ev?.parcels != null) add(r, Math.round(ev.parcels) * rate, `${Math.round(ev.parcels)} parcels × $${rate} (average ${ev.scope === "weekday" ? "for this weekday" : "of recent days"})`, true); else { r.feeEst = true; r.feeLines.push({ amt: 0, line: `parcels × $${rate} · no history yet`, est: true }); } } } }
+      add(r, day * share, `${g} base · ${pct}% of ${perTxt(m)}${on > 1 ? (sp && wsum ? ` · ${Math.round(share * 100)}% to ${r.run}` : ` ÷ ${on} runs on`) : ""}`, !done(r)); }
+    const RT = rateFor(r.run, M); const rate = RT.rate; if (rate) { const n = parcelsOf(r.shift); const rt = `$${rate.toFixed(2)}`; const why = RT.how && RT.how !== "typed in" ? ` · rate = ${RT.how}` : "";
+      if (n != null) add(r, n * rate, `${n} parcels × ${rt}${why}`, false);
+      else { const ev = evidenceFor(r.run, d); if (ev?.parcels != null) add(r, Math.round(ev.parcels) * rate, `${Math.round(ev.parcels)} parcels × ${rt} (average ${ev.scope === "weekday" ? "for this weekday" : "of recent days"} until the EOD is in)${why}`, true); else { r.feeEst = true; r.feeLines.push({ amt: 0, line: `parcels × ${rt} · no history yet`, est: true }); } } } }
   const feeRow = (area) => { for (const code of AREA_RUNS[area] || []) if (byRun[code]) return byRun[code];
     const k = "__" + area; if (!byRun[k]) { byRun[k] = { run: `${area} pick-ups`, driver: null, staff: 0, fees: 0, feeEst: false, feeLines: [], noRun: true }; rows.push(byRun[k]); } return byRun[k]; };
   const runOn = area => (AREA_RUNS[area] || []).map(c => byRun[c]).find(Boolean);
@@ -151,12 +173,12 @@ export function moneyCard(d) {
     <form class="row" id="mn-f" style="margin-top:8px;align-items:flex-end"><label class="f" style="flex:1 1 160px">TGE total · South (excl GST)<input class="in" id="mn-tge" inputmode="decimal" value="${tgeSouth(d) || ""}" placeholder="0.00"></label>
       <button class="btn sm" type="submit" style="flex:0 0 auto">Save</button>
       <details class="full" style="flex:1 1 100%"><summary>Income rates (excl GST)</summary>
-        <h4 style="margin:8px 0 4px">Run bases</h4><div class="scroll"><table class="dt"><tr><th>Base</th><th>Runs</th><th>Amount $</th><th>Per</th><th>Days a week</th><th align="right">= a day</th></tr>${Object.entries(GROUPS).map(([k, G]) => { const m = M.groups[k]; return `<tr><td><b>${esc(k)}</b></td><td class="meta">${G.runs.join(", ")}</td><td><input class="in" data-mg="${esc(k)}" data-mk="amt" inputmode="decimal" value="${m.amt}" style="width:96px"></td><td><select class="in" data-mg="${esc(k)}" data-mk="per">${["day", "week", "month"].map(p => `<option ${p === m.per ? "selected" : ""}>${p}</option>`).join("")}</select></td><td><input class="in" data-mg="${esc(k)}" data-mk="days" inputmode="numeric" value="${m.days}" style="width:56px"></td><td align="right">${money(perDay(m))}</td></tr>`; }).join("")}</table></div>
-        <h4 style="margin:8px 0 4px">Per parcel, on top of the base (parcels from the EOD)</h4><div class="row" style="align-items:flex-end">${PARCEL_RUNS.map(k => `<label class="f" style="flex:1 1 90px">${k} $<input class="in" data-mp="${k}" inputmode="decimal" value="${M.parcel[k] ?? 0}"></label>`).join("")}</div>
+        <h4 style="margin:8px 0 4px">Run bases</h4><div class="scroll"><table class="dt"><tr><th>Base</th><th>Runs</th><th>Amount $</th><th>Per</th><th>Days a week</th><th>Base %</th><th align="right">Base a day</th><th align="right">Per parcel</th></tr>${Object.entries(GROUPS).map(([k, G]) => { const m = M.groups[k]; return `<tr><td><b>${esc(k)}</b></td><td class="meta">${G.runs.join(", ")}</td><td><input class="in" data-mg="${esc(k)}" data-mk="amt" inputmode="decimal" value="${m.amt}" style="width:96px"></td><td><select class="in" data-mg="${esc(k)}" data-mk="per">${["day", "week", "month"].map(p => `<option ${p === m.per ? "selected" : ""}>${p}</option>`).join("")}</select></td><td><input class="in" data-mg="${esc(k)}" data-mk="days" inputmode="numeric" value="${m.days}" style="width:56px"></td><td><input class="in" data-mg="${esc(k)}" data-mk="basePct" inputmode="numeric" value="${m.basePct ?? BASE_PCT}" style="width:56px"></td>${(() => { const R = groupRate(k, m); const pct = R?.none ? 100 : (m.basePct ?? BASE_PCT); return `<td align="right">${money(perDay(m) * pct / 100)}</td><td align="right" title="${esc(R?.how || "")}">${R?.rate ? "$" + R.rate.toFixed(2) : R?.none ? `<span class="meta">no parcel history · all base</span>` : "—"}</td>`; })()}</tr>`; }).join("")}</table></div>
+        <h4 style="margin:8px 0 4px">Per parcel, on top of the base (parcels from the EOD) <span class="meta">· leave blank to use the rate worked out from the total</span></h4><div class="row" style="align-items:flex-end">${PARCEL_RUNS.map(k => { const g = groupOf(k); const R = g ? groupRate(g, M.groups[g]) : null; return `<label class="f" style="flex:1 1 90px">${k} $<input class="in" data-mp="${k}" inputmode="decimal" value="${+M.parcel[k] ? M.parcel[k] : ""}" placeholder="${R?.rate ? "auto " + R.rate.toFixed(2) : "0"}"></label>`; }).join("")}</div>
         <h4 style="margin:8px 0 4px">Business costs, $ a month excl GST <span class="meta">(Xero Aug–Oct average · ${money0(costMonth())} a month)</span></h4><div class="row" style="align-items:flex-end">${COSTS.map(([k, l]) => `<label class="f" style="flex:1 1 150px">${esc(l)}<input class="in" data-mc="${k}" inputmode="decimal" value="${M.costs[k] ?? 0}"></label>`).join("")}</div>
         <h4 style="margin:8px 0 4px">Pick-ups and target</h4><div class="row" style="align-items:flex-end"><label class="f" style="flex:1 1 110px">Pick-up small $<input class="in" id="mn-s" inputmode="decimal" value="${M.small}"></label><label class="f" style="flex:1 1 110px">Pick-up large $<input class="in" id="mn-l" inputmode="decimal" value="${M.large}"></label><label class="f" style="flex:1 1 140px">Monthly income target $<input class="in" id="mn-tg" inputmode="decimal" value="${M.target}"></label>
         <button class="btn sm" type="submit" style="flex:0 0 auto">Save rates</button></div></details></form>
-    <p class="hint">Each run gets its base (shared when both runs in a pair are on) plus its per-parcel rate. Until the EOD is in, parcels are the 8-week average for that run, and pick-ups, the TGE South total and staff hours are estimates too; business costs are always an estimate — grey until the real figures land, then green.</p></div>`;
+    <p class="hint">Each total is split: the base % is paid as a fixed base (shared when both runs in a pair are on), the rest by the parcel at a rate worked out from the 8-week average parcels, so an average month comes back to the total. Until the EOD is in, parcels are the 8-week average for that run, and pick-ups, the TGE South total and staff hours are estimates too; business costs are always an estimate — grey until the real figures land, then green.</p></div>`;
 }
 
 function rowDetail(r, d) {
@@ -198,7 +220,7 @@ export function wireMoney(d) {
   $$("[data-mnweek]").forEach(t => t.onclick = () => weekDetail(t.dataset.mnweek));
   $("#mn-f")?.addEventListener("submit", async ev => { ev.preventDefault();
     const tge = { ...(S.set?.tge_south || {}) }; const v = +$("#mn-tge").value || 0; if (v) tge[d] = v; else delete tge[d];
-    const groups = {}; $$("[data-mg]").forEach(i => { const g = (groups[i.dataset.mg] ??= {}); g[i.dataset.mk] = i.dataset.mk === "per" ? i.value : (+i.value || 0); });
+    const groups = {}; $$("[data-mg]").forEach(i => { const g = (groups[i.dataset.mg] ??= {}); g[i.dataset.mk] = i.dataset.mk === "per" ? i.value : i.dataset.mk === "basePct" ? (i.value === "" ? BASE_PCT : Math.min(100, Math.max(0, +i.value || 0))) : (+i.value || 0); });
     const parcel = {}; $$("[data-mp]").forEach(i => parcel[i.dataset.mp] = +i.value || 0);
     const costs = {}; $$("[data-mc]").forEach(i => costs[i.dataset.mc] = +i.value || 0);
     const mdl = { costs, small: +$("#mn-s").value || 0, large: +$("#mn-l").value || 0, target: +$("#mn-tg").value || 0, groups, parcel };
