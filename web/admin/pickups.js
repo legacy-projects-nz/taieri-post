@@ -1,4 +1,4 @@
-// Pick-ups tab: Rural / South / Owaka / Lawrence parcel pick-ups that are invoiced separately.
+// Pick-ups tab: Rural / South / Owaka / Lawrence / Balclutha depot parcel pick-ups that are invoiced separately.
 // Drivers log counts in the app. Two sub-tabs:
 //   Invoices   – month totals per customer + extra lines, exported as a Xero sales-invoice CSV (one invoice per customer)
 //   Data entry – owner/admin enter counts for any driver, edit or delete entries, and add extra invoice lines
@@ -6,11 +6,11 @@
 import { sb, q, today, addDays, label, esc, $, $$, toast } from "/shared/core.js";
 import { S, sheet, opt, nm, render } from "/admin/admin.js";
 
-export const AREAS = ["Rural", "South", "Owaka", "Lawrence"];
-const custFor = a => a === "South" ? ["TGE"] : a === "Rural" ? ["NZC", "PH", "TGE"] : ["NZC", "PH"];   // South = TGE only; TGE also on Rural; never on Owaka / Lawrence
+export const AREAS = ["Rural", "South", "Owaka", "Lawrence", "Balclutha"];
+const custFor = a => a === "South" ? ["TGE"] : a === "Rural" ? ["NZC", "PH", "TGE"] : ["NZC", "PH"];   // South = TGE only; TGE also on Rural; never on Owaka / Lawrence / Balclutha
 const custErr = r => custFor(r.area).includes(r.customer) ? null : r.area === "South" ? "South is for TGE pick-ups only" : "TGE pick-ups are Rural or South only";
 const SOURCES = [["depot", "Depot"], ["customer", "Customer"]];
-const AREA_SHORT = { Lawrence: "Law", Owaka: "Owaka", Rural: "Rural", South: "South" };
+const AREA_SHORT = { Lawrence: "Law", Owaka: "Owaka", Rural: "Rural", South: "South", Balclutha: "Bal Depot" };
 export const CUSTOMERS = {
   NZC: { name: "NZ Couriers - Aaron Johnston", short: "NZC", due: 7, acct: "200", tax: "15% GST on Income", small: { code: "NZCS", rate: 4.5, desc: "NZC - Small" }, large: { code: "NZCL", rate: 8, desc: "NZ Couriers - Large" } },
   PH: { name: "Post Haste", short: "Post Haste", due: 7, acct: "200", tax: "15% GST on Income", small: { code: "PHS", rate: 4, desc: "Post Haste - Small" }, large: { code: "PHL", rate: 8, desc: "Post Haste - Large" } },
@@ -89,7 +89,7 @@ function invoicesView() {
       ${L.length ? `<div class="scroll"><table class="dt"><tr><th>Item</th><th>Description</th><th>Acct</th><th align="right">Qty</th><th align="right">Rate</th><th align="right">Amount</th></tr>${L.map(l => `<tr><td class="meta">${esc(l.code)}</td><td>${esc(l.desc)}${l.extra ? ` <span class="meta">· extra</span>` : ""}</td><td>${esc(l.acct)}</td><td align="right">${l.qty}</td><td align="right">${money(l.price)}</td><td align="right">${money(l.qty * l.price)}</td></tr>`).join("")}</table></div>` : `<p class="meta">No pick-ups or extras for ${MONTH_L[m - 1]}.</p>`}
       <div class="row" style="margin-top:8px;align-items:flex-end"><label class="f" style="flex:1 1 200px">Reference${c === "TGE" ? " (PO number)" : ""}<input class="in" data-ref="${c}" value="${esc(refFor(c))}" placeholder="${c === "TGE" ? "e.g. PO100022976" : ""}"></label>
         ${canEdit() ? `<button class="btn ghost sm" data-x-add="${c}" style="flex:0 0 auto">+ Extra item</button>` : ""}${L.length ? `<button class="btn sm" data-xero="${c}" style="flex:0 0 auto">Export to Xero (CSV)</button>` : ""}</div></div>`; }).join("");
-  return `<div class="card"><h2>Pick-ups to invoice<span>Rural · South · Owaka · Lawrence</span></h2>
+  return `<div class="card"><h2>Pick-ups to invoice<span>Rural · South · Owaka · Lawrence · Balclutha</span></h2>
     <p class="hint">Drivers enter counts in their app; you can add or fix them under Data entry. Each month becomes one invoice per customer, dated the last day of the month, using the same Xero items, accounts and wording as your existing invoices. Export, then in Xero go to Sales › Invoices › Import and upload the file; invoices come in as drafts to check and approve.</p>
     ${any ? `<div class="row"><button class="btn sm" id="xero-all" style="flex:0 0 auto">Export all customers to Xero (one CSV)</button></div>` : ""}</div>
     ${cards}

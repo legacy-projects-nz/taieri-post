@@ -1,7 +1,7 @@
 // Day budget (owner only, on the Live board when one day is picked): income − staff costs, run by run.
 //   Income – each run's base (a day, week or month figure, shared between the runs in its group whichever of them are on)
 //            plus so much a parcel on top where the run is paid by the parcel (parcels from the EOD). TGE also has a weekly base.
-//            Plus Rural / Lawrence / Owaka pick-ups (NZ Couriers + Post Haste) and the TGE South total typed in. GST 15% on top.
+//            Plus Rural / Lawrence / Owaka / Balclutha pick-ups (NZ Couriers + Post Haste) and the TGE South total typed in. GST 15% on top.
 //   Staff  – each driver's cost for the day (the same hours × rate as Labour), split across their runs by rostered minutes.
 //            Jeremy's hours are unpaid, so his runs show $0 staff cost.
 //   Costs  – business running costs (fuel, RUC, insurance, ACC, loan, software…) as a monthly figure each, defaulted to the Xero Aug–Oct 2026
@@ -15,13 +15,13 @@ import { driverDay } from "/admin/live.js";
 
 const GST = 0.15;
 const WK_PER_MONTH = 52 / 12;
-const AREA_RUNS = { Rural: ["TUA"], South: ["TUA", "DB"], Lawrence: ["LAW"], Owaka: ["DB", "FLY"] };   // which run a pick-up area's income lands on
+const AREA_RUNS = { Rural: ["TUA"], South: ["TUA", "DB"], Lawrence: ["LAW"], Owaka: ["DB", "FLY"], Balclutha: ["DB"] };   // which run a pick-up area's income lands on
 const money = n => (n < 0 ? "−$" : "$") + Math.abs(n).toFixed(2);
 const money0 = n => (n < 0 ? "−$" : "$") + Math.round(Math.abs(n)).toLocaleString();
 // shared bases: per = "day" | "week" | "month"; days = working days a week it's spread over
 const GROUPS = {
   "PCB + RSB": { runs: ["PCB", "RSB", "WH"], per: "month", amt: 17000, days: 6 },
-  "TUA + Flyer": { runs: ["TUA", "FLY"], per: "day", amt: 400, days: 5 },
+  "TUA + Flyer": { runs: ["TUA", "FLY"], per: "month", amt: 17000, days: 5 },   // about $17,000 a month between them, split roughly evenly → ~$785/day combined
   "Lawrence": { runs: ["LAW"], per: "month", amt: 4500, days: 5 },
   "TGE": { runs: ["S", "T"], per: "week", amt: 4500, days: 5, split: { T: 55, S: 45 } },   // about $4,500 a week all in, a bit more of it on T
   "Food bag": { runs: ["FB", "FBP", "FB2", "FB2P", "MFB1", "MFB2"], per: "month", amt: 2000, days: 1 },

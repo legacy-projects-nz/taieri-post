@@ -467,13 +467,13 @@ function detailsCard() {
 const PU_CUST = { NZC: "NZ Couriers", PH: "Post Haste", TGE: "TGE (NZ National Network)" };
 // Runs that do invoiced pick-ups, and the area they're usually in
 const PU_AREA = { TUA: "Rural", FLY: "Owaka", DB: "Owaka", LAW: "Lawrence" };
-const PU_AREAS = ["Rural", "South", "Owaka", "Lawrence"]; const puCust = a => a === "South" ? ["TGE"] : a === "Rural" ? ["NZC", "PH", "TGE"] : ["NZC", "PH"];   // South = TGE only; TGE also on Rural; never on Owaka / Lawrence
+const PU_AREAS = ["Rural", "South", "Owaka", "Lawrence", "Balclutha"]; const puCust = a => a === "South" ? ["TGE"] : a === "Rural" ? ["NZC", "PH", "TGE"] : ["NZC", "PH"];   // South = TGE only; TGE also on Rural; never on Owaka / Lawrence / Balclutha
 const PU_SRC = ["depot", "customer"]; const PU_SRC_L = { depot: "depot", customer: "customer" };
 const puToday = T => (T?.segs || []).map(x => x.shift.run).find(r => PU_AREA[r]);
 function pickupsCard(T) {
   if (S.viewAs) return "";
   const list = S.pickups || []; const run = puToday(T); const todays = list.filter(r => r.day === today());
-  return `<div class="card" id="pickups"${run ? ` data-fold-open="1"` : ""}><h2>Parcel pick-ups<span>${todays.length ? `✓ ${todays.length} logged today` : run ? "pick-up run today" : "Rural · South · Owaka · Lawrence"}</span></h2>
+  return `<div class="card" id="pickups"${run ? ` data-fold-open="1"` : ""}><h2>Parcel pick-ups<span>${todays.length ? `✓ ${todays.length} logged today` : run ? "pick-up run today" : "Rural · South · Owaka · Lawrence · Balclutha"}</span></h2>
     <p class="meta" style="margin:0 0 8px">${run ? "You're on a pick-up run today. " : ""}Enter how many parcels you picked up for each customer so they can be invoiced.</p>
     ${todays.length ? `<p class="meta c-ok" style="margin:0 0 8px">✓ Today: ${todays.map(r => `${esc(r.area)} ${esc(PU_CUST[r.customer] || r.customer)} (${PU_SRC_L[r.source] || "depot"}) ${r.small} small${r.large ? ` + ${r.large} large` : ""}`).join(" · ")}</p>` : ""}
     <div class="row"><button class="btn sm" id="pu-log" style="flex:0 0 auto">+ Enter pick-ups</button></div>
