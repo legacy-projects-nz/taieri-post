@@ -91,6 +91,8 @@ export function render(soft = false) {
   $("#signout").onclick = signOut;
   $("#quick-err")?.addEventListener("click", () => errorCard());
   $$("[data-tab]").forEach(b => b.onclick = () => { S.tab = b.dataset.tab; location.hash = S.tab; render(); });
+  // classic Run Board in its own full-size browser window (falls back to a new tab if pop-ups are blocked)
+  $$("[data-popout]").forEach(a => a.onclick = e => { e.preventDefault(); const w = window.open(a.dataset.popout, "tp_classic", `popup=yes,width=${screen.availWidth},height=${screen.availHeight},left=0,top=0`); if (w) { try { w.moveTo(0, 0); w.resizeTo(screen.availWidth, screen.availHeight); } catch (_) { } w.focus(); } else window.open(a.dataset.popout, "_blank", "noopener"); });
   if (S.tab !== "live") { /* the live board draws its own map */ }
   ({ live: wireLive2, runboard: wireRunBoard, classic: () => { }, scorecard: wireScorecard, fix: wireFix, routes: wireRoutes, allowances: wireAllowances, pickups: wirePickups, alerts: wireAlerts, messages: wireMessages, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople, pay: wirePay })[S.tab]?.();
   wireRange();
@@ -178,7 +180,7 @@ function wireLive() {
 
 /* ================= CLASSIC RUN BOARD ================= */
 function classicTab() {
-  return `<div class="card" style="padding:8px"><p class="hint" style="margin:0 0 6px">The old drag-and-drop Run Board, running on the new database. Every change lands on the live roster straight away; when you're done, open the <button class="linkbtn" data-tab="runboard">Run Board (new)</button> tab and press <b>Approve roster</b> (new week) or <b>Push changes</b> (edits) so drivers get it. <a href="/admin/classic/" target="_blank" rel="noopener">Open full screen ↗</a></p>
+  return `<div class="card" style="padding:8px"><p class="hint" style="margin:0 0 6px">The old drag-and-drop Run Board, running on the new database. Every change lands on the live roster straight away; when you're done, open the <button class="linkbtn" data-tab="runboard">Run Board (new)</button> tab and press <b>Approve roster</b> (new week) or <b>Push changes</b> (edits) so drivers get it.</p><p style="margin:0 0 8px"><a class="btn accent sm" href="/admin/classic/" target="_blank" rel="noopener" data-popout="/admin/classic/" style="text-decoration:none;display:inline-flex">Open in a new full browser window ↗</a></p>
     <iframe src="/admin/classic/" title="Run Board (classic)" style="width:100%;height:calc(100vh - 220px);min-height:700px;border:0;border-radius:10px;background:#eaedf1"></iframe></div>`;
 }
 
