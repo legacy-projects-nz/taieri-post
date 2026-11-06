@@ -2,7 +2,7 @@
 import { sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmt24, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, settings as loadSettings, signOut, hours, nzToIso, avg } from "/shared/core.js";
 import { requireUser } from "/shared/auth.js";
 import { AREAS, AREA_LABEL } from "/shared/config.js";
-import { cfg, dayShifts, itemsFor, scoreFor, payBand, money, fortnight, itemNote, STATE_LABEL, addName, segTimes, setEvidence } from "/shared/score.js";
+import { cfg, dayShifts, itemsFor, scoreFor, payBand, money, fortnight, itemNote, STATE_LABEL, addName, segTimes, setEvidence, meetRule, meetOn } from "/shared/score.js";
 import { runBoardTab, wireRunBoard } from "/admin/runboard.js";
 import { scorecardTab, wireScorecard } from "/admin/scorecard.js";
 import { fixTab, wireFix, fixCount } from "/admin/fix.js";
@@ -185,8 +185,9 @@ function classicTab() {
 /* ================= ALERTS ================= */
 function timingsToday() {
   const n = nzNow(); const t = n.date; const rows = [];
-  for (const s of S.shifts.filter(x => x.day === t && x.driver && x.run !== "BU" && (!isSort(x.run) || (x.addons || []).length))) for (const r of S.rules) { if (!r.active || !r.days.includes(dow(t) + 1)) continue; const all = r.runs.includes("ALL"); if (!all && !r.runs.includes(s.run)) continue;
-    const ad = r.addon ? S.addons.find(a => a.id === r.addon) : null; if (ad?.always && ad.runs.includes(s.run)) { /* standing task */ } else if (ad && ad.runs.includes(s.run)) { if (!(s.addons || []).includes(r.addon)) continue; } else if (!all && r.runs.length > 1) continue;
+  for (const s of S.shifts.filter(x => x.day === t && x.driver && x.run !== "BU" && (!isSort(x.run) || (x.addons || []).length))) for (const r0 of S.rules) { if (!r0.active || !r0.days.includes(dow(t) + 1)) continue; const all = r0.runs.includes("ALL"); if (!all && !r0.runs.includes(s.run)) continue;
+    const ad = r0.addon ? S.addons.find(a => a.id === r0.addon) : null; if (ad?.always && ad.runs.includes(s.run)) { /* standing task */ } else if (ad && ad.runs.includes(s.run)) { if (!(s.addons || []).includes(r0.addon) && !meetOn(r0, s)) continue; } else if (!all && r0.runs.length > 1) continue;
+    const r = meetRule(r0, s);   // Milton meet: the D>B driver's chosen time replaces the rule time
     const done = s.done?.[r.addon] || (r.addon?.startsWith("tw_") && /game plan/i.test(r.name) && Object.keys(s.plan || {}).length ? (s.plan && Object.values(s.plan)[0] ? "plan" : null) : null);
     const f = toMin(r.opens), c = toMin(r.closes); const win = f != null && c != null ? `${fmtT(f)}–${fmtT(c)}` : c != null ? `by ${fmtT(c)}` : f != null ? `from ${fmtT(f)}` : "any time";
     let st, cls; if (done) { st = done === "plan" ? "game plan in" : `done ${fmtTime(done)}`; cls = "ok"; } else if (c != null && n.min > c) { st = `PASSED · due ${fmtT(c)}`; cls = "miss"; } else if (c != null && c - n.min <= 60) { st = `due soon · ${fmtT(c)}`; cls = "late"; } else if (f != null && n.min >= f) { st = "window open"; cls = "due"; } else { st = "later"; cls = "due"; }
@@ -309,6 +310,7 @@ function payTab() {
       <div class="full meta mono" style="margin-top:4px">ADMIN · POSTS</div>
       ${line("SOD grace (minutes)", num("sodGrace", R.sodGrace, 1), "A SOD posted within this many minutes of the rostered start is on time.")}
       ${line("EOD due (hours after the run's end)", num("eodHours", R.eodHours, 0.25), "An EOD posted later than this is late; after that window closes it counts as missing.")}
+      ${line("EOD late · no fix needed (minutes)", num("eodFixGrace", R.eodFixGrace ?? 90, 5), "An EOD late by up to this many minutes still counts as late, but stays off Fix posts and the driver's To fix list.")}
       ${line("Late or missing post · % off", num("perEvent", R.perEvent, 0.5), "Taken off the Admin score for every late or missing SOD / EOD in the range.")}
       ${line("Incomplete post · % off", num("partEvent", R.partEvent ?? 1, 0.5), "For a post you've marked incomplete (figures missing). 0 = no penalty.")}
       ${line("Admin floor %", num("adminFloor", R.adminFloor, 1), "Admin never drops below this.")}
@@ -332,7 +334,7 @@ function wirePay() {
   const sum = () => { const t = ["w_admin", "w_eff", "w_acc", "w_safe"].reduce((a, k) => a + (+$("#" + k).value || 0), 0); $("#w-sum").innerHTML = t === 100 ? "Weights add up to 100 ✓" : `<span class="c-warn">Weights add up to ${t} — they're used as proportions, so that still works, but 100 is easiest to read.</span>`; };
   ["w_admin", "w_eff", "w_acc", "w_safe"].forEach(k => $("#" + k).addEventListener("input", sum)); sum();
   $("#penf").onsubmit = async e => { e.preventDefault(); const g = x => $("#" + x).value;
-    const rules = { ...(S.set.rules || {}), sodGrace: +g("sodGrace"), eodHours: +g("eodHours"), perEvent: +g("perEvent"), partEvent: +g("partEvent"), adminFloor: +g("adminFloor"), mistakePct: +g("mistakePct"), adminStart: g("adminStart") || S.C.rules.adminStart, effStart: g("effStart") || S.C.rules.effStart };
+    const rules = { ...(S.set.rules || {}), sodGrace: +g("sodGrace"), eodHours: +g("eodHours"), eodFixGrace: +g("eodFixGrace"), perEvent: +g("perEvent"), partEvent: +g("partEvent"), adminFloor: +g("adminFloor"), mistakePct: +g("mistakePct"), adminStart: g("adminStart") || S.C.rules.adminStart, effStart: g("effStart") || S.C.rules.effStart };
     const { error } = await sb.from("settings").upsert([{ key: "rules", value: rules }, { key: "weights", value: { admin: +g("w_admin"), eff: +g("w_eff"), acc: +g("w_acc"), safe: +g("w_safe") } }]); if (error) return toast(error.message, "err"); toast("Penalties saved · scores recalculate straight away", "ok"); };
   $("#payf").onsubmit = async e => { e.preventDefault(); const g = x => $("#" + x).value;
     const { error } = await sb.from("settings").upsert({ key: "rules", value: { ...(S.set.rules || {}), hourRate: +g("hourRate"), holidayCap: +g("holidayCap") } }); if (error) return toast(error.message, "err");

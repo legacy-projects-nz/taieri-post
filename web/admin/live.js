@@ -1,7 +1,7 @@
 // Live board: the old Scorecard dashboard, live. Day chips, KPIs, receivers & pick-ups, important points, team scores + labour,
 // add-ons & timings board, hours by day, admin action centre, roster changes not confirmed, drivers grid, posts board + live feed, map.
 import { sb, q, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, toast, pill, first, col, pct, isSort, avg, sum } from "/shared/core.js";
-import { scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, band, fortnightBand, payBand, money, dayShifts, segTimes, addName } from "/shared/score.js";
+import { scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, band, fortnightBand, payBand, money, dayShifts, segTimes, addName, meetRule, meetOn } from "/shared/score.js";
 import { S, sheet, opt, nm, fnm, loadAll, render, scoreData, alertRow, fn, teamRange, rangeBar, teamStats } from "/admin/admin.js";
 import { itemKeyFor } from "/admin/detail.js";
 import { moneyCard, wireMoney } from "/admin/money.js";
@@ -49,7 +49,7 @@ export function liveTab() {
 function rulesForShift(s) {
   const d = dow(s.day) + 1; const out = [];
   for (const r of S.rules) { if (!r.active || !(r.days || []).includes(d)) continue; const all = r.runs.includes("ALL"); if (!all && !r.runs.includes(s.run)) continue;
-    const ad = r.addon ? S.addons.find(a => a.id === r.addon) : null; if (ad?.always && ad.runs.includes(s.run)) { out.push(r); continue; } if (ad && ad.runs.includes(s.run)) { if (!(s.addons || []).includes(r.addon)) continue; } else if (!all && r.runs.length > 1) continue; out.push(r); }
+    const ad = r.addon ? S.addons.find(a => a.id === r.addon) : null; if (ad?.always && ad.runs.includes(s.run)) { out.push(r); continue; } if (ad && ad.runs.includes(s.run)) { if (!(s.addons || []).includes(r.addon) && !meetOn(r, s)) continue; } else if (!all && r.runs.length > 1) continue; out.push(meetRule(r, s)); }
   return out.sort((a, b) => (toMin(a.closes) ?? toMin(a.opens) ?? 0) - (toMin(b.closes) ?? toMin(b.opens) ?? 0));
 }
 const winTxt = r => { const f = toMin(r.opens), t = toMin(r.closes); return f != null && t != null ? `${fmtT(f)}–${fmtT(t)}` : t != null ? `by ${fmtT(t)}` : f != null ? `from ${fmtT(f)}` : ""; };

@@ -46,11 +46,13 @@ Deno.serve(async (req) => {
       if (e) for (const a of alertsOpen) if (a.dedupe_key === k) resolve.push(a.id);
       // timing windows
       for (const r of rules || []) { const d = dow(t) + 1; if (!r.days.includes(d)) continue; const all = r.runs.includes("ALL"); if (!all && !r.runs.includes(x.s.run)) continue;
-        const ad = r.addon ? (addons || []).find(a => a.id === r.addon) : null; if (ad?.always && ad.runs.includes(x.s.run)) { /* standing task: every one of its runs */ } else if (ad && ad.runs.includes(x.s.run)) { if (!(x.s.addons || []).includes(r.addon)) continue; } else if (!all && r.runs.length > 1) continue;
+        // Milton meet: the D>B driver's chosen time (shifts.milton_at) replaces the rule's time on D>B and LAW, and puts the meet on LAW even if not ticked
+        const meet = (r.addon === "milton" || r.addon === "tw_t10") && x.s.milton_at ? String(x.s.milton_at).slice(0, 5) : null;
+        const ad = r.addon ? (addons || []).find(a => a.id === r.addon) : null; if (ad?.always && ad.runs.includes(x.s.run)) { /* standing task: every one of its runs */ } else if (ad && ad.runs.includes(x.s.run)) { if (!(x.s.addons || []).includes(r.addon) && !(meet && r.addon === "tw_t10")) continue; } else if (!all && r.runs.length > 1) continue;
         const done = !!(x.s.done?.[r.addon]) || (r.addon?.startsWith("tw_") && /game plan/i.test(r.name) && Object.keys(x.s.plan || {}).length > 0);
-        const closes = toMin(r.closes); if (closes == null) continue;
+        const closes = toMin(meet ?? r.closes); if (closes == null) continue;
         const kd = `timing_due|${t}|${drv}|${r.id}`, km = `timing_missed|${t}|${drv}|${r.id}`;
-        if (done) { for (const a of alertsOpen) if (a.dedupe_key === kd || a.dedupe_key === km) resolve.push(a.id); continue; }
+        if (done || (meet && now.min < closes - 15)) { for (const a of alertsOpen) if (a.dedupe_key === kd || a.dedupe_key === km) resolve.push(a.id); if (done) continue; }   // a later Milton time clears an alert raised for the old one
         if (!done && now.min >= closes - 15 && now.min < closes) raise({ kind: "timing_due", driver: drv, shift_id: x.s.id, rule_id: r.id, title: `${name}: ${r.name} due by ${fmtT(closes)}`, body: `${x.s.run} · ${r.note || ""}`.trim(), dedupe_key: kd, _push: { to: [drv], title: `${r.name} by ${fmtT(closes)}`, body: `${r.note || "Tap Done in the app when it's sorted."}` } });
         if (!done && now.min >= closes && now.min < closes + 240) raise({ kind: "timing_missed", driver: drv, shift_id: x.s.id, rule_id: r.id, title: `${name}: ${r.name} not done by ${fmtT(closes)}`, body: `${x.s.run}`, dedupe_key: km, _push: { to: [drv], title: `${r.name} was due by ${fmtT(closes)}`, body: "If it's done, tap Done in the app. Otherwise let Jeremy know." }, _email: "timing", _rule: r });
       }

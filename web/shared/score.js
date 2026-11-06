@@ -72,6 +72,8 @@ export function itemsFor(driver, days, sods, eods, marks, C, nowRef) {
   }
   return items;
 }
+/** Fix posts: an EOD that is only a little late (up to rules.eodFixGrace minutes, default 90) still counts as late but needs no fix entry */
+export const needsFix = (it, C) => !(it.kind === "EOD" && it.st === "late" && (it.late ?? 0) <= (C?.rules?.eodFixGrace ?? 90));
 export const STATE_LABEL = { ok: "On time", late: "Late", part: "Incomplete", over: "Overdue", miss: "Missing", exc: "Excused", due: "Due", wait: "Waiting" };
 export function itemNote(it) {
   if (it.st === "ok") return `posted ${fmtT(it.at % 1440)}`;
@@ -136,6 +138,15 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   const need = []; if (!eod) need.push("EOD"); else { if (start != null && endT != null && endT <= start) need.push("Times (SOD is after the EOD finish)"); for (const k of ["parcels", "stops"]) if ((model[k === "parcels" ? "parcel" : "stop"] || 0) > 0 && eod[k] == null && ov?.[k] == null) need.push(k === "parcels" ? (net === "tge" ? "Delivery total" : "Total parcels") : (net === "tge" ? "Jobs" : "Stops")); if (net === "tge" && sortMin == null) need.push("Sorting time"); if (!eod.finish_time) need.push("Finish time"); }
   let perf = null; if (taken && takenTrk !== 0) perf = C.rules.effMethod === "tdt" ? (2 - takenTrk / (allowed / 60)) * 100 : (allowed / 60) / takenTrk * 100; if (perf != null) perf = Math.max(0, Math.min(150, perf));
   return { code, net, allowed, parts, taken, takenTrk, perf, need, est: g.length > 0, guess: g, trainDay: !!ov?.train_day, start, end: endT, model, evid: ev ? ev.scope : null, evN: ev?.n || 0, noEod: !eod, figs: { parcels, stops, trays, pickups, pup } };
+}
+/* Milton meet: the D>B driver sets the drop-off time each day (shifts.milton_at, copied onto that day's LAW shift).
+   It replaces the timing rule's usual 10:30 for both runs, and puts the meet on the LAW driver's list even if not ticked. */
+export const MEET_ADDONS = ["milton", "tw_t10"];
+export const meetOn = (r, s) => r?.addon === "tw_t10" && !!s?.milton_at;
+export function meetRule(r, s) {
+  if (!r || !MEET_ADDONS.includes(r.addon) || !s?.milton_at) return r;
+  const hm = String(s.milton_at).slice(0, 5); const t = fmtT(toMin(hm));
+  return { ...r, closes: hm, meet: hm, note: (r.note || "").replace(/\b\d{1,2}:\d{2}(\s*[ap]m)?\b/gi, t) || `Meet at Milton at ${t}` };
 }
 export function addName(k) { return ({ outram: "Outram Depot", pgg: "PGG", airport: "Airport", milton: "Milton", balclutha: "Balclutha", owaka: "Owaka", rose: "Roseneath receiver", sb: "Sawyers Bay receiver", fish: "Harbour Fish pick-up", pc: "Port Chalmers receiver", digi: "Digi Art pick-up", fonterra: "Fonterra pick-up", waihola: "Waihola Store" })[k] || k; }
 

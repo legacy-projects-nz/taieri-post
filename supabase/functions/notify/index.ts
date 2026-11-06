@@ -42,6 +42,13 @@ Deno.serve(async (req) => {
     const n = await push(sb, sec, set, (rs || []).map(r => r.person), { title: `Message from ${first(people[m.sender]?.name)}${m.needs_confirm ? " · please confirm" : ""}`, body: m.body.slice(0, 160), url: "/", tag: "msg-" + m.id });
     return json({ ok: true, pushed: n });
   }
+  if (body.type === "milton_time") {   // D>B driver changed the Milton meet time: push the message set_milton_time wrote to the Lawrence driver
+    const { data: m } = await sb.from("messages").select("*").eq("id", body.message_id).maybeSingle(); if (!m) return json({ error: "no message" }, 404);
+    if (m.sender !== caller.id && !can("roster")) return json({ error: "no" }, 403);
+    const { data: rs } = await sb.from("message_recipients").select("person").eq("message_id", m.id);
+    const n = await push(sb, sec, set, (rs || []).map(r => r.person), { title: "Milton meet time changed · please confirm", body: m.body.slice(0, 160), url: "/", tag: "milton-" + m.id });
+    return json({ ok: true, pushed: n });
+  }
   if (body.type === "entry") {
     if (!can("scorecard")) return json({ error: "no" }, 403);
     const n = await push(sb, sec, set, [body.driver], { title: body.kind === "mistake" ? "A mistake was recorded" : body.kind === "praise" ? "Nice work 👏" : "Note from Jeremy", body: String(body.title || "").slice(0, 160), url: "/" });
