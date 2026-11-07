@@ -49,7 +49,7 @@ function twApply(rules){
   TW=(rules||[]).filter(function(r){return r&&r.id&&twRunsOf(r).length&&twRunsOf(r).indexOf("ALL")<0;});TWBY={};
   for(var i=ADDONS.length-1;i>=0;i--)if(ADDONS[i].tw)ADDONS.splice(i,1);
   TW.forEach(function(r){var aid=twAidOf(r);TWBY[aid]=r;if(r.add&&ADDON[r.add]&&!ADDON[r.add].tw)return;
-    ADDONS.push({id:aid,name:r.name,short:twShort(r.name),min:0,task:1,when:twWhen(r),tw:1});});
+    ADDONS.push({id:aid,name:r.name,short:twShort(r.name),min:0,task:1,when:twWhen(r),tw:1,always:!!r.always});});
   ADDON={};ADDONS.forEach(function(a){ADDON[a.id]=a;});
 }
 /* can this add-on go on this run and day? Own timing add-ons only go on the runs and days of their rule */
@@ -882,6 +882,13 @@ function render(){
         t.addEventListener("pointerdown",function(ev){ev.stopPropagation();});
         t.addEventListener("click",function(ev){ev.stopPropagation();toggleAdd(day,run,id,false);});
         rightClick(t,"",function(){toggleAdd(day,run,id,false);},false);
+        w.appendChild(t);
+      });
+      /* standing tasks (always on this run, e.g. the runsheet photo): shown, never ticked, can't be removed */
+      ADDONS.forEach(function(a){
+        if(!a.always||!twAllowed(day,run,a.id)||satBlocked(day,a.id)||(asg.add||[]).indexOf(a.id)>=0)return;
+        var t=document.createElement("span");t.className="tag-a std";t.textContent=a.short;t.title=a.name+" — always on this run";
+        t.addEventListener("pointerdown",function(ev){ev.stopPropagation();});
         w.appendChild(t);
       });
       td.appendChild(w);

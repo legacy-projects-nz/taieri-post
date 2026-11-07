@@ -124,8 +124,9 @@ async function leaveQuery() {
 }
 // Timing rules for the classic board (tw_ add-ons), read-only from timing_rules
 async function timingDoc() {
-  const rules = await q(sb.from("timing_rules").select("*").eq("active", true));
-  return { updated: new Date().toISOString(), rules: rules.map(r => ({ id: r.id, name: r.name, from: r.opens ? r.opens.slice(0, 5) : "", to: r.closes ? r.closes.slice(0, 5) : "", runs: r.runs, run: r.runs[0], rl: r.runs.join(" / "), days: r.days.map(d => d - 1), note: r.note || "", add: r.addon && !r.addon.startsWith("tw_") ? r.addon : "" })) };
+  const [rules, adds] = await Promise.all([q(sb.from("timing_rules").select("*").eq("active", true)), q(sb.from("addons").select("id,always"))]);
+  const always = new Set(adds.filter(a => a.always).map(a => a.id));
+  return { updated: new Date().toISOString(), rules: rules.map(r => ({ id: r.id, name: r.name, from: r.opens ? r.opens.slice(0, 5) : "", to: r.closes ? r.closes.slice(0, 5) : "", runs: r.runs, run: r.runs[0], rl: r.runs.join(" / "), days: r.days.map(d => d - 1), note: r.note || "", add: r.addon && !r.addon.startsWith("tw_") ? r.addon : "", always: !!(r.addon && always.has(r.addon)) })) };
 }
 // realtime: any legacy_docs change → notify
 sb.channel("legacy-docs").on("postgres_changes", { event: "*", schema: "public", table: "legacy_docs" }, p => { const row = p.new?.path ? p.new : p.old; if (!row?.path) return; cache.set(row.path, p.eventType === "DELETE" ? null : p.new.data); notifyDoc(row.path); }).subscribe();
