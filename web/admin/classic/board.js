@@ -1390,9 +1390,13 @@ onTap(document.getElementById("preset"),function(){
   state.data.assign=adopt({assign:seedFixed(out)}).assign;state.pick=null;save();render();
 });
 onTap(document.getElementById("copyPrev"),function(){
-  var src=null;try{var r=localStorage.getItem("taieri-roster-"+key(addDays(state.mon,-7)));if(r)src=JSON.parse(r);}catch(e){}
-  if(src&&src.assign){state.data.assign=adopt({assign:JSON.parse(JSON.stringify(src.assign))}).assign;save();render();hint("Last week copied across",2200);}
-  else hint("No saved roster for the week before this one",2600);
+  var pk=key(addDays(state.mon,-7));
+  function use(src){
+    if(src&&src.assign&&Object.keys(src.assign).length){state.data.assign=adopt({assign:JSON.parse(JSON.stringify(src.assign))}).assign;save();render();hint("Last week copied across",2200);}
+    else hint("No saved roster for the week before this one",2600);
+  }
+  var local=null;try{var r=localStorage.getItem("taieri-roster-"+pk);if(r)local=JSON.parse(r);}catch(e){}
+  if(DB){DB.doc("roster/"+pk).get().then(function(sn){use(sn&&sn.exists?sn.data():local);}).catch(function(){use(local);});}else use(local);   /* last week from the live roster (7 Nov 2026) */
 });
 
 /* ---------- keep the view across a reload or republish ---------- */

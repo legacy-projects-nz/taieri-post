@@ -16,10 +16,79 @@ const docSubs = new Map();               // path → Set<cb>
 const colSubs = new Map();               // prefix → Set<cb>
 const snap = (path, data) => ({ exists: data != null, id: path.split("/").pop(), data: () => data == null ? undefined : JSON.parse(JSON.stringify(data)) });
 function notifyDoc(path) { const d = cache.get(path) ?? null; for (const cb of docSubs.get(path) || []) { try { cb(snap(path, d)); } catch (e) { console.warn(e); } } const pre = path.split("/")[0]; for (const cb of colSubs.get(pre) || []) queryCol(pre).then(cb); }
-async function fetchDoc(path) { const row = await q(sb.from("legacy_docs").select("data").eq("path", path).maybeSingle()); cache.set(path, row ? row.data : null); return cache.get(path); }
+async function fetchDoc(path) {
+  if (ROSTER.test(path)) { const d = await buildWeek(ROSTER.exec(path)[1]); cache.set(path, d); return d; }
+  const row = await q(sb.from("legacy_docs").select("data").eq("path", path).maybeSingle()); let d = row ? row.data : null;
+  if (path === "settings/roster") d = await withLivePeople(d || {});
+  cache.set(path, d); return d;
+}
+
+/* ---- roster/<monday> = the live `shifts` table (7 Nov 2026) ----
+   The classic board used to keep its own copy of each week in legacy_docs, which never reached the real roster
+   and never showed edits made in the new Run Board or the app. Now each week is read straight from `shifts`
+   (refreshed live on any shift change) and the board's edits are written back to `shifts` as they happen.
+   Assignment key "Mon|RUN" ↔ shifts(day, run): drv → slot 1, drv2–drv4 → slots 2–4; van, add-ons, trainee on slot 1;
+   st/st2… (support start hour) ↔ start_at. Only fields the board actually changed are written. */
+const ROSTER = /^roster\/(\d{4}-\d{2}-\d{2})$/;
+const DN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const addD = (iso, n) => { const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const FIELDS = ["drv", "drv2", "drv3", "drv4"];
+let vanIdOf = {}, plateOfId = {}; // plate ↔ classic van id
+let runsCache = null;
+async function runDefs() { return runsCache ||= Object.fromEntries((await q(sb.from("runs").select("code,windows"))).map(r => [r.code, r])); }
+async function withLivePeople(cfg) {
+  const [people, vans] = await Promise.all([q(sb.from("people").select("id,name,role,active,cleared").eq("active", true).order("name")), q(sb.from("vans").select("plate,make,colour,active").order("plate"))]);
+  const oldD = Object.fromEntries((cfg.drivers || []).map(d => [d.id, d]));
+  const drivers = people.filter(p => !p.cleared && (p.role === "driver" || p.role === "owner")).map(p => ({ id: p.id, name: p.name, cleared: !!oldD[p.id]?.cleared }));
+  const oldV = Object.fromEntries((cfg.vans || []).map(v => [String(v.plate).toUpperCase(), v]));
+  const vlist = vans.filter(v => v.active !== false).map(v => { const o = oldV[String(v.plate).toUpperCase()]; return { id: o?.id || String(v.plate).toLowerCase().replace(/\s+/g, ""), plate: v.plate, make: o?.make ?? v.make ?? "", col: o?.col || (v.colour || "white").toLowerCase(), type: o?.type || "van" }; });
+  vanIdOf = Object.fromEntries(vlist.map(v => [v.plate, v.id])); plateOfId = Object.fromEntries(vlist.map(v => [v.id, v.plate]));
+  return { ...cfg, drivers, vans: vlist };
+}
+const hrs = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ""); return m ? +m[1] + (+m[2]) / 60 : null; };
+const hhmm = h => `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.round((h % 1) * 60)).padStart(2, "0")}`;
+async function buildWeek(mon) {
+  if (!Object.keys(vanIdOf).length) await withLivePeople((await q(sb.from("legacy_docs").select("data").eq("path", "settings/roster").maybeSingle()))?.data || {});
+  const [rows, note, R] = await Promise.all([q(sb.from("shifts").select("*").gte("day", mon).lte("day", addD(mon, 6))), q(sb.from("week_notes").select("notes").eq("week_start", mon).maybeSingle()), runDefs()]);
+  const assign = {};
+  for (const s of rows) {
+    if (!s.slot || s.slot > 4) continue; const D = DN[(new Date(s.day + "T12:00:00Z").getUTCDay() + 6) % 7]; const k = D + "|" + s.run; const o = assign[k] ||= {};
+    const f = FIELDS[s.slot - 1]; if (s.driver) o[f] = s.driver;
+    if (s.slot === 1) { if (s.van) o.van = vanIdOf[s.van] || String(s.van).toLowerCase(); if ((s.addons || []).length) o.add = s.addons.slice(); if (s.trainee) o.tr = s.trainee; }
+    const def = R[s.run]?.windows?.[D]?.[0]?.[0]; const st = hrs(s.start_at);
+    if (/^SUP/.test(s.run) && st != null && s.start_at?.slice(0, 5) !== def && st >= 5 && st <= 11) o["st" + f.slice(3)] = st;
+  }
+  return { assign, notes: note?.notes || "", updated: Date.now(), live: true };
+}
+async function writeWeek(path, data) {
+  const mon = ROSTER.exec(path)[1]; const prev = cache.get(path) || await buildWeek(mon); const A = data.assign || {}, P = prev.assign || {};
+  const cur = await q(sb.from("shifts").select("id,day,run,slot,driver,van,addons,trainee,start_at").gte("day", mon).lte("day", addD(mon, 6)));
+  const find = (day, run, slot) => cur.find(s => s.day === day && s.run === run && s.slot === slot);
+  const ops = [];
+  for (const k of new Set([...Object.keys(A), ...Object.keys(P)])) {
+    const a = A[k] || {}, b = P[k] || {}; if (JSON.stringify(a) === JSON.stringify(b)) continue;
+    const [D, run] = k.split("|"); const di = DN.indexOf(D); if (di < 0) continue; const day = addD(mon, di);
+    FIELDS.forEach((f, i) => {
+      const slot = i + 1, st = "st" + f.slice(3); const ex = find(day, run, slot);
+      const same1 = slot !== 1 || (a.van === b.van && JSON.stringify(a.add || []) === JSON.stringify(b.add || []) && a.tr === b.tr);
+      if (a[f] === b[f] && a[st] === b[st] && same1) return;
+      if (!a[f]) { if (ex) ops.push(sb.from("shifts").delete().eq("id", ex.id)); return; }
+      const patch = { driver: a[f] };
+      if (slot === 1) { patch.van = a.van ? (plateOfId[a.van] || String(a.van).toUpperCase()) : null; patch.addons = a.add || []; patch.trainee = a.tr || null; }
+      if (a[st] != null) patch.start_at = hhmm(+a[st]); else if (b[st] != null) patch.start_at = null;
+      ops.push(ex ? sb.from("shifts").update(patch).eq("id", ex.id) : sb.from("shifts").insert({ day, run, slot, ...patch }));
+    });
+  }
+  if ((data.notes || "") !== (prev.notes || "")) ops.push(sb.from("week_notes").upsert({ week_start: mon, notes: data.notes || "" }));
+  for (const r of await Promise.all(ops)) if (r.error) throw r.error;
+  cache.set(path, { assign: JSON.parse(JSON.stringify(A)), notes: data.notes || "", updated: Date.now(), live: true });
+}
+// any change to the live roster (new Run Board, driver app, another device) → rebuild the weeks this board has open
+const refreshWeeks = (() => { let t; return () => { clearTimeout(t); t = setTimeout(async () => { for (const path of [...cache.keys()].filter(p => ROSTER.test(p) && docSubs.get(p)?.size)) { await fetchDoc(path); notifyDoc(path); } }, 700); }; })();
+sb.channel("classic-shifts").on("postgres_changes", { event: "*", schema: "public", table: "shifts" }, refreshWeeks).on("postgres_changes", { event: "*", schema: "public", table: "week_notes" }, refreshWeeks).subscribe();
 async function queryCol(pre) { const rows = await q(sb.from("legacy_docs").select("path,data").like("path", pre + "/%")); for (const r of rows) cache.set(r.path, r.data); return { docs: rows.map(r => snap(r.path, r.data)), size: rows.length, empty: !rows.length, forEach(f) { this.docs.forEach(f); } }; }
 function setDeep(obj, key, val) { const parts = key.split("."); let o = obj; for (let i = 0; i < parts.length - 1; i++) { o[parts[i]] = (o[parts[i]] && typeof o[parts[i]] === "object") ? o[parts[i]] : {}; o = o[parts[i]]; } o[parts[parts.length - 1]] = val; }
-async function writeDoc(path, data) { const { error } = await sb.from("legacy_docs").upsert({ path, data, updated_at: new Date().toISOString() }); if (error) throw error; cache.set(path, data); notifyDoc(path); }
+async function writeDoc(path, data) { if (ROSTER.test(path)) { await writeWeek(path, data); notifyDoc(path); return; } const { error } = await sb.from("legacy_docs").upsert({ path, data, updated_at: new Date().toISOString() }); if (error) throw error; cache.set(path, data); notifyDoc(path); }
 
 const READONLY = { "settings/timing": true };
 function docRef(path) {
