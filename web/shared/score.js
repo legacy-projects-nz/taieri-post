@@ -128,7 +128,7 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   // add-ons / legs
   if (model.addon != null && !(ov?.legs)) add("Add-ons (estimate)", `${model.addon} min`, model.addon);
   else { const legs = ov?.legs || [...new Set([...(seg.shift.addons || []), ...((eod?.legs) || [])])]; for (const l of legs) if (C.addMin[l]) add(addName(l), `${C.addMin[l]} min`, C.addMin[l]); }
-  if (model.news && (ov?.news_min || eod?.newspapers)) add("Newspapers", `${C.news.min} min`, ov?.news_min || C.news.min);
+  const newsMin = C.news.byRun?.[code] ?? C.news.min; if (model.news && (ov?.news_min || eod?.newspapers)) add("Newspapers", `${newsMin} min`, ov?.news_min || newsMin);
   if (model.floor && min < model.floor) add("Minimum top-up", `run minimum ${model.floor} min (sorting + delivery)`, model.floor - min);
   const allowed = min;
   // taken
