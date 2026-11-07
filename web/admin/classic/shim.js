@@ -74,6 +74,9 @@ const b = document.createElement("div"); b.style.cssText = "font:600 12px/1.4 ui
 b.innerHTML = `Classic Run Board on the new database · every change lands on the live roster straight away · when you're done, open <a href="/admin/#runboard" style="color:#eef1f4">Run Board (new)</a> and press <b>Approve roster</b> (new week) or <b>Push changes</b> (edits) so drivers get it · signed in as ${esc(first(me.name))}`;
 document.querySelector(".wrap")?.prepend(b);
 
+// public holidays from settings: board.js blanks those days out
+try { window.TP_HOLIDAYS = (await q(sb.from("settings").select("value").eq("key", "holidays").maybeSingle()))?.value || {}; } catch { window.TP_HOLIDAYS = {}; }
+
 // finally load the untouched board code
 const s = document.createElement("script"); s.src = "/admin/classic/board.js"; document.body.appendChild(s);
 

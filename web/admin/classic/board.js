@@ -187,7 +187,7 @@ function adopt(v){
   Object.keys(asg).forEach(function(k){
     var o=asg[k];if(typeof o==="string")o={drv:o};
     /* unknown driver or van ids are kept — the setup may simply not have synced yet */
-    var kd=k.split("|");if(!W[kd[1]]){delete asg[k];return;}
+    var kd=k.split("|");if(!W[kd[1]]||holOf(kd[0])){delete asg[k];return;}
     if(o.add){o.add=o.add.filter(function(x){return (ADDON[x]||/^tw_/.test(x))&&!satBlocked(kd[0],x);});if(!o.add.length)delete o.add;}
     if(!anyDrv(o)&&!o.van&&!o.add&&!o.tr)delete asg[k];else asg[k]=o;
   });
@@ -306,7 +306,10 @@ function openWeek(){
 
 /* ---------- model ---------- */
 function slots(day){return ORDER.filter(function(r){return win(r,day);});}
+/* public holidays (settings.holidays, loaded by shim.js): the whole day is blanked out */
+function holOf(day){var H=window.TP_HOLIDAYS||{};var i=DAYS.indexOf(day);if(i<0||!state||!state.mon)return null;return H[key(addDays(state.mon,i))]||null;}
 function win(run,day){
+  if(holOf(day))return null;
   var o=state.cfg.win&&state.cfg.win[day+"|"+run];
   if(o===null)return null;                 /* switched off for that day */
   if(o&&o.length)return o;                 /* custom timing */
@@ -823,7 +826,7 @@ function render(){
   var t=document.getElementById("grid");t.innerHTML="";
   var thead=document.createElement("thead"),tr=document.createElement("tr");
   var th0=document.createElement("th");th0.className="runcol";th0.textContent="Run";tr.appendChild(th0);
-  DAYS.forEach(function(d,i){var th=document.createElement("th");th.innerHTML=d+'<span class="dt">'+short(addDays(state.mon,i))+'</span>'+(dayDone[d]?' <span class="dt">✓ complete</span>':'');if(dayDone[d])th.classList.add("done");tr.appendChild(th);});
+  DAYS.forEach(function(d,i){var th=document.createElement("th");var hl=holOf(d);th.innerHTML=d+'<span class="dt">'+short(addDays(state.mon,i))+'</span>'+(hl?' <span class="dt" style="color:#e0a050">'+esc(hl.name)+' · stat day</span>':(dayDone[d]?' <span class="dt">✓ complete</span>':''));if(dayDone[d])th.classList.add("done");tr.appendChild(th);});
   thead.appendChild(tr);t.appendChild(thead);
 
   var tb=document.createElement("tbody");
@@ -840,7 +843,7 @@ function render(){
       if(day===COMBINED.day&&run===COMBINED.top){td.rowSpan=2;td.classList.add("combined");}
       if(!win(run,day)){
         td.classList.add("off");
-        if(W[run].fixed){td.classList.add("fixed");row.appendChild(td);return;}   /* this run only ever goes on its own days: no add option */
+        if(W[run].fixed||holOf(day)){td.classList.add("fixed");row.appendChild(td);return;}   /* this run only ever goes on its own days: no add option */
         var addB=document.createElement("span");addB.className="rt";addB.textContent="+";addB.title="Add "+RL(run)+" on "+day;
         addB.addEventListener("pointerdown",function(ev){ev.stopPropagation();});
         onTap(addB,function(ev){ev.stopPropagation();if(defWin(run,day))resetWin(day,run);else setWin(day,run,6*60,10*60);});
@@ -1384,7 +1387,7 @@ onTap(document.getElementById("preset"),function(){
       out[k]=perDrv[drv]?{drv:drv,van:perDrv[drv]}:{drv:drv};
     });
   });
-  state.data.assign=seedFixed(out);state.pick=null;save();render();
+  state.data.assign=adopt({assign:seedFixed(out)}).assign;state.pick=null;save();render();
 });
 onTap(document.getElementById("copyPrev"),function(){
   var src=null;try{var r=localStorage.getItem("taieri-roster-"+key(addDays(state.mon,-7)));if(r)src=JSON.parse(r);}catch(e){}
