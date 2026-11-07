@@ -22,8 +22,10 @@ export const fn = async (name, body) => { const { data, error } = await sb.funct
   try { S.me = await requireUser(app, { staff: true }); } catch { return; }
   if (!S.me.isStaff) { app.innerHTML = `<div class="wrap"><div class="card"><h2>Drivers' page is at the main link</h2><p><a href="/">Open the driver portal</a></p></div></div>`; return; }
   await loadAll(); render();
-  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "people", "settings", "timing_rules", "addons", "locations", "vehicle_checks", "eff_overrides", "run_skills", "week_notes", "roster_sent", "breaks"], debounce(async (t) => { await loadAll(); render(true); }, 500), "ops");
-  setInterval(() => render(true), 60000);
+  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "people", "settings", "timing_rules", "addons", "vehicle_checks", "eff_overrides", "run_skills", "week_notes", "roster_sent", "breaks"], debounce(async (t) => { await loadAll(); render(true); }, 500), "ops");
+  // safety net if a live update is missed (or skipped while a sheet was open): reload every 30 s and whenever the window comes back into focus
+  const refresh = async () => { if (document.visibilityState === "hidden") return; try { await loadAll(); render(true); } catch (e) { console.warn(e); } };
+  setInterval(refresh, 30000); window.addEventListener("focus", refresh); document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
   window.addEventListener("hashchange", () => { S.tab = location.hash.slice(1) || "live"; render(); });
 })();
 

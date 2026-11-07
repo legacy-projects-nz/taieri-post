@@ -196,8 +196,8 @@ function slotSheet(day, run, slot) {
       const row = { day, run, slot, driver: drv, van: g("van")?.value || null, start_at: g("st").value || null, end_at: g("en").value || null, addons: [...bg.querySelectorAll("input[name=add]:checked")].map(i => i.value), trainee: g("tr")?.value || null, note: g("note").value || null };
       if (run === "BU") { row.bu_kind = g("bk").value; row.bu_block = row.bu_kind === "committed" ? +g("bb").value : null; }
       if (row.trainee && row.trainee === drv) row.trainee = null;
-      const { error } = await sb.from("shifts").upsert(row, { onConflict: "day,run,slot" }); if (error) return toast(error.message, "err"); close(); };
-    bg.querySelector("#rm")?.addEventListener("click", async () => { const { error } = await sb.from("shifts").delete().eq("id", s.id); if (error) return toast(error.message, "err"); close(); });
+      const { error } = await sb.from("shifts").upsert(row, { onConflict: "day,run,slot" }); if (error) return toast(error.message, "err"); close(); toast("Saved", "ok"); await loadAll(); render(true); };
+    bg.querySelector("#rm")?.addEventListener("click", async () => { const { error } = await sb.from("shifts").delete().eq("id", s.id); if (error) return toast(error.message, "err"); close(); toast("Slot cleared", "ok"); await loadAll(); render(true); });
   });
 }
 
@@ -241,7 +241,7 @@ async function copyPrev() {
   const prev = addDays(S.week, -7); const src = S.shifts.filter(s => s.day >= prev && s.day < S.week); if (!src.length) return toast("Last week is empty", "err");
   const cur = weekShifts(); if (cur.length && !confirm(`This week already has ${cur.length} shifts. Fill only the empty slots from last week?`)) return;
   const rows = src.filter(s => !S.C.holidays[addDays(s.day, 7)]).filter(s => !cur.some(c => c.day === addDays(s.day, 7) && c.run === s.run && c.slot === s.slot)).map(s => ({ day: addDays(s.day, 7), run: s.run, slot: s.slot, driver: s.driver, van: s.van, start_at: s.start_at, end_at: s.end_at, addons: s.addons, trainee: s.trainee }));
-  if (!rows.length) return toast("Nothing to copy", "err"); const { error } = await sb.from("shifts").upsert(rows, { onConflict: "day,run,slot" }); if (error) return toast(error.message, "err"); toast(`Copied ${rows.length} shifts`, "ok");
+  if (!rows.length) return toast("Nothing to copy", "err"); const { error } = await sb.from("shifts").upsert(rows, { onConflict: "day,run,slot" }); if (error) return toast(error.message, "err"); toast(`Copied ${rows.length} shifts`, "ok"); await loadAll(); render(true);
 }
 function runTimes() {
   sheet(`<h3>Run times</h3><p class="hint">Usual start and finish for each run, each day. Blank = doesn't run. Format 05:00-10:30. These are the defaults a new shift gets.</p><div class="scroll"><table class="dt" id="rt"><tr><th>Run</th>${DAYS.map(d => `<th>${d}</th>`).join("")}<th>Slots</th></tr>${S.runs.map(r => `<tr><td><b>${esc(r.label || r.code)}</b></td>${DAYS.map(d => { const w = r.windows?.[d]; return `<td><input class="in" style="min-height:34px;min-width:110px;font-size:13px;padding:4px 6px" data-run="${r.code}" data-day="${d}" value="${w ? `${w[0][0]}-${w[0][1]}` : ""}"></td>`; }).join("")}<td><input class="in" style="min-height:34px;width:60px;font-size:13px;padding:4px 6px" data-slots="${r.code}" value="${r.slots || 1}"></td></tr>`).join("")}</table></div><button class="btn" id="save-rt">Save run times</button>`, (bg, close) => {
