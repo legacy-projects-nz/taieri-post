@@ -145,7 +145,7 @@ const buCol = m => m <= BU_SHORT ? "var(--warn)" : "var(--go)";
 export function wireRunBoard() {
   wireWeek();
   $$("[data-rbv]").forEach(b => b.onclick = () => { S.rbView = b.dataset.rbv; if (S.rbView === "week") S.week = monOf(S.rbDay || today()); render(true); });
-  $$("[data-rbd]").forEach(b => b.onclick = () => { const n = +b.dataset.rbd; S.rbDay = n ? addDays(S.rbDay || today(), n) : today(); render(true); });
+  $$("[data-rbd]").forEach(b => b.onclick = async () => { const n = +b.dataset.rbd; S.rbDay = n ? addDays(S.rbDay || today(), n) : today(); if (monOf(S.rbDay) !== S.week) { S.week = monOf(S.rbDay); await loadAll(); } render(true); });
   $$(".slot").forEach(el => el.onclick = () => slotSheet(el.dataset.day, el.dataset.run, +el.dataset.slot));
   $$(".slot.filled[data-drv]").forEach(el => { if (el.dataset.run !== "BU") onLongPress(el, () => sickSheet(el.dataset.drv, el.dataset.day)); });
   $$(".bu-tog").forEach(b => b.onclick = async ev => { ev.stopPropagation(); if (!S.me.can("roster")) return toast("You can view the roster but not change it", "err");

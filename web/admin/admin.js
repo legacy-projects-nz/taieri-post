@@ -30,7 +30,8 @@ export const fn = async (name, body) => { const { data, error } = await sb.funct
 })();
 
 export async function loadAll() {
-  const t = today(); const wk = S.week; const from = addDays(Math.min(wk, monOf(t)) === wk ? wk : monOf(t), -63), to = addDays(Math.max(wk, monOf(t)) === wk ? wk : monOf(t), 20);
+  const t = today(); const wk = S.week; const mt = monOf(t); // ISO dates compare as strings (Math.min/max gave NaN, so weeks more than ~2 weeks out never loaded)
+  const from = addDays(wk < mt ? wk : mt, -63), to = addDays(wk > mt ? wk : mt, 20);
   const [set, runs, vans, addons, rules, people, shifts, items, acks, sent, msgs, recips, leave, alerts, entries, marks, feed, ovs, locs, skills, notes, vchk] = await Promise.all([
     loadSettings(), q(sb.from("runs").select("*").order("sort")), q(sb.from("vans").select("*").order("plate")), q(sb.from("addons").select("*")), q(sb.from("timing_rules").select("*")),
     q(sb.from("people").select("*").order("name")),
