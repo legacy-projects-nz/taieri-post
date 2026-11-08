@@ -275,7 +275,7 @@ function timingRows(x, day, nowMin) {
     else if (gp && planned) { st = "✓ game plan in"; cls = "done"; }
     else if (isT) { if (t != null && nowMin > t) { st = `✗ not done by ${fmtT(t)}`; cls = "miss"; } else if (f != null && nowMin >= f) { tag = "now"; cls = "now"; } else if (t != null && t - nowMin <= 60) { tag = "due soon"; cls = "now"; } }
     else if (day < today() && key) { st = `✗ not marked done`; cls = "miss"; }
-    const btn = !(isT && key && !S.viewAs) ? "" : done ? `<button class="btn sm" data-done="${esc(key)}" data-undo="1" data-shift="${x.shift.id}" title="Tap again to undo" style="flex:0 0 auto;min-height:34px">✓ Done</button>` : !(gp && planned) ? `<button class="btn sm ${cls === "miss" ? "warn" : "ghost"}" data-done="${esc(key)}" data-shift="${x.shift.id}" style="flex:0 0 auto;min-height:34px">Done</button>` : "";
+    const btn = !(isT && key && !S.viewAs) ? "" : done ? `<button class="btn sm" data-done="${esc(key)}" data-undo="1" data-shift="${x.shift.id}" title="Tap again to undo" style="flex:0 0 auto;min-height:34px">✓ Done</button>` : puAreaOf(key) ? `<div class="row" style="flex:0 0 auto;gap:6px">${puBtn(key, x.shift.id)}<button class="btn sm ghost" data-done="${esc(key)}" data-shift="${x.shift.id}" style="flex:0 0 auto;min-height:34px">None</button></div>` : !(gp && planned) ? `<button class="btn sm ${cls === "miss" ? "warn" : "ghost"}" data-done="${esc(key)}" data-shift="${x.shift.id}" style="flex:0 0 auto;min-height:34px">Done</button>` : "";
     return `<div class="tw-r ${cls}"><div class="w">${winTxt(r)}${tag ? `<span class="tw-tag">${tag}</span>` : ""}</div><div class="row" style="justify-content:space-between;align-items:center;gap:6px;flex-wrap:nowrap"><div style="flex:1 1 auto"><span class="n">${esc(r.name)}</span>${r.note ? `<span class="x">${esc(r.note)}</span>` : ""}${st ? `<span class="x ${cls === "miss" ? "c-crit" : "c-ok"}" style="font-weight:600">${st}</span>` : ""}${gp && !planned && !done && isT ? `<span class="x">Set your planned times under Change what&#39;s on this run (that counts as the game plan), or tap Done.</span>` : ""}</div>${btn}</div></div>`; });
   return `<div class="tw"><h4>${isT ? "Timed tasks today · tap Done as you finish each one" : "Timed tasks"}</h4>${rows.join("")}${isT ? `<p class="hint" style="margin:4px 0 0">Jeremy sees each Done straight away; a window that passes without Done raises an alert for you both.</p>` : ""}</div>`;
 }
@@ -382,7 +382,7 @@ function tasksCard(D, n, next, bare = false) {
     const row = t => { const isDone = !!(t.doneAt || t.planned); let cls = "", st = "";
       if (isDone) { cls = "ok"; st = t.doneAt ? `✓ done ${fmtTime(t.doneAt)}` : "✓ game plan in"; }
       else if (isT) { if (t.closes != null && n.min > t.closes) { cls = "over"; st = `overdue · was due ${fmtT(t.closes)}`; } else if (t.closes != null && t.closes - n.min <= 15) { cls = "soon"; st = `due in ${t.closes - n.min} min`; } else { cls = "pend"; st = "not done yet"; } }
-      const btn = isT && !isDone && t.key && (!S.viewAs || S.viewer?.isStaff) ? `<button class="btn sm accent" data-done="${esc(t.key)}" data-shift="${x.shift.id}">Done</button>` : "";
+      const pu = puAreaOf(t.key); const btn = isT && !isDone && t.key && (!S.viewAs || S.viewer?.isStaff) ? (pu ? `<div class="row" style="flex:0 0 auto;gap:6px">${puBtn(t.key, x.shift.id)}<button class="btn sm ghost" data-done="${esc(t.key)}" data-shift="${x.shift.id}">None</button></div>` : `<button class="btn sm accent" data-done="${esc(t.key)}" data-shift="${x.shift.id}">Done</button>`) : "";
       const meet = t.meetEdit && !isDone && D.day >= n.date && (!S.viewAs || S.viewer?.isStaff) ? `<label class="meta" style="display:flex;flex-direction:column;gap:2px;flex:0 0 112px">Milton time<input class="in" type="time" step="300" style="min-height:40px" value="${esc(t.meetVal)}" data-meet="${x.shift.id}" aria-label="Milton drop-off time"></label>` : "";
       return `<div class="tk ${cls}"><div class="tkt"><div class="t">${esc(t.title)}</div><div class="d">${esc(t.desc || "")}</div><div class="w">${esc(t.time)}${st ? ` · ${st}` : ""}</div></div>${meet}${btn}</div>`; };
     return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${fmtT(x.st)} – ${fmtT(x.en)}${items.length && isT ? ` · ${nDone}/${items.length} done` : ""}</span></div>
@@ -481,9 +481,12 @@ function pickupsCard(T) {
     <div class="row"><button class="btn sm" id="pu-log" style="flex:0 0 auto">+ Enter pick-ups</button></div>
     ${list.length ? `<details style="margin-top:8px"><summary>This month · ${list.length} logged</summary><div class="list" style="margin-top:6px">${list.map(r => `<div class="item"><div>${label(r.day)} · ${esc(r.area)} · ${esc(PU_CUST[r.customer] || r.customer)} · ${PU_SRC_L[r.source] || "depot"}</div><div class="meta">${r.small} small${r.large ? ` · ${r.large} large` : ""}${r.note ? ` · ${esc(r.note)}` : ""}</div></div>`).join("")}</div><p class="hint">Made a mistake? Message Jeremy or Alejandro and they'll fix it.</p></details>` : ""}</div>`;
 }
-function logPickup() {
-  const area = PU_AREA[puToday(S.days[today()])] || "Lawrence";
-  sheet(`<h3>Enter pick-ups</h3><form class="frm" id="pf"><label class="f">Date<input class="in" type="date" id="pu-day" value="${today()}" required></label>
+/** Pick-up entry task: the add-on's pick-up area, if it has one */
+const puAreaOf = key => key ? S.addons.find(a => a.id === key)?.pu_area || null : null;
+const puBtn = (key, shiftId) => puAreaOf(key) ? `<button class="btn sm accent" data-puopen="${esc(key)}" data-shift="${shiftId}" style="flex:0 0 auto;min-height:34px">Enter pick-ups</button>` : "";
+function logPickup(opt = {}) {
+  const area = opt.area || PU_AREA[puToday(S.days[today()])] || "Lawrence";
+  sheet(`<h3>Enter pick-ups${opt.area ? ` · ${esc(opt.area)}` : ""}</h3><form class="frm" id="pf"><label class="f">Date<input class="in" type="date" id="pu-day" value="${today()}" required></label>
     <label class="f">Area<select class="in" id="pu-area">${PU_AREAS.map(a => `<option ${a === area ? "selected" : ""}>${a}</option>`).join("")}</select></label>
     <div class="full"><table class="dt" style="width:100%"><tr><th rowspan="2">Customer</th><th colspan="2">Depot</th><th colspan="2">Customer</th></tr><tr><th>Small</th><th>Large</th><th>Small</th><th>Large</th></tr>${Object.entries(PU_CUST).map(([k, v]) => `<tr data-cust="${k}"${puCust(area).includes(k) ? "" : " hidden"}><td>${esc(v)}</td>${PU_SRC.map(src => `<td><input class="in" data-pu="${k}.${src}.small" inputmode="numeric" placeholder="0" style="width:54px"></td><td><input class="in" data-pu="${k}.${src}.large" inputmode="numeric" placeholder="0" style="width:54px"></td>`).join("")}</tr>`).join("")}</table></div>
     <label class="f full">Note (optional)<input class="in" id="pu-n"></label><button class="btn full" type="submit">Save pick-ups</button></form>`, (bg, close) => {
@@ -493,7 +496,9 @@ function logPickup() {
       const rows = Object.keys(PU_CUST).filter(c => puCust(g("pu-area")).includes(c)).flatMap(c => PU_SRC.map(src => ({ day: g("pu-day"), area: g("pu-area"), customer: c, source: src, small: v(`${c}.${src}.small`), large: v(`${c}.${src}.large`), note: g("pu-n") || null, driver: S.me.id, created_by: S.me.id }))).filter(r => r.small || r.large);
       if (!rows.length) return toast("Enter at least one parcel", "err");
       const { error } = await sb.from("pickups").insert(rows);
-      if (error) return toast(error.message, "err"); close(); toast("Pick-ups saved ✓", "ok"); await loadAll(); render(); }); });
+      if (error) return toast(error.message, "err");
+      if (opt.key && opt.shift && rows.some(r => r.area === opt.area)) { const { error: e2 } = await sb.rpc("task_done", { p_shift: opt.shift, p_addon: opt.key }); if (e2) toast(`Pick-ups saved, but the task couldn't be ticked: ${e2.message}`, "err"); }
+      close(); toast("Pick-ups saved ✓", "ok"); await loadAll(); render(); }); });
 }
 function accessCard() {
   const body = (S.access?.body || "").trim(); const canEdit = !!S.viewer?.can?.("people");
@@ -553,7 +558,8 @@ function wire() {
     if (data?.message_id) { try { const r = await sb.functions.invoke("notify", { body: { type: "milton_time", message_id: data.message_id } }); sent = !r.error; } catch { } }
     toast(data?.law?.length ? `Milton ${fmtT(toMin(i.value))} saved${sent ? " · Lawrence driver notified" : " · in the Lawrence driver's app"}` : `Milton ${fmtT(toMin(i.value))} saved (nobody on Lawrence that day yet)`, "ok"); render(); });
   $("#access-edit")?.addEventListener("click", editAccess);
-  $("#pu-log")?.addEventListener("click", logPickup);
+  $("#pu-log")?.addEventListener("click", () => logPickup());
+  $$("[data-puopen]").forEach(b => b.onclick = e => { e.stopPropagation(); logPickup({ area: puAreaOf(b.dataset.puopen), key: b.dataset.puopen, shift: b.dataset.shift }); });
   $$("[data-done]").forEach(b => b.onclick = async () => { const undo = !!b.dataset.undo; b.disabled = true; const { error } = await sb.rpc(undo ? "task_undo" : "task_done", { p_shift: b.dataset.shift, p_addon: b.dataset.done }); if (error) { b.disabled = false; toast(error.message, "err"); } else { toast(undo ? "Done undone" : "Marked done ✓ · tap again to undo", "ok"); await loadAll(); render(); } });
   $$("[data-sc]").forEach(b => b.onclick = () => { S.scSel = S.scSel === b.dataset.sc ? null : b.dataset.sc; render(); setTimeout(() => $("#scores")?.scrollIntoView({ block: "nearest" }), 0); });
   $("#leave-new")?.addEventListener("click", leaveForm);
