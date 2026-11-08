@@ -269,7 +269,7 @@ function winTxt(r) { const f = toMin(r.opens), t = toMin(r.closes); return f != 
 /** Every timed task on a run, each with its own Done button on the day (what Jeremy's Alerts and "Timings today" read). */
 function timingRows(x, day, nowMin) {
   const isT = nowMin != null; const rules = rulesFor(x, day); if (!rules.length) return "";
-  const rows = rules.map(r => { const f = toMin(r.opens), t = toMin(r.closes); const key = r.addon; const done = key ? x.shift.done?.[key] : null; const gp = !!key?.startsWith("tw_") && /game plan/i.test(r.name); const planned = gp && Object.keys(x.shift.plan || {}).length > 0; let st = "", cls = "", tag = "";
+  const rows = rules.map(r => { const f = toMin(r.opens), t = toMin(r.closes); const key = r.done_key || r.addon; const done = key ? x.shift.done?.[key] : null; const gp = !!key?.startsWith("tw_") && /game plan/i.test(r.name); const planned = gp && Object.keys(x.shift.plan || {}).length > 0; let st = "", cls = "", tag = "";
     if (done) { st = `✓ done ${fmtTime(done)}`; cls = "done"; }
     else if (gp && planned) { st = "✓ game plan in"; cls = "done"; }
     else if (isT) { if (t != null && nowMin > t) { st = `✗ not done by ${fmtT(t)}`; cls = "miss"; } else if (f != null && nowMin >= f) { tag = "now"; cls = "now"; } else if (t != null && t - nowMin <= 60) { tag = "due soon"; cls = "now"; } }
@@ -357,7 +357,7 @@ function shiftsCard(t) {
 /* ---------- Add-ons (beside the shift: one button per add-on, tap = done) ---------- */
 function runSegOf(D) { return D && D.segs.filter(x => (!x.sort || x.shift.addons?.length) && (S.addons.some(a => a.runs.includes(x.shift.run)) || x.shift.addons?.length || rulesFor(x, D.day).length)); }
 function addonsCard(T, N, n) {   // today's tasks, only while today's run is still going
-  const rs = runSegOf(T); const openTask = !!T && !!rs?.some(x => rulesFor(x, T.day).some(r => r.addon && !(x.shift.done || {})[r.addon])); const done = !T || !rs?.length || (n.min >= Math.max(...rs.map(x => x.en ?? x.st)) && !openTask);
+  const rs = runSegOf(T); const openTask = !!T && !!rs?.some(x => rulesFor(x, T.day).some(r => r.addon && !(x.shift.done || {})[r.done_key || r.addon])); const done = !T || !rs?.length || (n.min >= Math.max(...rs.map(x => x.en ?? x.st)) && !openTask);
   return done ? "" : tasksCard(T, n, false);
 }
 function nextTasksCard(N, n) {   // tasks for the next shift (tomorrow when rostered), grey side bar
@@ -372,7 +372,7 @@ function tasksCard(D, n, next, bare = false) {
     const on = new Set(x.shift.addons || []); const plan = x.shift.plan || {}; const done = x.shift.done || {};
     // one list: every timed task on the run, then any add-on that has no timed task of its own
     const items = []; const covered = new Set();
-    for (const r of rulesFor(x, D.day)) { const key = r.addon || null; if (key) covered.add(key); const gp = !!key?.startsWith("tw_") && /game plan/i.test(r.name); const planned = gp && Object.keys(plan).length > 0;
+    for (const r of rulesFor(x, D.day)) { const key = r.done_key || r.addon || null; if (r.addon) covered.add(r.addon); const gp = !!key?.startsWith("tw_") && /game plan/i.test(r.name); const planned = gp && Object.keys(plan).length > 0;
       const meetEdit = code === "DB" && key === "milton";   // D>B driver sets the day's Milton drop-off time; it goes to the Lawrence driver
       items.push({ key, title: r.name, desc: meetEdit ? `${r.note || ""} Different time? Change it here and the Lawrence driver gets it straight away.`.trim() : r.note || (key && !key.startsWith("tw_") ? (S.addons.find(a => a.id === key)?.name || "") : ""), time: winTxt(r), opens: toMin(r.opens), closes: toMin(r.closes), doneAt: key ? done[key] : null, planned, meetEdit, meetVal: String(x.shift.milton_at || r.closes || "").slice(0, 5) }); }
     for (const id of x.shift.addons || []) { if (covered.has(id) || id.startsWith("tw_")) continue; const o = S.addons.find(a => a.id === id); if (!o) continue;

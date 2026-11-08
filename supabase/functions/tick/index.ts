@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
         // Milton meet: the D>B driver's chosen time (shifts.milton_at) replaces the rule's time on D>B and LAW, and puts the meet on LAW even if not ticked
         const meet = (r.addon === "milton" || r.addon === "tw_t10") && x.s.milton_at ? String(x.s.milton_at).slice(0, 5) : null;
         const ad = r.addon ? (addons || []).find(a => a.id === r.addon) : null; if (ad?.always && ad.runs.includes(x.s.run)) { /* standing task: every one of its runs */ } else if (ad && ad.runs.includes(x.s.run)) { if (!(x.s.addons || []).includes(r.addon) && !(meet && r.addon === "tw_t10")) continue; } else if (!all && r.runs.length > 1) continue;
-        const done = !!(x.s.done?.[r.addon]) || (r.addon?.startsWith("tw_") && /game plan/i.test(r.name) && Object.keys(x.s.plan || {}).length > 0);
+        const done = !!(x.s.done?.[r.done_key || r.addon]) || (r.addon?.startsWith("tw_") && /game plan/i.test(r.name) && Object.keys(x.s.plan || {}).length > 0);
         const closes = toMin(meet ?? r.closes); if (closes == null) continue;
         const kd = `timing_due|${t}|${drv}|${r.id}`, km = `timing_missed|${t}|${drv}|${r.id}`;
         if (done || (meet && now.min < closes - 15)) { for (const a of alertsOpen) if (a.dedupe_key === kd || a.dedupe_key === km) resolve.push(a.id); if (done) continue; }   // a later Milton time clears an alert raised for the old one
