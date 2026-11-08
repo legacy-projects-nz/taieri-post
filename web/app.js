@@ -274,7 +274,7 @@ function timingRows(x, day, nowMin) {
     else if (gp && planned) { st = "✓ game plan in"; cls = "done"; }
     else if (isT) { if (t != null && nowMin > t) { st = `✗ not done by ${fmtT(t)}`; cls = "miss"; } else if (f != null && nowMin >= f) { tag = "now"; cls = "now"; } else if (t != null && t - nowMin <= 60) { tag = "due soon"; cls = "now"; } }
     else if (day < today() && key) { st = `✗ not marked done`; cls = "miss"; }
-    const btn = !(isT && key && !S.viewAs) ? "" : done ? `<button class="btn sm" data-done="${esc(key)}" data-undo="1" data-shift="${x.shift.id}" title="Tap again to undo" style="flex:0 0 auto;min-height:34px">✓ Done</button>` : puAreaOf(key) ? `<div class="row" style="flex:0 0 auto;gap:6px">${puBtn(key, x.shift.id)}<button class="btn sm ghost" data-done="${esc(key)}" data-shift="${x.shift.id}" style="flex:0 0 auto;min-height:34px">None</button></div>` : !(gp && planned) ? `<button class="btn sm ${cls === "miss" ? "warn" : "ghost"}" data-done="${esc(key)}" data-shift="${x.shift.id}" style="flex:0 0 auto;min-height:34px">Done</button>` : "";
+    const btn = !(isT && key && !S.viewAs) ? "" : done ? `<button class="btn sm" data-done="${esc(key)}" data-undo="1" data-shift="${x.shift.id}" title="Tap again to undo" style="flex:0 0 auto;min-height:34px">✓ Done</button>` : key === "tw_twrunsheet" ? rsBtn(x.shift.id) : puAreaOf(key) ? `<div class="row" style="flex:0 0 auto;gap:6px">${puBtn(key, x.shift.id)}<button class="btn sm ghost" data-done="${esc(key)}" data-shift="${x.shift.id}" style="flex:0 0 auto;min-height:34px">None</button></div>` : !(gp && planned) ? `<button class="btn sm ${cls === "miss" ? "warn" : "ghost"}" data-done="${esc(key)}" data-shift="${x.shift.id}" style="flex:0 0 auto;min-height:34px">Done</button>` : "";
     return `<div class="tw-r ${cls}"><div class="w">${winTxt(r)}${tag ? `<span class="tw-tag">${tag}</span>` : ""}</div><div class="row" style="justify-content:space-between;align-items:center;gap:6px;flex-wrap:nowrap"><div style="flex:1 1 auto"><span class="n">${esc(r.name)}</span>${r.note ? `<span class="x">${esc(r.note)}</span>` : ""}${st ? `<span class="x ${cls === "miss" ? "c-crit" : "c-ok"}" style="font-weight:600">${st}</span>` : ""}${gp && !planned && !done && isT ? `<span class="x">Set your planned times under Change what&#39;s on this run (that counts as the game plan), or tap Done.</span>` : ""}</div>${btn}</div></div>`; });
   return `<div class="tw"><h4>${isT ? "Timed tasks today · tap Done as you finish each one" : "Timed tasks"}</h4>${rows.join("")}${isT ? `<p class="hint" style="margin:4px 0 0">Jeremy sees each Done straight away; a window that passes without Done raises an alert for you both.</p>` : ""}</div>`;
 }
@@ -381,7 +381,7 @@ function tasksCard(D, n, next, bare = false) {
     const row = t => { const isDone = !!(t.doneAt || t.planned); let cls = "", st = "";
       if (isDone) { cls = "ok"; st = t.doneAt ? `✓ done ${fmtTime(t.doneAt)}` : "✓ game plan in"; }
       else if (isT) { if (t.closes != null && n.min > t.closes) { cls = "over"; st = `overdue · was due ${fmtT(t.closes)}`; } else if (t.closes != null && t.closes - n.min <= 15) { cls = "soon"; st = `due in ${t.closes - n.min} min`; } else { cls = "pend"; st = "not done yet"; } }
-      const pu = puAreaOf(t.key); const btn = isT && !isDone && t.key && (!S.viewAs || S.viewer?.isStaff) ? (pu ? `<div class="row" style="flex:0 0 auto;gap:6px">${puBtn(t.key, x.shift.id)}<button class="btn sm ghost" data-done="${esc(t.key)}" data-shift="${x.shift.id}">None</button></div>` : `<button class="btn sm accent" data-done="${esc(t.key)}" data-shift="${x.shift.id}">Done</button>`) : "";
+      const pu = puAreaOf(t.key); const btn = isT && !isDone && t.key && (!S.viewAs || S.viewer?.isStaff) ? (t.key === "tw_twrunsheet" ? rsBtn(x.shift.id) : pu ? `<div class="row" style="flex:0 0 auto;gap:6px">${puBtn(t.key, x.shift.id)}<button class="btn sm ghost" data-done="${esc(t.key)}" data-shift="${x.shift.id}">None</button></div>` : `<button class="btn sm accent" data-done="${esc(t.key)}" data-shift="${x.shift.id}">Done</button>`) : "";
       const meet = t.meetEdit && !isDone && D.day >= n.date && (!S.viewAs || S.viewer?.isStaff) ? `<label class="meta" style="display:flex;flex-direction:column;gap:2px;flex:0 0 112px">Milton time<input class="in" type="time" step="300" style="min-height:40px" value="${esc(t.meetVal)}" data-meet="${x.shift.id}" aria-label="Milton drop-off time"></label>` : "";
       return `<div class="tk ${cls}"><div class="tkt"><div class="t">${esc(t.title)}</div><div class="d">${esc(t.desc || "")}</div><div class="w">${esc(t.time)}${st ? ` · ${st}` : ""}</div></div>${meet}${btn}</div>`; };
     return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${fmtT(x.st)} – ${fmtT(x.en)}${items.length && isT ? ` · ${nDone}/${items.length} done` : ""}</span></div>
@@ -483,6 +483,8 @@ function pickupsCard(T) {
 /** Pick-up entry task: the add-on's pick-up area, if it has one */
 const puAreaOf = key => key ? S.addons.find(a => a.id === key)?.pu_area || null : null;
 const puBtn = (key, shiftId) => puAreaOf(key) ? `<button class="btn sm accent" data-puopen="${esc(key)}" data-shift="${shiftId}" style="flex:0 0 auto;min-height:34px">Enter pick-ups</button>` : "";
+/** Runsheet photo task: the Done button opens the camera; the photo is uploaded and the task ticked */
+const rsBtn = shiftId => `<label class="btn sm accent" style="flex:0 0 auto;min-height:34px;cursor:pointer">📷 Take photo<input type="file" accept="image/*" capture="environment" data-rsphoto="${shiftId}" hidden></label>`;
 function logPickup(opt = {}) {
   const area = opt.area || PU_AREA[puToday(S.days[today()])] || "Lawrence";
   sheet(`<h3>Enter pick-ups${opt.area ? ` · ${esc(opt.area)}` : ""}</h3><form class="frm" id="pf"><label class="f">Date<input class="in" type="date" id="pu-day" value="${today()}" required></label>
@@ -558,6 +560,14 @@ function wire() {
     toast(data?.law?.length ? `Milton ${fmtT(toMin(i.value))} saved${sent ? " · Lawrence driver notified" : " · in the Lawrence driver's app"}` : `Milton ${fmtT(toMin(i.value))} saved (nobody on Lawrence that day yet)`, "ok"); render(); });
   $("#access-edit")?.addEventListener("click", editAccess);
   $("#pu-log")?.addEventListener("click", () => logPickup());
+  $$("[data-rsphoto]").forEach(inp => inp.onchange = async () => { const f = inp.files?.[0]; if (!f) return; const sh = S.shifts.find(z => z.id === inp.dataset.rsphoto); const lab = inp.closest("label"); if (lab) lab.style.opacity = ".5";
+    toast("Uploading runsheet photo…");
+    const path = `${sh?.driver || S.me.id}/${sh?.day || today()}/${inp.dataset.rsphoto}-${Date.now()}.${(f.name.split(".").pop() || "jpg").toLowerCase()}`;
+    const { error } = await sb.storage.from("runsheets").upload(path, f, { upsert: true, contentType: f.type || "image/jpeg" });
+    if (error) { if (lab) lab.style.opacity = ""; return toast(`Photo didn't upload: ${error.message}`, "err"); }
+    const { error: e2 } = await sb.rpc("runsheet_done", { p_shift: inp.dataset.rsphoto, p_path: path });
+    if (e2) { if (lab) lab.style.opacity = ""; return toast(e2.message, "err"); }
+    toast("Runsheet photo saved ✓", "ok"); await loadAll(); render(); });
   $$("[data-puopen]").forEach(b => b.onclick = e => { e.stopPropagation(); logPickup({ area: puAreaOf(b.dataset.puopen), key: b.dataset.puopen, shift: b.dataset.shift }); });
   $$("[data-done]").forEach(b => b.onclick = async () => { const undo = !!b.dataset.undo; b.disabled = true; const { error } = await sb.rpc(undo ? "task_undo" : "task_done", { p_shift: b.dataset.shift, p_addon: b.dataset.done }); if (error) { b.disabled = false; toast(error.message, "err"); } else { toast(undo ? "Done undone" : "Marked done ✓ · tap again to undo", "ok"); await loadAll(); render(); } });
   $$("[data-sc]").forEach(b => b.onclick = () => { S.scSel = S.scSel === b.dataset.sc ? null : b.dataset.sc; render(); setTimeout(() => $("#scores")?.scrollIntoView({ block: "nearest" }), 0); });
