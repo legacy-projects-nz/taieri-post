@@ -119,12 +119,12 @@ function render() {
     <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
     ${quickBar(T, n)}
     ${todayCard(T, nextDay, n)}
-    ${puToday(T) ? pickupsCard(T) : ""}
     ${addonsCard(T, nextDay, n)}
     ${rosterChanges(n)}
     ${alertsCard()}
     ${messagesCard()}
     ${scoresCard()}
+    ${pickupsCard(T)}
     <div class="folds">
     ${nextShiftCard(nextDay, n)}
     ${pair(vanCard(T, null), shiftsCard(t))}
@@ -132,7 +132,6 @@ function render() {
     ${pair(leaveCard(), detailsCard())}
     ${calendarCard(t)}
     ${moreCard()}
-    ${puToday(T) ? "" : pickupsCard(T)}
     ${accessCard()}
     </div>
     <p class="foot">Shift or score looks wrong? Message Jeremy.<br>Signed in as ${esc((S.viewer || S.me).email || "")}</p>
@@ -475,8 +474,8 @@ const puToday = T => (T?.segs || []).map(x => x.shift.run).find(r => PU_AREA[r])
 function pickupsCard(T) {
   if (S.viewAs) return "";
   const list = S.pickups || []; const run = puToday(T); const todays = list.filter(r => r.day === today());
-  return `<div class="card" id="pickups"${run ? ` data-fold-open="1"` : ""}><h2>Parcel pick-ups<span>${todays.length ? `✓ ${todays.length} logged today` : run ? "pick-up run today" : "Rural · South · Owaka · Lawrence · Balclutha"}</span></h2>
-    <p class="meta" style="margin:0 0 8px">${run ? "You're on a pick-up run today. " : ""}Enter how many parcels you picked up for each customer so they can be invoiced.</p>
+  return `<div class="card" id="pickups"><h2>Parcel pick-ups<span>${todays.length ? `✓ ${todays.length} logged today` : run ? "pick-up run today" : "Rural · South · Owaka · Lawrence · Balclutha"}</span></h2>
+    <p class="meta" style="margin:0 0 8px">Your pick-up tasks have their own Enter pick-ups button. Use this box for any you missed or another day.</p>
     ${todays.length ? `<p class="meta c-ok" style="margin:0 0 8px">✓ Today: ${todays.map(r => `${esc(r.area)} ${esc(PU_CUST[r.customer] || r.customer)} (${PU_SRC_L[r.source] || "depot"}) ${r.small} small${r.large ? ` + ${r.large} large` : ""}`).join(" · ")}</p>` : ""}
     <div class="row"><button class="btn sm" id="pu-log" style="flex:0 0 auto">+ Enter pick-ups</button></div>
     ${list.length ? `<details style="margin-top:8px"><summary>This month · ${list.length} logged</summary><div class="list" style="margin-top:6px">${list.map(r => `<div class="item"><div>${label(r.day)} · ${esc(r.area)} · ${esc(PU_CUST[r.customer] || r.customer)} · ${PU_SRC_L[r.source] || "depot"}</div><div class="meta">${r.small} small${r.large ? ` · ${r.large} large` : ""}${r.note ? ` · ${esc(r.note)}` : ""}</div></div>`).join("")}</div><p class="hint">Made a mistake? Message Jeremy or Alejandro and they'll fix it.</p></details>` : ""}</div>`;
