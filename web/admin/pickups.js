@@ -61,13 +61,17 @@ async function loadMonth() {
 const reload = async () => { await loadMonth(); render(); };
 
 // totals[cust][area] = { small, large }
-function totals() { const t = {}; for (const r of rows) { const c = (t[r.customer] ??= {}); const a = (c[r.area] ??= { small: 0, large: 0 }); a.small += r.small; a.large += r.large; } return t; }
+function totals() { const t = {}; for (const r of rows) { if (r.min_fee != null) continue; const c = (t[r.customer] ??= {}); const a = (c[r.area] ??= { small: 0, large: 0 }); a.small += r.small; a.large += r.large; } return t; }
 // Xero lines for a customer: one per area and size, then any extra lines
 function linesFor(cust) {
   const C = rates()[cust]; const tot = totals()[cust] || {}; const out = [];
   for (const area of AREAS) { const a = tot[area]; if (!a) continue;
     if (a.small) out.push({ code: C.small.code, desc: `${C.small.desc} - Pick Ups - ${AREA_SHORT[area]}`, qty: a.small, price: C.small.rate, acct: C.acct });
     if (a.large) out.push({ code: C.large.code, desc: `${C.large.desc} - Pick Ups - ${AREA_SHORT[area]}`, qty: a.large, price: C.large.rate, acct: C.acct }); }
+  // no-parcel days at the Balclutha depot: split fee (one line per customer, qty = days)
+  const mins = rows.filter(r => r.customer === cust && r.min_fee != null);
+  for (const [fee, n] of Object.entries(mins.reduce((a, r) => (a[+r.min_fee] = (a[+r.min_fee] || 0) + 1, a), {})))
+    out.push({ code: "", desc: `${C.short} - Minimum Charge - Bal Depot Pick Up`, qty: n, price: +fee, acct: C.acct });
   for (const x of extras.filter(x => x.customer === cust)) out.push({ code: x.item_code || "", desc: x.description, qty: +x.qty, price: +x.price, acct: x.account || C.acct, extra: x.id });
   return out;
 }
@@ -103,7 +107,7 @@ function entryView() {
       <td><select class="in" data-row="${r.id}" data-k="area">${opt(AREAS.map(a => [a, a]), r.area)}</select></td>
       <td><select class="in" data-row="${r.id}" data-k="customer">${opt(Object.entries(CUSTOMERS).map(([k, v]) => [k, v.short]), r.customer)}</select></td>
       <td><select class="in" data-row="${r.id}" data-k="source">${opt(SOURCES, r.source || "depot")}</select></td>
-      <td>${inp(r, "small", `inputmode="numeric" style="width:64px"`)}</td><td>${inp(r, "large", `inputmode="numeric" style="width:64px"`)}</td>
+      ${r.min_fee != null ? `<td colspan="2" class="meta">none · split fee ${money(r.min_fee)}</td>` : `<td>${inp(r, "small", `inputmode="numeric" style="width:64px"`)}</td><td>${inp(r, "large", `inputmode="numeric" style="width:64px"`)}</td>`}
       <td><select class="in" data-row="${r.id}" data-k="driver">${opt([["", "—"], ...S.drivers.map(d => [d.id, d.name])], r.driver || "")}</select></td>
       <td>${inp(r, "note", `style="min-width:120px"`)}</td>
       <td style="white-space:nowrap"><button class="btn sm" data-save="${r.id}">Save</button> <button class="btn ghost sm" data-pu-del="${r.id}">Delete</button></td></tr>`).join("")}</table></div>` : `<p class="meta">Nothing logged this month yet.</p>`;
@@ -184,8 +188,9 @@ export function wirePickups() {
   $$("[data-pu-sub]").forEach(b => b.onclick = () => { sub = b.dataset.puSub; render(); });
   $$("[data-pu-del]").forEach(b => b.onclick = async () => { if (!confirm("Delete this pick-up?")) return; await q(sb.from("pickups").delete().eq("id", b.dataset.puDel)); await reload(); });
   $$("[data-save]").forEach(b => b.onclick = async () => { const id = b.dataset.save; const v = k => $(`[data-row="${id}"][data-k="${k}"]`).value;
-    const row = { day: v("day"), area: v("area"), customer: v("customer"), source: v("source"), small: Math.max(0, parseInt(v("small")) || 0), large: Math.max(0, parseInt(v("large")) || 0), driver: v("driver") || null, note: v("note").trim() || null };
-    if (!row.small && !row.large) return toast("Enter at least one parcel, or delete the line", "err");
+    const isMin = rows.find(r => r.id === id)?.min_fee != null;
+    const row = { day: v("day"), area: v("area"), customer: v("customer"), source: v("source"), driver: v("driver") || null, note: v("note").trim() || null, ...(isMin ? {} : { small: Math.max(0, parseInt(v("small")) || 0), large: Math.max(0, parseInt(v("large")) || 0) }) };
+    if (!isMin && !row.small && !row.large) return toast("Enter at least one parcel, or delete the line", "err");
     if (custErr(row)) return toast(custErr(row), "err");
     const { error } = await sb.from("pickups").update(row).eq("id", id); if (error) return toast(error.message, "err"); toast("Saved", "ok"); await reload(); });
   $("#pe-f")?.addEventListener("submit", async ev => { ev.preventDefault(); const v = k => Math.max(0, parseInt($(`[data-pe="${k}"]`).value) || 0);

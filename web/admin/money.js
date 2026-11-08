@@ -130,10 +130,10 @@ function breakdown(d) {
     const k = "__" + area; if (!byRun[k]) { byRun[k] = { run: `${area} pick-ups`, driver: null, staff: 0, fees: 0, feeEst: false, feeLines: [], noRun: true }; rows.push(byRun[k]); } return byRun[k]; };
   const runOn = area => (AREA_RUNS[area] || []).map(c => byRun[c]).find(Boolean);
   // pick-ups: NZC + Post Haste. Logged → final; none logged yet on a run that's on → estimate.
-  const pu = {}; for (const p of cache[d]?.rows || []) { if (p.customer === "TGE") continue; const a = (pu[p.area] ??= { small: 0, large: 0 }); a.small += p.small || 0; a.large += p.large || 0; }
-  for (const [area, a] of Object.entries(pu)) { const fee = a.small * M.small + a.large * M.large; if (fee) add(feeRow(area), fee, `${area} pick-ups: ${a.small} small × $${M.small}${a.large ? ` + ${a.large} large × $${M.large}` : ""}`, false); }
+  const pu = {}; for (const p of cache[d]?.rows || []) { if (p.customer === "TGE") continue; const a = (pu[p.area] ??= { small: 0, large: 0, min: 0 }); a.small += p.small || 0; a.large += p.large || 0; a.min += +p.min_fee || 0; }
+  for (const [area, a] of Object.entries(pu)) { const fee = a.small * M.small + a.large * M.large + a.min; if (fee) add(feeRow(area), fee, `${area} pick-ups: ${a.small} small × $${M.small}${a.large ? ` + ${a.large} large × $${M.large}` : ""}${a.min ? ` + split fee $${a.min.toFixed(2)}` : ""}`, false); }
   if (cache[d] && !cache[d].loading) for (const area of ["Rural", "Lawrence", "Owaka"]) { if (pu[area]) continue; const r = runOn(area); if (!r || done(r)) continue;
-    const by = {}; for (const p of cache[d].hist) { if (p.customer === "TGE" || p.area !== area) continue; by[p.day] = (by[p.day] || 0) + p.small * M.small + p.large * M.large; }
+    const by = {}; for (const p of cache[d].hist) { if (p.customer === "TGE" || p.area !== area) continue; by[p.day] = (by[p.day] || 0) + p.small * M.small + p.large * M.large + (+p.min_fee || 0); }
     const e = avgDays(by, d); if (e) add(r, e, `${area} pick-ups (average of recent days)`, true); }
   // TGE South: typed-in total → final; otherwise the average of past totals while the South run is on
   const tge = tgeSouth(d); if (tge) add(feeRow("South"), tge, `TGE South total (typed in)`, false);
