@@ -1,6 +1,6 @@
 // Scorecard tab: team and driver scores, posts board, review, efficiency, mistakes & entries, labour, reports
 import { sb, q, nzNow, today, addDays, dow, monOf, label, toMin, fmtT, fmt24, fmtTs, fmtTime, esc, $, $$, toast, pill, first, col, pct, isSort, avg, sum } from "/shared/core.js";
-import { scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, band, bandRate, money, dayShifts, segTimes, addName, LEG_RUNS, PICKUP_RUNS } from "/shared/score.js";
+import { scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, ownerBreakHrs, band, bandRate, money, dayShifts, segTimes, addName, LEG_RUNS, PICKUP_RUNS } from "/shared/score.js";
 import { S, sheet, opt, nm, fnm, weekBar, wireWeek, loadAll, render, scoreData, fn, teamRange, rangeBar, teamStats } from "/admin/admin.js";
 import { dayRow } from "/admin/detail.js";
 import { labourWeek } from "/admin/live.js";
@@ -44,7 +44,7 @@ function review(scores) {
 function effView() {
   const days = Array.from({ length: 7 }, (_, i) => addDays(S.week, i)); const rows = [];
   for (const d of days) for (const drv of S.drivers) { const D = dayShifts(S.shifts.filter(s => s.day === d && s.driver === drv.id), S.runsBy, drv.id)[d]; if (!D) continue; const runs = D.segs.filter(x => !x.sort); const sortRost = D.segs.filter(x => x.sort).reduce((a, x) => a + ((x.en ?? x.st) - x.st), 0); const sod = D.segs.map(x => S.sodBy[x.shift.id]).find(Boolean);
-    runs.forEach((x, i) => { const eod = S.eodBy[x.shift.id]; const ov = S.ovs.find(o => o.shift_id === x.shift.id); const c = effCalc(x, eod, ov, S.C, S.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? nzNow(new Date(sod.sent_at)).min : null }); if (c) rows.push({ d, drv, x, eod, ov, c }); }); }
+    runs.forEach((x, i) => { const eod = S.eodBy[x.shift.id]; const ov = S.ovs.find(o => o.shift_id === x.shift.id); const c = effCalc(x, eod, ov, S.C, S.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? nzNow(new Date(sod.sent_at)).min : null, brk: drv.pay_exclude ? ownerBreakHrs(S.breaks, x.shift.id) : 0 }); if (c) rows.push({ d, drv, x, eod, ov, c }); }); }
   S._effBy = Object.fromEntries(rows.map(r => [r.x.shift.id, r]));
   const cell = (r, k) => { const ovv = r.ov?.[k]; const v = ovv ?? r.eod?.[k]; const guess = r.c.guess.includes(k) && v == null; const used = r.c.figs?.[k]?.v ?? (k === "sort_min" ? r.c.parts.find(p => /^Sorting$/.test(p[0]))?.[2] : null); return `<td class="num ed ${ovv != null ? "ov" : ""} ${guess ? "gs" : ""}" data-ed="${k}" data-shift="${r.x.shift.id}" title="${ovv != null ? `Set by hand (driver posted ${r.eod?.[k] ?? "nothing"}) · tap to change` : guess ? `Estimated (${r.c.evid ? "average of past EODs" : "best guess"}) · tap to type the real figure` : "Tap to type a figure"}">${v ?? (guess ? `<span class="meta">≈${used ?? ""}</span>` : "")}</td>`; };
   return `<div class="card"><h2>Efficiency · all runs<span>${S.C.rules.effMethod === "tdt" ? "(2 − taken ÷ allowed) × 100" : "allowed ÷ taken"} · counted from ${label(S.C.rules.effStart)}</span></h2><p class="hint">Expected comes from the run formula and the EOD figures. ≈ = a best guess is filling a missing figure. <b>Tap a figure to type over it</b> (saved as a correction, shown in blue; clear it to go back to what the driver posted). Tap anywhere else on the row for the full formula, times, legs and training.</p>

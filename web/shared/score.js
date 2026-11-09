@@ -99,6 +99,8 @@ export function evidenceFor(code, day) { if (!EVID?.[code]) return null; const d
 export const evidence = () => EVID;
 
 /* ---- Efficiency ---- */
+/** Hours of finished unpaid breaks on one shift — counted off efficiency time for the owner (Jeremy) only. */
+export function ownerBreakHrs(breaks, shiftId) { return (breaks || []).filter(b => b.shift_id === shiftId && b.ended_at).reduce((a, b) => a + Math.max(0, (Date.parse(b.ended_at) - Date.parse(b.started_at)) / 3600e3), 0); }
 export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   const code = seg.shift.run, model = C.effSimple[code]; if (!model) return null;
   const net = model.net || NET(code); const g = []; const parts = []; const ev = evidenceFor(code, seg.shift.day);
@@ -135,9 +137,10 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   const start = ov?.start_at ? toMin(ov.start_at) : ctx.sodMin ?? seg.st; const endT = ov?.end_at ? toMin(ov.end_at) : (eod?.finish_time ? toMin(eod.finish_time) : (eod ? nzNow(new Date(eod.sent_at)).min : null));
   const taken = (start != null && endT != null && endT > start) ? (endT - start) / 60 : null;
   let takenTrk = taken; if (ov?.train_day) takenTrk = 0; else if (ov?.train_min && taken) takenTrk = Math.max(0.01, taken - ov.train_min / 60);
+  const brkH = ctx.brk || 0; if (brkH && takenTrk) takenTrk = Math.max(0.01, takenTrk - brkH);   // owner's unpaid breaks
   const need = []; if (!eod) need.push("EOD"); else { if (start != null && endT != null && endT <= start) need.push("Times (SOD is after the EOD finish)"); for (const k of ["parcels", "stops"]) if ((model[k === "parcels" ? "parcel" : "stop"] || 0) > 0 && eod[k] == null && ov?.[k] == null) need.push(k === "parcels" ? (net === "tge" ? "Delivery total" : "Total parcels") : (net === "tge" ? "Jobs" : "Stops")); if (net === "tge" && sortMin == null) need.push("Sorting time"); if (!eod.finish_time) need.push("Finish time"); }
   let perf = null; if (taken && takenTrk !== 0) perf = C.rules.effMethod === "tdt" ? (2 - takenTrk / (allowed / 60)) * 100 : (allowed / 60) / takenTrk * 100; if (perf != null) perf = Math.max(0, Math.min(150, perf));
-  return { code, net, allowed, parts, taken, takenTrk, perf, need, est: g.length > 0, guess: g, trainDay: !!ov?.train_day, start, end: endT, model, evid: ev ? ev.scope : null, evN: ev?.n || 0, noEod: !eod, figs: { parcels, stops, trays, pickups, pup } };
+  return { code, net, allowed, parts, taken, takenTrk, brk: brkH, perf, need, est: g.length > 0, guess: g, trainDay: !!ov?.train_day, start, end: endT, model, evid: ev ? ev.scope : null, evN: ev?.n || 0, noEod: !eod, figs: { parcels, stops, trays, pickups, pup } };
 }
 /* Milton meet: the D>B driver sets the drop-off time each day (shifts.milton_at, copied onto that day's LAW shift).
    It replaces the timing rule's usual 10:30 for both runs, and puts the meet on the LAW driver's list even if not ticked. */
@@ -179,11 +182,10 @@ export function scoreFor(driver, from, to, D, C) {
     const runs = d.segs.filter(x => !x.sort); if (!runs.length) continue;
     const sortRost = d.segs.filter(x => x.sort).reduce((a, x) => a + ((x.en ?? x.st) - x.st), 0);
     const sod = d.segs.map(x => D.sods.find(s => s.shift_id === x.shift.id)).find(Boolean);
-    const rows = runs.map((x, i) => { const eod = D.eods.find(e => e.shift_id === x.shift.id), ov = D.ovs?.find(o => o.shift_id === x.shift.id); const c = effCalc(x, eod, ov, C, D.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? nzNow(new Date(sod.sent_at)).min : null }); if (c) { c.shift = x.shift; c.eod = eod; c.ov = ov; } return c; }).filter(Boolean);
+    const rows = runs.map((x, i) => { const eod = D.eods.find(e => e.shift_id === x.shift.id), ov = D.ovs?.find(o => o.shift_id === x.shift.id); const c = effCalc(x, eod, ov, C, D.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? nzNow(new Date(sod.sent_at)).min : null, brk: own ? ownerBreakHrs(D.breaks, x.shift.id) : 0 }); if (c) { c.shift = x.shift; c.eod = eod; c.ov = ov; } return c; }).filter(Boolean);
     const live = rows.filter(r => !r.trainDay);
-    // unpaid breaks come off the time taken, for the owner only (drivers' efficiency keeps the full SOD → EOD time)
-    const brk = (D.effBreakFor || []).includes(driver) ? (D.breaks || []).filter(b => b.driver === driver && b.ended_at && nzNow(new Date(b.started_at)).date === d.day).reduce((a, b) => a + Math.max(0, (Date.parse(b.ended_at) - Date.parse(b.started_at)) / 3600e3), 0) : 0;
-    if (live.length && live.every(r => r.perf != null && !r.need.length)) { const A = live.reduce((a, r) => a + r.allowed, 0) / 60, T = Math.max(0.01, live.reduce((a, r) => a + r.takenTrk, 0) - brk); const v = Math.max(0, Math.min(150, C.rules.effMethod === "tdt" ? (2 - T / A) * 100 : A / T * 100)); effDays.push({ day: d.day, v, est: live.some(r => r.est), rows, allowed: A, taken: T, brk }); }
+    const own = (D.effBreakFor || []).includes(driver);   // owner: unpaid breaks come off the time taken (drivers keep the full SOD → EOD time)
+    if (live.length && live.every(r => r.perf != null && !r.need.length)) { const A = live.reduce((a, r) => a + r.allowed, 0) / 60, T = live.reduce((a, r) => a + r.takenTrk, 0); const v = Math.max(0, Math.min(150, C.rules.effMethod === "tdt" ? (2 - T / A) * 100 : A / T * 100)); effDays.push({ day: d.day, v, est: live.some(r => r.est), rows, allowed: A, taken: T }); }
     else if (d.day <= today()) effDays.push({ day: d.day, pending: true, need: rows.filter(r => r.need.length).map(r => `${r.code}: ${r.need.join(", ")}`).join("; "), rows });
   }
   const scored = effDays.filter(e => !e.pending); const eff = scored.length ? scored.reduce((a, e) => a + e.v, 0) / scored.length : null;

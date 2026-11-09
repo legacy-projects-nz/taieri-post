@@ -1,7 +1,7 @@
 // Live board: the old Scorecard dashboard, live. Day chips, KPIs, receivers & pick-ups, important points, team scores + labour,
 // add-ons & timings board, hours by day, admin action centre, roster changes not confirmed, drivers grid, posts board + live feed, map.
 import { sb, q, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, toast, pill, first, col, pct, isSort, avg, sum } from "/shared/core.js";
-import { scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, band, fortnightBand, payBand, money, dayShifts, segTimes, addName, meetRule, meetOn } from "/shared/score.js";
+import { scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, ownerBreakHrs, band, fortnightBand, payBand, money, dayShifts, segTimes, addName, meetRule, meetOn } from "/shared/score.js";
 import { S, sheet, opt, nm, fnm, loadAll, render, scoreData, alertRow, fn, teamRange, rangeBar, teamStats } from "/admin/admin.js";
 import { itemKeyFor } from "/admin/detail.js";
 import { moneyCard, wireMoney } from "/admin/money.js";
@@ -146,7 +146,7 @@ export function driverDay(drv, d) {
   const runSegs = D.segs.filter(x => !x.sort); const sod = D.segs.map(x => S.sodBy[x.shift.id]).find(Boolean); const eods = runSegs.map(x => S.eodBy[x.shift.id]).filter(Boolean);
   const sortRost = D.segs.filter(x => x.sort).reduce((a, x) => a + ((x.en ?? x.st) - x.st), 0);
   let exp = 0, est = false, train = 0; const effRows = [];
-  runSegs.forEach((x, i) => { const ov = S.ovs.find(o => o.shift_id === x.shift.id); const eod = S.eodBy[x.shift.id]; const c = effCalc(x, eod, ov, S.C, S.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? nzNow(new Date(sod.sent_at)).min : null });
+  runSegs.forEach((x, i) => { const ov = S.ovs.find(o => o.shift_id === x.shift.id); const eod = S.eodBy[x.shift.id]; const c = effCalc(x, eod, ov, S.C, S.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? nzNow(new Date(sod.sent_at)).min : null, brk: drv.pay_exclude ? ownerBreakHrs(S.breaks, x.shift.id) : 0 });
     if (!c) { exp += ((x.en ?? x.st) - x.st) / 60; est = true; return; }                       // no formula for this run yet → rostered length, flagged as an estimate
     effRows.push({ d, drv, x, eod, ov, c }); if (c.trainDay) { train += c.taken || 0; return; } exp += c.allowed / 60; if (!eod || c.est) est = true; if (ov?.train_min) train += ov.train_min / 60; });
   if (!runSegs.length) { exp = D.hours; est = !D.segs.some(x => S.eodBy[x.shift.id]); }     // sort-only day
