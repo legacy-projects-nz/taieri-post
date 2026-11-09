@@ -16,7 +16,8 @@ import { driverDay } from "/admin/live.js";
 
 const GST = 0.15;
 const WK_PER_MONTH = 52 / 12;
-const AREA_RUNS = { Rural: ["TUA"], South: ["TUA", "DB"], Lawrence: ["LAW"], Owaka: ["DB", "FLY"], Balclutha: ["DB"] };   // which run a pick-up area's income lands on
+// D>B is paid $6 a parcel on every parcel it carries, TGE ones included, so the TGE South total never lands on DB (it would count them twice)
+const AREA_RUNS = { Rural: ["TUA"], South: ["TUA"], Lawrence: ["LAW"], Owaka: ["DB", "FLY"], Balclutha: ["DB"] };   // which run a pick-up area's income lands on
 const money = n => (n < 0 ? "−$" : "$") + Math.abs(n).toFixed(2);
 const money0 = n => (n < 0 ? "−$" : "$") + Math.round(Math.abs(n)).toLocaleString();
 // shared bases: per = "day" | "week" | "month"; days = working days a week it's spread over
@@ -124,8 +125,8 @@ function breakdown(d) {
       const onRows = rows.filter(y => !y.sort && G.runs.includes(y.run)); const on = onRows.length; const sp = G.split; const wsum = sp ? onRows.reduce((a, y) => a + (sp[y.run] ?? 0), 0) : 0; const share = sp && wsum ? (sp[r.run] ?? 0) / wsum : 1 / on;
       add(r, day * share, `${g} base · ${pct}% of ${perTxt(m)}${on > 1 ? (sp && wsum ? ` · ${Math.round(share * 100)}% to ${r.run}` : ` ÷ ${on} runs on`) : ""}`, !done(r)); }
     const RT = rateFor(r.run, M); const rate = RT.rate; if (rate) { const n = parcelsOf(r.shift); const rt = `$${rate.toFixed(2)}`; const why = RT.how && RT.how !== "typed in" ? ` · rate = ${RT.how}` : "";
-      if (n != null) add(r, n * rate, `${n} parcels × ${rt}${why}`, false);
-      else { const ev = evidenceFor(r.run, d); if (ev?.parcels != null) add(r, Math.round(ev.parcels) * rate, `${Math.round(ev.parcels)} parcels × ${rt} (average ${ev.scope === "weekday" ? "for this weekday" : "of recent days"} until the EOD is in)${why}`, true); else { r.feeEst = true; r.feeLines.push({ amt: 0, line: `parcels × ${rt} · no history yet`, est: true }); } } } }
+      const incl = r.run === "DB" ? " (NZ Post + TGE)" : ""; if (n != null) add(r, n * rate, `${n} parcels${incl} × ${rt}${why}`, false);
+      else { const ev = evidenceFor(r.run, d); if (ev?.parcels != null) add(r, Math.round(ev.parcels) * rate, `${Math.round(ev.parcels)} parcels${incl} × ${rt} (average ${ev.scope === "weekday" ? "for this weekday" : "of recent days"} until the EOD is in)${why}`, true); else { r.feeEst = true; r.feeLines.push({ amt: 0, line: `parcels × ${rt} · no history yet`, est: true }); } } } }
   const feeRow = (area) => { for (const code of AREA_RUNS[area] || []) if (byRun[code]) return byRun[code];
     const k = "__" + area; if (!byRun[k]) { byRun[k] = { run: `${area} pick-ups`, driver: null, staff: 0, fees: 0, feeEst: false, feeLines: [], noRun: true }; rows.push(byRun[k]); } return byRun[k]; };
   const runOn = area => (AREA_RUNS[area] || []).map(c => byRun[c]).find(Boolean);
