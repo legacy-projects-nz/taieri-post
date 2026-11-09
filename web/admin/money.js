@@ -16,8 +16,9 @@ import { driverDay } from "/admin/live.js";
 
 const GST = 0.15;
 const WK_PER_MONTH = 52 / 12;
+// Lawrence pick-ups (NZC + Post Haste) are D>B income: the D>B van brings them back.
 // D>B is paid $6 a parcel on every parcel it carries, TGE ones included, so the TGE South total never lands on DB (it would count them twice)
-const AREA_RUNS = { Rural: ["TUA"], South: ["TUA"], Lawrence: ["LAW"], Owaka: ["DB", "FLY"], Balclutha: ["DB"] };   // which run a pick-up area's income lands on
+const AREA_RUNS = { Rural: ["TUA"], South: ["TUA"], Lawrence: ["DB"], Owaka: ["DB", "FLY"], Balclutha: ["DB"] };   // which run a pick-up area's income lands on
 const money = n => (n < 0 ? "−$" : "$") + Math.abs(n).toFixed(2);
 const money0 = n => (n < 0 ? "−$" : "$") + Math.round(Math.abs(n)).toLocaleString();
 // shared bases: per = "day" | "week" | "month"; days = working days a week it's spread over
