@@ -221,3 +221,5 @@ button.qb:disabled{opacity:.4}
 .card.fold.shut>h2>span:has(button){display:none}
 .card.fold.shut>h2>span:has(button)+.fchev{margin-left:auto}
 @media (hover:hover){.card.fold.shut:hover{box-shadow:0 0 0 1px var(--line),var(--shadow)}}
+/* Home Screen app: green status bar. Android/Chrome uses theme-color; on iPhone the bar is see-through (black-translucent), so paint the strip behind it green. */
+@media (display-mode: standalone){html::before{content:"";position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top);background:#16803f;z-index:2147483647;pointer-events:none}}
