@@ -493,7 +493,26 @@ function pickupsCard(T) {
     <p class="meta" style="margin:0 0 8px">Your pick-up tasks have their own Enter pick-ups button. Use this box for any you missed or another day.</p>
     ${todays.length ? `<p class="meta c-ok" style="margin:0 0 8px">✓ Today: ${todays.map(r => `${esc(r.area)} ${esc(PU_CUST[r.customer] || r.customer)} (${PU_SRC_L[r.source] || "depot"}) ${puLine(r)}`).join(" · ")}</p>` : ""}
     <div class="row"><button class="btn sm" id="pu-log" style="flex:0 0 auto">+ Enter pick-ups</button></div>
-    ${list.length ? `<details style="margin-top:8px"><summary>This month · ${list.length} logged</summary><div class="list" style="margin-top:6px">${list.map(r => `<div class="item"><div>${label(r.day)} · ${esc(r.area)} · ${esc(PU_CUST[r.customer] || r.customer)} · ${PU_SRC_L[r.source] || "depot"}</div><div class="meta">${puLine(r)}${r.note ? ` · ${esc(r.note)}` : ""}</div></div>`).join("")}</div><p class="hint">Made a mistake? Message Jeremy or Alejandro and they'll fix it.</p></details>` : ""}</div>`;
+    ${list.length ? `<details style="margin-top:8px"><summary>This month · ${list.length} logged</summary><div class="list" style="margin-top:6px">${list.map(r => `<div class="item"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><div>${label(r.day)} · ${esc(r.area)} · ${esc(PU_CUST[r.customer] || r.customer)} · ${PU_SRC_L[r.source] || "depot"}</div><div class="meta">${puLine(r)}${r.note ? ` · ${esc(r.note)}` : ""}</div></div>${puEditable(r) ? `<button class="btn ghost sm" data-puedit="${r.id}" style="flex:0 0 auto">Edit</button>` : ""}</div></div>`).join("")}</div><p class="hint">Made a mistake? Tap Edit to fix today's totals. Earlier days: message Jeremy or Alejandro.</p></details>` : ""}</div>`;
+}
+/** Drivers can fix their own pick-up lines on the day only (matches the database rule) */
+const puEditable = r => r.driver === S.me.id && r.day === today();
+function editPickup(id) {
+  const r = (S.pickups || []).find(x => x.id === id); if (!r) return;
+  const isMin = r.min_fee != null;
+  sheet(`<h3>Edit pick-ups</h3><p class="hint">${label(r.day)} · ${esc(r.area)} · ${esc(PU_CUST[r.customer] || r.customer)} · ${PU_SRC_L[r.source] || "depot"}</p><form class="frm" id="pe">
+    ${isMin ? `<p class="meta full">No parcels · split fee $${(+r.min_fee).toFixed(2)}. Got parcels after all? Delete this and enter the pick-ups again.</p>` : `<label class="f">Small<input class="in" id="pe-s" inputmode="numeric" value="${r.small}"></label><label class="f">Large<input class="in" id="pe-l" inputmode="numeric" value="${r.large}"></label>
+    <label class="f full">Note (optional)<input class="in" id="pe-n" value="${esc(r.note || "")}"></label><button class="btn full" type="submit">Save changes</button>`}
+    <button class="btn ghost full" type="button" id="pe-del">Delete this line</button></form>`, (bg, close) => {
+    const done = async (error, msg) => { if (error) return toast(error.message, "err"); close(); toast(msg, "ok"); await loadAll(); render(); };
+    bg.querySelector("#pe").addEventListener("submit", async e => { e.preventDefault(); if (isMin) return;
+      const n = x => Math.max(0, parseInt(bg.querySelector("#" + x).value) || 0); const small = n("pe-s"), large = n("pe-l");
+      if (!small && !large) return toast("Both are 0. Use Delete this line instead.", "err");
+      const { error } = await sb.from("pickups").update({ small, large, note: bg.querySelector("#pe-n").value.trim() || null }).eq("id", r.id); done(error, "Pick-ups updated ✓"); });
+    const del = bg.querySelector("#pe-del");
+    del.addEventListener("click", async () => { if (!del.dataset.sure) { del.dataset.sure = "1"; del.textContent = "Tap again to delete"; return; }
+      const { error } = await sb.from("pickups").delete().eq("id", r.id); done(error, "Pick-up line deleted"); });
+  });
 }
 /** Pick-up entry task: the add-on's pick-up area, if it has one */
 const puAreaOf = key => key ? S.addons.find(a => a.id === key)?.pu_area || null : null;
@@ -580,6 +599,7 @@ function wire() {
     toast(data?.law?.length ? `Milton ${fmtT(toMin(i.value))} saved${sent ? " · Lawrence driver notified" : " · in the Lawrence driver's app"}` : `Milton ${fmtT(toMin(i.value))} saved (nobody on Lawrence that day yet)`, "ok"); render(); });
   $("#access-edit")?.addEventListener("click", editAccess);
   $("#pu-log")?.addEventListener("click", () => logPickup());
+  $$("[data-puedit]").forEach(b => b.onclick = e => { e.stopPropagation(); editPickup(b.dataset.puedit); });
   $$("[data-rsphoto]").forEach(inp => inp.onchange = async () => { const f = inp.files?.[0]; if (!f) return; const sh = S.shifts.find(z => z.id === inp.dataset.rsphoto); const lab = inp.closest("label"); if (lab) lab.style.opacity = ".5";
     const rk = inp.dataset.rskey || "tw_twrunsheet"; toast("Uploading photo…");
     const path = `${sh?.driver || S.me.id}/${sh?.day || today()}/${inp.dataset.rsphoto}-${rk}-${Date.now()}.${(f.name.split(".").pop() || "jpg").toLowerCase()}`;

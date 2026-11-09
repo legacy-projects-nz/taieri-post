@@ -112,7 +112,7 @@ function glance() {
   const drv = Object.entries(rows_.reduce((a, r) => { const o = (a[r.driver] ??= { n: 0, p: 0, f: 0 }); o.n++; o.p += (r.small || 0) + (r.large || 0); o.f += fee(r); return a; }, {})).sort((a, b) => b[1].p - a[1].p);
   const drvTbl = drv.length ? `<table class="dt"><tr><th>Driver</th><th align="right">Entries</th><th align="right">Parcels</th><th align="right">Value</th></tr>${drv.map(([d, o]) => `<tr><td>${esc(nm(d))}</td><td align="right">${o.n}</td><td align="right">${o.p}</td><td align="right">${money(o.f)}</td></tr>`).join("")}</table>` : "";
   // by day (latest first)
-  const dayTbl = days.length ? `<table class="dt"><tr><th>Day</th>${custs.map(c => `<th align="right">${esc(R[c].short)}</th>`).join("")}<th align="right">Total</th><th>Areas</th></tr>${days.slice(0, 31).map(d => { const rs = rows_.filter(r => r.day === d); return `<tr><td>${label(d)}</td>${custs.map(c => `<td align="right">${sumP(rs.filter(r => r.customer === c)) || `<span class="meta">–</span>`}</td>`).join("")}<td align="right"><b>${sumP(rs)}</b></td><td class="meta">${[...new Set(rs.map(r => r.area))].join(", ")}</td></tr>`; }).join("")}</table>` : "";
+  const dayTbl = days.length ? `<table class="dt"><tr><th>Day</th>${custs.map(c => `<th align="right">${esc(R[c].short)}</th>`).join("")}<th align="right">Total</th><th>Areas</th></tr>${days.slice(0, 31).map(d => { const rs = rows_.filter(r => r.day === d); return `<tr${canEdit() ? ` class="clk" data-pu-day="${d}" title="Tap to edit this day's totals" style="cursor:pointer"` : ""}><td>${label(d)}${canEdit() ? ` <span class="meta">✎</span>` : ""}</td>${custs.map(c => `<td align="right">${sumP(rs.filter(r => r.customer === c)) || `<span class="meta">–</span>`}</td>`).join("")}<td align="right"><b>${sumP(rs)}</b></td><td class="meta">${[...new Set(rs.map(r => r.area))].join(", ")}</td></tr>`; }).join("")}</table>` : "";
   const canRep = S.me?.isOwner || S.me?.id === "AL";
   return `<div class="card"><h2>Pick-ups at a glance<span>${esc(pname)} · small + large (L) · value at invoice rates, excl GST</span></h2>
     <div class="row" style="align-items:flex-end;margin-bottom:8px"><div class="nav" style="margin:0;flex:0 0 auto">${[["month", "Month"], ["week", "Week"], ["custom", "Dates"]].map(([k, l]) => `<button data-gp="${k}" class="${gp.mode === k ? "on" : ""}">${l}</button>`).join("")}</div>
@@ -120,7 +120,7 @@ function glance() {
       ${gp.mode === "custom" ? `<label class="f" style="flex:1 1 130px">From<input class="in" type="date" id="gp-from" value="${gF}"></label><label class="f" style="flex:1 1 130px">To<input class="in" type="date" id="gp-to" value="${gT}"></label><button class="btn sm" id="gp-go" style="flex:0 0 auto">Show</button>` : ""}
       ${gp.mode === "month" ? `<span class="meta" style="flex:1 1 200px">Use ‹ › at the top to change month.</span>` : ""}</div>${tiles}
     ${rows_.length ? `<div class="scroll" style="margin-top:8px">${areaTbl}</div>
-    <div class="row" style="align-items:flex-start;gap:12px;margin-top:8px"><div style="flex:1 1 260px"><h4 style="margin:4px 0">By driver</h4><div class="scroll">${drvTbl}</div></div><div style="flex:2 1 360px"><h4 style="margin:4px 0">By day</h4><div class="scroll" style="max-height:320px;overflow:auto">${dayTbl}</div></div></div>` : `<p class="meta">No pick-ups logged for ${esc(pname)}.</p>`}
+    <div class="row" style="align-items:flex-start;gap:12px;margin-top:8px"><div style="flex:1 1 260px"><h4 style="margin:4px 0">By driver</h4><div class="scroll">${drvTbl}</div></div><div style="flex:2 1 360px"><h4 style="margin:4px 0">By day${canEdit() ? ` <span class="meta">· tap a day to edit its totals</span>` : ""}</h4><div class="scroll" style="max-height:320px;overflow:auto">${dayTbl}</div></div></div>` : `<p class="meta">No pick-ups logged for ${esc(pname)}.</p>`}
     ${(() => { const ms = missingPU(); return `<h4 style="margin:12px 0 4px">Missing pick-up totals <span class="meta">${ms.length ? `${ms.length} · tap Remind to message the driver now (they're also chased automatically once their EOD is in)` : "none · every pick-up run has its totals in"}</span></h4>${ms.length ? `<div class="scroll"><table class="dt"><tr><th>Day</th><th>Driver</th><th>Area</th><th>Run</th><th></th></tr>${ms.map((m, i) => `<tr><td>${label(m.day)}</td><td>${esc(nm(m.driver))}</td><td>${esc(m.area)}</td><td>${esc(m.run)}</td><td align="right"><button class="btn ghost sm" data-pu-remind="${i}">Remind</button></td></tr>`).join("")}</table></div>${ms.length > 1 ? `<div class="row" style="margin-top:6px"><button class="btn sm" id="pu-remind-all" style="flex:0 0 auto">Remind everyone (${new Set(ms.map(m => m.driver)).size})</button></div>` : ""}` : ""}`; })()}
     <div class="row" style="margin-top:10px">${rows_.length ? `<button class="btn ghost sm" id="pu-csv" style="flex:0 0 auto">⬇ Pick-up entries (CSV)</button>` : ""}${canRep ? `<button class="btn ghost sm" id="pu-rep" style="flex:0 0 auto">⬇ Full report for ${esc(pname)} (Excel)</button>` : ""}</div></div>`;
 }
@@ -223,6 +223,26 @@ function extraSheet(existing = null, cust = "") {
   });
 }
 
+/** Edit one day's pick-up totals in place (owner and Alejandro): counts, note, or delete a line */
+function daySheet(d) {
+  const rs = grows.filter(r => r.day === d).sort((a, b) => a.area.localeCompare(b.area) || a.customer.localeCompare(b.customer));
+  if (!rs.length) return;
+  const R = rates();
+  sheet(`<h3>Pick-ups · ${label(d)}</h3><p class="hint">Change a figure and tap Save on that line. To add a line for this day, use Data entry.</p>
+    <div class="scroll"><table class="dt"><tr><th>Area</th><th>Customer</th><th>Driver</th><th>Small</th><th>Large</th><th>Note</th><th></th></tr>${rs.map(r => `<tr data-dr="${r.id}">
+      <td>${esc(r.area)}<div class="meta">${r.source === "customer" ? "customer" : "depot"}</div></td><td>${esc(R[r.customer]?.short || r.customer)}</td><td>${esc(nm(r.driver))}</td>
+      ${r.min_fee != null ? `<td colspan="2" class="meta">none · split fee ${money(r.min_fee)}</td>` : `<td><input class="in" data-dk="small" inputmode="numeric" value="${r.small}" style="width:60px"></td><td><input class="in" data-dk="large" inputmode="numeric" value="${r.large}" style="width:60px"></td>`}
+      <td><input class="in" data-dk="note" value="${esc(r.note || "")}" style="min-width:110px"></td>
+      <td style="white-space:nowrap"><button class="btn sm" data-dsave="${r.id}">Save</button> <button class="btn ghost sm" data-ddel="${r.id}">Delete</button></td></tr>`).join("")}</table></div>`, (bg, close) => {
+    const after = async () => { await reload(); if (grows.some(r => r.day === d)) { close(); daySheet(d); } else close(); };
+    bg.querySelectorAll("[data-dsave]").forEach(b => b.onclick = async () => { const tr = bg.querySelector(`[data-dr="${b.dataset.dsave}"]`); const g = k => tr.querySelector(`[data-dk="${k}"]`);
+      const patch = { note: g("note").value.trim() || null }; if (g("small")) { patch.small = Math.max(0, parseInt(g("small").value) || 0); patch.large = Math.max(0, parseInt(g("large").value) || 0); }
+      const { error } = await sb.from("pickups").update(patch).eq("id", b.dataset.dsave); if (error) return toast(error.message, "err"); toast("Saved", "ok"); await after(); });
+    bg.querySelectorAll("[data-ddel]").forEach(b => b.onclick = async () => { if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Sure?"; return; }
+      const { error } = await sb.from("pickups").delete().eq("id", b.dataset.ddel); if (error) return toast(error.message, "err"); toast("Deleted", "ok"); await after(); });
+  });
+}
+
 function csvCell(v) { v = String(v ?? ""); return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }
 const HEAD = ["*ContactName", "EmailAddress", "POAddressLine1", "POAddressLine2", "POAddressLine3", "POAddressLine4", "POCity", "PORegion", "POPostalCode", "POCountry", "*InvoiceNumber", "Reference", "*InvoiceDate", "*DueDate", "InventoryItemCode", "*Description", "*Quantity", "*UnitAmount", "Discount", "*AccountCode", "*TaxType", "TrackingName1", "TrackingOption1", "TrackingName2", "TrackingOption2", "Currency"];
 function csvLines(c) {
@@ -275,6 +295,7 @@ export function wirePickups() {
   $("#gp-go")?.addEventListener("click", async () => { const f = $("#gp-from").value, t2 = $("#gp-to").value; if (!f || !t2 || t2 < f) return toast("Pick a from and to date", "err"); gp = { mode: "custom", from: f, to: t2 }; await loadGlance(); render(); });
   $$("[data-pu-m]").forEach(b => b.onclick = async () => { ym = shiftMonth(ym, +b.dataset.puM); await reload(); });
   $$("[data-pu-sub]").forEach(b => b.onclick = () => { sub = b.dataset.puSub; render(); });
+  $$("[data-pu-day]").forEach(tr => tr.onclick = () => daySheet(tr.dataset.puDay));
   $$("[data-pu-del]").forEach(b => b.onclick = async () => { if (!confirm("Delete this pick-up?")) return; await q(sb.from("pickups").delete().eq("id", b.dataset.puDel)); await reload(); });
   $$("[data-save]").forEach(b => b.onclick = async () => { const id = b.dataset.save; const v = k => $(`[data-row="${id}"][data-k="${k}"]`).value;
     const isMin = rows.find(r => r.id === id)?.min_fee != null;
