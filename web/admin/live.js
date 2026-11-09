@@ -33,7 +33,7 @@ export function liveTab() {
     : `<div class="tiles">${tile("Team on-time rate", closed.length ? ok / closed.length * 100 : null, `${ok} of ${closed.length} posts on time`, null, k("rate"))}${tile("Late", String(late.length), "posted after the due time", late.length ? "c-crit" : "", k("late"))}${tile("Missing", String(miss.length), "never posted", miss.length ? "c-crit" : "", k("miss"))}${tile("Drivers rostered", String(rostered), "tracked this week", "", k("rostered"))}</div>`;
 
   const cur = monOf(t);
-  return `${weekNav(wk)}${wk > cur ? `<p class="hint" style="margin:0 0 6px">Next week: the planned roster. Nothing is posted yet, so scores fill in as the days come.</p>` : ""}<div class="card">${chips}${kpi}</div>
+  return `${nowCard(n)}${weekNav(wk)}${wk > cur ? `<p class="hint" style="margin:0 0 6px">Next week: the planned roster. Nothing is posted yet, so scores fill in as the days come.</p>` : ""}<div class="card">${chips}${kpi}</div>
     ${addonBoard(one ? days[0] : t, n)}
     ${moneyCard(one ? days[0] : t)}
     <div class="grid2">${important(scores, n)}${teamAndLabour(scores, team, wk)}</div>
@@ -43,6 +43,62 @@ export function liveTab() {
     ${driversGrid(scores, wk)}
     <div class="card"><h2>${one ? `Posts for ${label(days[0])}` : "Posts by driver and day"}<span>tap a chip to review</span></h2>${postsBoard(selScores, days, t)}</div>
     <div class="grid2"><div class="card"><h2>Live feed<span>today</span></h2>${feed(t)}</div><div class="card"><h2>Where everyone is<span>between SOD and EOD · app open</span></h2><div class="map" id="map"></div><p class="hint">Dots update every couple of minutes while a driver's app is on screen. Grey = older than 10 minutes.</p></div></div>`;
+}
+
+/* ---- Right now · the start view: only who is due on shift at this moment (on shift = green, late = red with minutes) and only the
+   add-ons / timed tasks that are due now or overdue and not done. Nothing that isn't due yet is shown. Always today, whatever week is picked. ---- */
+const minsTxt = m => m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min` : `${m} min`;
+function nowCard(n) {
+  const t = n.date, now = n.min, R = S.C.rules; const grace = R.sodGrace ?? 15;
+  if (S.C.holidays[t]) return `<div class="card"><h2>Right now · ${fmtT(now)}<span>${label(t)}</span></h2><p class="empty">Public holiday · no runs today.</p></div>`;
+  const off = id => (S.leave || []).some(l => l.driver === id && l.status === "approved" && t >= l.date_from && t <= l.date_to);
+  const todays = S.shifts.filter(s => s.day === t && s.driver && s.run !== "BU" && !off(s.driver));
+  const byDrv = {}; for (const s of todays) (byDrv[s.driver] ??= []).push(s);
+  // ---- who's due on shift
+  const ppl = [];
+  for (const [id, list] of Object.entries(byDrv)) {
+    const D = dayShifts(list, S.runsBy, id)[t]; if (!D || now < D.start) continue;                       // not started yet → not shown
+    const runs = D.segs.filter(x => !x.sort); const sod = D.segs.map(x => S.sodBy[x.shift.id]).find(Boolean);
+    const allEod = runs.length ? runs.every(x => S.eodBy[x.shift.id]) : D.segs.some(x => S.eodBy[x.shift.id]);
+    if (allEod) continue;                                                                                // finished for the day → not shown
+    if (!sod && now > D.end + (R.eodHours ?? 2) * 60) continue;                                         // day long over with no SOD → Alerts tab has it
+    const segNm = x => x.sort ? (S.runsBy[x.shift.run]?.label || "Sort") : x.shift.run;
+    const cur = D.segs.find(x => now >= x.st && now < (x.en ?? x.st)), nxt = D.segs.find(x => now < x.st);
+    const what = cur ? segNm(cur) : nxt ? `between runs · next ${segNm(nxt)} ${fmtT(nxt.st)}` : segNm(D.segs[D.segs.length - 1]);
+    const late = now - D.start;
+    let lv, st, sub;
+    if (sod) { const sm = nzNow(new Date(sod.sent_at)).min; const lateBy = sm - D.start;
+      lv = "ok"; st = "On shift"; sub = `SOD ${fmtTime(sod.sent_at)}${lateBy > grace ? ` · started ${minsTxt(lateBy)} late` : ""}`;
+      if (now > D.end) { lv = "warn"; st = "Past finish"; sub = `rostered to ${fmtT(D.end)} · EOD not in`; } }
+    else if (late <= grace) { lv = "warn"; st = `Starting · ${late} min`; sub = `rostered ${fmtT(D.start)} · no SOD yet`; }
+    else { lv = "crit"; st = `LATE ${minsTxt(late)}`; sub = `rostered ${fmtT(D.start)} · no SOD`; }
+    ppl.push({ id, lv, st, sub, what, D, w: lv === "crit" ? 0 : lv === "warn" ? 1 : 2, late });
+  }
+  ppl.sort((a, b) => a.w - b.w || b.late - a.late || a.D.start - b.D.start);
+  // ---- add-ons and timed tasks that are due now or overdue, not done
+  const due = [];
+  for (const s of todays) {
+    const { st, en } = segTimes(s, S.runsBy); const dn = s.done || {}; const plan = s.plan || {}; const seen = new Set(); const srt = isSort(s.run);
+    for (const r of rulesForShift(s)) { if (srt && r.runs.includes("ALL")) continue;                    // sorts: only their own sort tasks, not the any-run ones
+ const key = r.done_key || r.addon; if (r.addon) seen.add(r.addon); if (!key || dn[key]) continue;
+      if (key.startsWith("tw_") && /game plan/i.test(r.name) && Object.keys(plan).length) continue;
+      const o = toMin(r.opens), c = toMin(r.closes);
+      if (c != null && now > c) due.push({ s, rule: r.id, name: r.name, lv: "crit", txt: `${minsTxt(now - c)} overdue · was due by ${fmtT(c)}`, k: -(now - c) });
+      else if (c != null && (o != null ? now >= o : now >= c - 30 && now >= (st ?? 0))) due.push({ s, rule: r.id, name: r.name, lv: c - now <= 15 ? "warn" : "accent", txt: `due by ${fmtT(c)} · ${minsTxt(c - now)} left`, k: c - now });   // window open, or closing within 30 min
+      else if (c == null && en != null && now > en) due.push({ s, rule: r.id, name: r.name, lv: "crit", txt: `not done · shift finished ${fmtT(en)}`, k: -(now - en) });            // "before you finish" tasks
+      else if (c == null && o != null && now >= o) due.push({ s, rule: r.id, name: r.name, lv: "accent", txt: `open since ${fmtT(o)}`, k: 600 }); }
+    for (const id of s.addons || []) { if (seen.has(id) || dn[id]) continue; const a = S.addons.find(x => x.id === id); if (!a) continue; const pm = toMin(plan[id]);
+      if (en != null && now > en) due.push({ s, name: a.short || a.name, lv: "crit", txt: `not marked done · run finished ${fmtT(en)}`, k: -(now - en) });
+      else if (pm != null && now >= pm) due.push({ s, name: a.short || a.name, lv: "warn", txt: `planned ${fmtT(pm)} · not done yet`, k: 0 }); }
+  }
+  due.sort((a, b) => a.k - b.k);
+  const nLate = ppl.filter(p => p.lv === "crit").length, nOver = due.filter(d => d.lv === "crit").length;
+  const ok = !nLate && !nOver;
+  const pRow = p => `<div class="item clk ${p.lv}" data-personof="${esc(p.id)}" title="Tap for ${esc(first(nm(p.id)))}'s sheet"><div class="row" style="justify-content:space-between;align-items:baseline"><b>${esc(nm(p.id))}</b><b class="c-${p.lv === "crit" ? "crit" : p.lv === "warn" ? "warn" : "ok"}">${p.lv === "ok" ? "● " : ""}${esc(p.st)}</b></div><div class="m">${esc(p.what)} · ${fmtT(p.D.start)}–${fmtT(p.D.end)} · ${esc(p.sub)}</div></div>`;
+  const dRow = d => `<div class="item clk ${d.lv}" data-task="${d.s.id}"${d.rule ? ` data-rule="${esc(d.rule)}"` : ""} title="Tap for the plan, history and the driver's day"><div class="row" style="justify-content:space-between;align-items:baseline"><b>${esc(d.name)}</b><span class="meta">${esc(d.s.run)} · ${esc(fnm(d.s.driver))}</span></div><div class="m ${d.lv === "crit" ? "c-crit" : ""}">${esc(d.txt)}</div></div>`;
+  return `<div class="card ${ok ? "" : "hot"}"><h2>Right now · ${fmtT(now)}<span>${ok ? "✓ everything due is on time" : [nLate ? `${nLate} late for shift` : "", nOver ? `${nOver} add-on${nOver > 1 ? "s" : ""} overdue` : ""].filter(Boolean).join(" · ")} · updates every minute</span></h2>
+    <div class="grid2"><div><div class="meta mono" style="margin-bottom:4px">ON SHIFT NOW · ${ppl.length}</div>${ppl.length ? `<div class="list">${ppl.map(pRow).join("")}</div>` : `<p class="empty">Nobody due on shift right now.</p>`}</div>
+    <div><div class="meta mono" style="margin-bottom:4px">ADD-ONS DUE NOW · ${due.length}</div>${due.length ? `<div class="list">${due.map(dRow).join("")}</div>` : `<p class="empty">✓ Nothing due or overdue.</p>`}</div></div></div>`;
 }
 
 /* ---- Add-ons & timings · one board for the day: every add-on and timed task on every run, done or not ---- */
