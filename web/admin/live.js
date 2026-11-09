@@ -132,8 +132,10 @@ export function sickHours(drv, d, sk) {
   const hs = []; for (let i = 1; i <= 28; i++) { const x = addDays(d, -i); if (S.C.holidays[x] || sickLeave(drv.id, x)) continue; const r = driverDay(drv, x); const h = r ? (r.act ?? r.actEst ?? r.exp ?? 0) : 0; if (h > 0) hs.push(h); }
   const avg = hs.length ? hs.reduce((a, b) => a + b, 0) / hs.length : 0; return Math.round(Math.max(avg, rost) * 100) / 100;
 }
-// minutes of finished unpaid breaks a driver took on a day (NZ date)
-export function breakMins(id, d) { return (S.breaks || []).filter(b => b.driver === id && b.ended_at && nzNow(new Date(b.started_at)).date === d).reduce((a, b) => a + Math.max(0, (Date.parse(b.ended_at) - Date.parse(b.started_at)) / 60000), 0); }
+// minutes of finished unpaid breaks a driver took on a day (NZ date). Only breaks from 2:48pm Mon 9 Nov 2026 on are taken off hours; earlier ones stay as they were.
+// Everyone's breaks are unpaid, Jeremy's included. Efficiency is never affected: it still uses the full SOD → EOD time.
+const UNPAID_FROM = Date.parse("2026-11-09T01:48:00Z");
+export function breakMins(id, d) { return (S.breaks || []).filter(b => b.driver === id && b.ended_at && Date.parse(b.started_at) >= UNPAID_FROM && nzNow(new Date(b.started_at)).date === d).reduce((a, b) => a + Math.max(0, (Date.parse(b.ended_at) - Date.parse(b.started_at)) / 60000), 0); }
 export function driverDay(drv, d) {
   const R = S.C.rules; const rate = +(drv.rate || R.hourRate); const hol = S.C.holidays[d];
   if (hol) { const hh = Math.min(R.holidayCap ?? 8, hol.hours?.[drv.id] || 0); if (!hh) return null; return { d, drv, hol, holiday: true, exp: hh, est: false, act: hh, actEst: hh, actIsEst: false, actHow: "public holiday · paid", tracked: false, train: 0, spend: hh * rate, runs: 0, done: 0, effRows: [], D: null }; }
