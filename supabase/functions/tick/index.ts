@@ -18,6 +18,9 @@ Deno.serve(async (req) => {
   const ids = todays.map(s => s.id);
   const [{ data: sods }, { data: eods }] = ids.length ? await Promise.all([sb.from("sod").select("*").in("shift_id", ids), sb.from("eod").select("*").in("shift_id", ids)]) : [{ data: [] }, { data: [] }];
   const sodBy = Object.fromEntries((sods || []).map(s => [s.shift_id, s])), eodBy = Object.fromEntries((eods || []).map(e => [e.shift_id, e]));
+  // pick-up totals logged today, by area (any driver's entry for that area counts)
+  const { data: pus } = await sb.from("pickups").select("area").eq("day", t); const puAreas = new Set((pus || []).map((p: any) => p.area));
+  const puAddons = (addons || []).filter((a: any) => a.pu_area);
   const win = (s: any) => { const w = runsBy[s.run]?.windows?.[["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][dow(s.day)]]; return { st: toMin(s.start_at) ?? (w ? toMin(w[0][0]) : null), en: toMin(s.end_at) ?? (w ? toMin(w[0][1]) : null) }; };
   const isSort = (c: string) => /^SUP/.test(c);
   const alertsOpen = open || []; const newAlerts: any[] = []; const resolve: string[] = [];
@@ -44,6 +47,14 @@ Deno.serve(async (req) => {
     for (const x of segs.filter(s => !s.sort || (s.s.addons || []).length)) { const due = (x.en ?? x.st!) + R.eodHours * 60; const k = `eod_late|${t}|${drv}|${x.s.run}`; const e = eodBy[x.s.id];
       if (!x.sort && !e && now.min > due) raise({ kind: "eod_late", driver: drv, shift_id: x.s.id, title: `${name}: EOD for ${x.s.run} not in`, body: `Run finished ${fmtT(x.en)} · EOD was due by ${fmtT(due)}`, dedupe_key: k, _push: { to: [drv], title: `EOD for ${x.s.run} is overdue`, body: `It was due by ${fmtT(due)}. Tap EOD in the app.` }, _email: "eod" });
       if (e) for (const a of alertsOpen) if (a.dedupe_key === k) resolve.push(a.id);
+      // pick-up totals: a run with a pick-up add-on (Lawrence, Owaka, Balclutha, South, Rural…) must have that area's totals logged.
+      // Chase once the run's EOD is in (or the EOD is overdue); sort shifts after they finish. Clears itself when the totals go in.
+      for (const ad of puAddons) { if (!(x.s.addons || []).includes(ad.id) || ppl[drv]?.role === "owner") continue;   // not Jeremy's own runs
+        const kp = `pu_missing|${t}|${drv}|${ad.pu_area}`;
+        if (puAreas.has(ad.pu_area)) { for (const a of alertsOpen) if (a.dedupe_key === kp) resolve.push(a.id); continue; }
+        const ready = x.sort ? now.min > (x.en ?? x.st!) + 30 : (!!e || now.min > due);
+        if (ready && now.min < 23 * 60 + 30) { raise({ kind: "pickup_missing", driver: drv, shift_id: x.s.id, title: `${name}: ${ad.pu_area} pick-up totals not in`, body: `${x.s.run} · enter them in the app under Pick-ups`, dedupe_key: kp, _push: { to: [drv], title: `${ad.pu_area} pick-up totals needed`, body: "Please enter today's pick-up counts in the app (Pick-ups), or 'None' if there weren't any." }, _msg: `Automatic reminder: your ${ad.pu_area} pick-up totals for today (${x.s.run}) aren't in yet. Please enter them in the app under Pick-ups, or tap None if there weren't any. Thanks!` }); }
+      }
       // timing windows
       for (const r of rules || []) { const d = dow(t) + 1; if (!r.days.includes(d)) continue; const all = r.runs.includes("ALL"); if (!all && !r.runs.includes(x.s.run)) continue;
         // Milton meet: the D>B driver's chosen time (shifts.milton_at) replaces the rule's time on D>B and LAW, and puts the meet on LAW even if not ticked
@@ -82,12 +93,14 @@ Deno.serve(async (req) => {
 
   // write alerts, push, email
   const staffAlerts = await staffWith(sb, "alerts"); const staffIds = staffAlerts.map(p => p.id);
-  for (const a of newAlerts) { const { _push, _email, _rule, _staffOnly, _area, ...row } = a; const { data: ins, error } = await sb.from("alerts").upsert(row, { onConflict: "dedupe_key", ignoreDuplicates: true }).select().maybeSingle(); if (error) { console.error(error); continue; } if (!ins) continue; out.push(row.dedupe_key);
+  for (const a of newAlerts) { const { _push, _email, _rule, _staffOnly, _area, _msg, ...row } = a; const { data: ins, error } = await sb.from("alerts").upsert(row, { onConflict: "dedupe_key", ignoreDuplicates: true }).select().maybeSingle(); if (error) { console.error(error); continue; } if (!ins) continue; out.push(row.dedupe_key);
     // fleet-only staff (alerts but no roster/scorecard, e.g. Stu) only hear about vehicle alerts
     const fleetAlert = String(row.dedupe_key || "").startsWith("vchk|");
     const staff = _area ? (await staffWith(sb, _area)).map(p => p.id) : staffAlerts.filter(p => fleetAlert || p.role === "owner" || (p.perms || []).some((x: string) => x === "roster" || x === "scorecard")).map(p => p.id);
     await push(sb, sec, set, [...new Set(staff)], { title: row.title, body: row.body, url: fleetAlert ? "/admin/#alerts" : "/admin/#live", tag: row.dedupe_key });
     if (_push && !_staffOnly) await push(sb, sec, set, _push.to, { title: _push.title, body: _push.body, url: "/", tag: row.dedupe_key });
+    // also drop it in the driver's Messages, so it's there even without push notifications switched on
+    if (_msg && row.driver) { const owner = Object.values(ppl).find((p: any) => p.role === "owner") as any; if (owner) { const { data: m } = await sb.from("messages").insert({ sender: owner.id, body: _msg, needs_confirm: false }).select("id").single(); if (m) await sb.from("message_recipients").insert({ message_id: m.id, person: row.driver }); } }
     if (_email && rem.enabled && inWindow) { const p = ppl[row.driver]; if (p?.email) { const what = _email === "sod" ? "SOD" : _email === "eod" ? `EOD for ${row.title.split(" for ")[1]?.split(" ")[0] || "your run"}` : (_rule?.name || "a timed task");
       await sendEmail(sec, set, p.email, `[TP SYSTEM EMAIL] Heads up: ${what} is overdue`, wrap(`<p>Hi ${esc(first(p.name))},</p><p>Quick one from the driver system (automatic, so nobody is chasing you personally).</p><p><b>${esc(row.title.replace(/^[^:]+: /, ""))}</b> — ${esc(row.body || "")}.</p><p>${_email === "timing" ? "If it's done, tap <b>Done</b> in the app. Otherwise let Jeremy know what's happening." : "If you can, pop it in now from the app: one tap for the SOD, or the EOD form for your run."}</p><p>Why it matters: every late or missing post counts against your Admin score. A post on time keeps you at 100%.</p><p>Thanks for keeping things tidy, it makes a real difference. 🙌</p>`), rem.cc || undefined); } }
   }

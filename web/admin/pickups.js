@@ -4,7 +4,7 @@
 //   Data entry – owner/admin enter counts for any driver, edit or delete entries, and add extra invoice lines
 // Item codes, account codes, contacts and line wording match the invoices already in Xero.
 import { sb, q, today, addDays, label, esc, $, $$, toast } from "/shared/core.js";
-import { S, sheet, opt, nm, render } from "/admin/admin.js";
+import { S, sheet, opt, nm, render, fn } from "/admin/admin.js";
 
 export const AREAS = ["Rural", "South", "Owaka", "Lawrence", "Balclutha"];
 const custFor = a => a === "South" ? ["TGE"] : a === "Rural" ? ["NZC", "PH", "TGE"] : ["NZC", "PH"];   // South = TGE only; TGE also on Rural; never on Owaka / Lawrence / Balclutha
@@ -121,7 +121,27 @@ function glance() {
       ${gp.mode === "month" ? `<span class="meta" style="flex:1 1 200px">Use ‹ › at the top to change month.</span>` : ""}</div>${tiles}
     ${rows_.length ? `<div class="scroll" style="margin-top:8px">${areaTbl}</div>
     <div class="row" style="align-items:flex-start;gap:12px;margin-top:8px"><div style="flex:1 1 260px"><h4 style="margin:4px 0">By driver</h4><div class="scroll">${drvTbl}</div></div><div style="flex:2 1 360px"><h4 style="margin:4px 0">By day</h4><div class="scroll" style="max-height:320px;overflow:auto">${dayTbl}</div></div></div>` : `<p class="meta">No pick-ups logged for ${esc(pname)}.</p>`}
+    ${(() => { const ms = missingPU(); return `<h4 style="margin:12px 0 4px">Missing pick-up totals <span class="meta">${ms.length ? `${ms.length} · tap Remind to message the driver now (they're also chased automatically once their EOD is in)` : "none · every pick-up run has its totals in"}</span></h4>${ms.length ? `<div class="scroll"><table class="dt"><tr><th>Day</th><th>Driver</th><th>Area</th><th>Run</th><th></th></tr>${ms.map((m, i) => `<tr><td>${label(m.day)}</td><td>${esc(nm(m.driver))}</td><td>${esc(m.area)}</td><td>${esc(m.run)}</td><td align="right"><button class="btn ghost sm" data-pu-remind="${i}">Remind</button></td></tr>`).join("")}</table></div>${ms.length > 1 ? `<div class="row" style="margin-top:6px"><button class="btn sm" id="pu-remind-all" style="flex:0 0 auto">Remind everyone (${new Set(ms.map(m => m.driver)).size})</button></div>` : ""}` : ""}`; })()}
     <div class="row" style="margin-top:10px">${rows_.length ? `<button class="btn ghost sm" id="pu-csv" style="flex:0 0 auto">⬇ Pick-up entries (CSV)</button>` : ""}${canRep ? `<button class="btn ghost sm" id="pu-rep" style="flex:0 0 auto">⬇ Full report for ${esc(pname)} (Excel)</button>` : ""}</div></div>`;
+}
+/* Runs with a pick-up add-on whose area has no totals logged that day (owner's own runs left out). Today only counts once that run's EOD is in. */
+function missingPU() {
+  const { from, to } = gRange(); const t = today(); const end = to < t ? to : t; const pu = (S.addons || []).filter(a => a.pu_area);
+  const have = new Set(grows.map(r => r.day + "|" + r.area)); const out = []; const seen = new Set();
+  for (const s of S.shifts || []) { if (s.day < from || s.day > end || !s.driver || S.peopleBy?.[s.driver]?.role === "owner") continue;
+    if (s.day === t && !S.eodBy?.[s.id] && !/^SUP/.test(s.run)) continue;
+    for (const a of pu) { if (!(s.addons || []).includes(a.id) || have.has(s.day + "|" + a.pu_area)) continue; const k = s.day + "|" + a.pu_area + "|" + s.driver; if (seen.has(k)) continue; seen.add(k); out.push({ day: s.day, area: a.pu_area, driver: s.driver, run: s.run }); } }
+  return out.sort((a, b) => b.day.localeCompare(a.day) || nm(a.driver).localeCompare(nm(b.driver)));
+}
+async function remind(list) {
+  if (!list.length) return; const by = {}; for (const m of list) (by[m.driver] ??= []).push(m); let n = 0;
+  for (const [d, ms] of Object.entries(by)) {
+    const what = ms.map(m => `${m.area} on ${label(m.day)} (${m.run})`).join(", ");
+    const body = `Hi ${nm(d).split(" ")[0]}, your pick-up totals for ${what} aren't in yet. Please enter them in the app under Pick-ups (or tap None if there weren't any). Thanks!`;
+    const msg = await q(sb.from("messages").insert({ sender: S.me.id, body, needs_confirm: false }).select().single());
+    await q(sb.from("message_recipients").insert({ message_id: msg.id, person: d })); fn("notify", { type: "message", message_id: msg.id }).catch(() => { }); n++;
+  }
+  toast(`Reminder sent to ${n} driver${n === 1 ? "" : "s"}`, "ok");
 }
 function entriesCsv() {
   const head = ["Date", "Driver", "Area", "Customer", "Source", "Small", "Large", "Split fee", "Value excl GST", "Note", "Entered"];
@@ -242,6 +262,8 @@ export function pickupSheet(existing = null, onSaved = null) {
 }
 
 export function wirePickups() {
+  $$("[data-pu-remind]").forEach(b => b.onclick = async () => { const m = missingPU()[+b.dataset.puRemind]; if (!m) return; b.disabled = true; try { await remind([m]); b.textContent = "Sent ✓"; } catch (e) { b.disabled = false; toast(e.message, "err"); } });
+  $("#pu-remind-all")?.addEventListener("click", async e => { const b = e.currentTarget; b.disabled = true; try { await remind(missingPU()); b.textContent = "Sent ✓"; } catch (er) { b.disabled = false; toast(er.message, "err"); } });
   $("#pu-csv")?.addEventListener("click", entriesCsv);
   $("#pu-rep")?.addEventListener("click", e => { const r = gRange(); downloadReport(r.from, r.to < today() ? r.to : (r.from > today() ? r.to : today()), e.currentTarget); });
   $$("[data-gp]").forEach(b => b.onclick = async () => { const k = b.dataset.gp; const t = today();
