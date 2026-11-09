@@ -281,7 +281,7 @@ function timingRows(x, day, nowMin) {
     else if (gp && planned) { st = "✓ game plan in"; cls = "done"; }
     else if (isT) { if (t != null && nowMin > t) { st = `✗ not done by ${fmtT(t)}`; cls = "miss"; } else if (f != null && nowMin >= f) { tag = "now"; cls = "now"; } else if (t != null && t - nowMin <= 60) { tag = "due soon"; cls = "now"; } }
     else if (day < today() && key) { st = `✗ not marked done`; cls = "miss"; }
-    const btn = !(isT && key && !S.viewAs) ? "" : done ? `<button class="btn sm" data-done="${esc(key)}" data-undo="1" data-shift="${x.shift.id}" title="Tap again to undo" style="flex:0 0 auto;min-height:34px">✓ Done</button>` : isPhotoTask(key) ? rsBtn(x.shift.id, key) : puAreaOf(key) ? `<div class="row" style="flex:0 0 auto;gap:6px">${puBtn(key, x.shift.id)}${noneBtn(key, x.shift.id)}</div>` : !(gp && planned) ? `<button class="btn sm ${cls === "miss" ? "warn" : "ghost"}" data-done="${esc(key)}" data-shift="${x.shift.id}" style="flex:0 0 auto;min-height:34px">Done</button>` : "";
+    const btn = !(isT && key && !S.viewAs) ? "" : done ? `<div class="row" style="flex:0 0 auto;gap:6px">${puEditBtn(key, x.shift.day)}<button class="btn sm" data-done="${esc(key)}" data-undo="1" data-shift="${x.shift.id}" title="Tap again to undo" style="flex:0 0 auto;min-height:34px">✓ Done</button></div>` : isPhotoTask(key) ? rsBtn(x.shift.id, key) : puAreaOf(key) ? `<div class="row" style="flex:0 0 auto;gap:6px">${puBtn(key, x.shift.id)}${noneBtn(key, x.shift.id)}</div>` : !(gp && planned) ? `<button class="btn sm ${cls === "miss" ? "warn" : "ghost"}" data-done="${esc(key)}" data-shift="${x.shift.id}" style="flex:0 0 auto;min-height:34px">Done</button>` : "";
     return `<div class="tw-r ${cls}"><div class="w">${winTxt(r)}${tag ? `<span class="tw-tag">${tag}</span>` : ""}</div><div class="row" style="justify-content:space-between;align-items:center;gap:6px;flex-wrap:nowrap"><div style="flex:1 1 auto"><span class="n">${esc(r.name)}</span>${r.note ? `<span class="x">${esc(r.note)}</span>` : ""}${st ? `<span class="x ${cls === "miss" ? "c-crit" : "c-ok"}" style="font-weight:600">${st}</span>` : ""}${gp && !planned && !done && isT ? `<span class="x">Set your planned times under Change what&#39;s on this run (that counts as the game plan), or tap Done.</span>` : ""}</div>${btn}</div></div>`; });
   return `<div class="tw"><h4>${isT ? "Timed tasks today · tap Done as you finish each one" : "Timed tasks"}</h4>${rows.join("")}${isT ? `<p class="hint" style="margin:4px 0 0">Jeremy sees each Done straight away; a window that passes without Done raises an alert for you both.</p>` : ""}</div>`;
 }
@@ -514,6 +514,26 @@ function editPickup(id) {
       const { error } = await sb.from("pickups").delete().eq("id", r.id); done(error, "Pick-up line deleted"); });
   });
 }
+/** Done pick-up task: Edit button for today's lines in that area */
+const puAreaLines = (area, day) => (S.pickups || []).filter(r => r.area === area && r.day === day && puEditable(r));
+const puEditBtn = (key, day) => { const a = puAreaOf(key); return a && puAreaLines(a, day).length ? `<button class="btn ghost sm" data-puarea="${esc(a)}" data-puday="${day}" style="flex:0 0 auto;min-height:34px">Edit</button>` : ""; };
+function editPickupArea(area, day) {
+  const rs = puAreaLines(area, day); if (!rs.length) return;
+  if (rs.length === 1) return editPickup(rs[0].id);
+  sheet(`<h3>Edit pick-ups · ${esc(area)}</h3><p class="hint">${label(day)} · change the figures and tap Save changes.</p><form class="frm" id="pa">
+    <div class="full"><table class="dt" style="width:100%"><tr><th>Customer</th><th>Small</th><th>Large</th><th></th></tr>${rs.map(r => `<tr data-pr="${r.id}"><td>${esc(PU_CUST[r.customer] || r.customer)}<div class="meta">${PU_SRC_L[r.source] || "depot"}</div></td>${r.min_fee != null ? `<td colspan="2" class="meta">none · split fee</td>` : `<td><input class="in" data-pk="small" inputmode="numeric" value="${r.small}" style="width:54px"></td><td><input class="in" data-pk="large" inputmode="numeric" value="${r.large}" style="width:54px"></td>`}<td><button type="button" class="btn ghost sm" data-pdel="${r.id}">Delete</button></td></tr>`).join("")}</table></div>
+    <button class="btn full" type="submit">Save changes</button></form>`, (bg, close) => {
+    const fin = async msg => { close(); toast(msg, "ok"); await loadAll(); render(); };
+    bg.querySelector("#pa").addEventListener("submit", async e => { e.preventDefault();
+      for (const r of rs) { if (r.min_fee != null) continue; const tr = bg.querySelector(`[data-pr="${r.id}"]`); const n = k => Math.max(0, parseInt(tr.querySelector(`[data-pk="${k}"]`).value) || 0);
+        const small = n("small"), large = n("large"); if (small === r.small && large === r.large) continue;
+        const { error } = small || large ? await sb.from("pickups").update({ small, large }).eq("id", r.id) : await sb.from("pickups").delete().eq("id", r.id);
+        if (error) return toast(error.message, "err"); }
+      fin("Pick-ups updated ✓"); });
+    bg.querySelectorAll("[data-pdel]").forEach(b => b.onclick = async () => { if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Sure?"; return; }
+      const { error } = await sb.from("pickups").delete().eq("id", b.dataset.pdel); if (error) return toast(error.message, "err"); fin("Pick-up line deleted"); });
+  });
+}
 /** Pick-up entry task: the add-on's pick-up area, if it has one */
 const puAreaOf = key => key ? S.addons.find(a => a.id === key)?.pu_area || null : null;
 const noneBtn = (key, shiftId) => puAreaOf(key) === PU_MIN_AREA ? `<button class="btn sm ghost" data-pumin="${esc(key)}" data-shift="${shiftId}" style="flex:0 0 auto;min-height:34px">None · split fee</button>` : `<button class="btn sm ghost" data-done="${esc(key)}" data-shift="${shiftId}" style="flex:0 0 auto;min-height:34px">None</button>`;
@@ -599,6 +619,7 @@ function wire() {
     toast(data?.law?.length ? `Milton ${fmtT(toMin(i.value))} saved${sent ? " · Lawrence driver notified" : " · in the Lawrence driver's app"}` : `Milton ${fmtT(toMin(i.value))} saved (nobody on Lawrence that day yet)`, "ok"); render(); });
   $("#access-edit")?.addEventListener("click", editAccess);
   $("#pu-log")?.addEventListener("click", () => logPickup());
+  $$("[data-puarea]").forEach(b => b.onclick = e => { e.stopPropagation(); editPickupArea(b.dataset.puarea, b.dataset.puday); });
   $$("[data-puedit]").forEach(b => b.onclick = e => { e.stopPropagation(); editPickup(b.dataset.puedit); });
   $$("[data-rsphoto]").forEach(inp => inp.onchange = async () => { const f = inp.files?.[0]; if (!f) return; const sh = S.shifts.find(z => z.id === inp.dataset.rsphoto); const lab = inp.closest("label"); if (lab) lab.style.opacity = ".5";
     const rk = inp.dataset.rskey || "tw_twrunsheet"; toast("Uploading photo…");
