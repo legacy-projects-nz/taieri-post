@@ -42,6 +42,11 @@ let ym = null;    // "YYYY-MM"
 let rows = [];    // pickups for the selected month
 let extras = [];  // extra invoice lines for the selected month
 let sub = "invoices";
+// At-a-glance period: the month above (default), a Mon–Sun week, or any dates
+let gp = { mode: "month", from: null, to: null }; let grows = [];
+const monOfD = d => addDays(d, -((new Date(d + "T12:00:00Z").getUTCDay() + 6) % 7));
+const gRange = () => gp.mode === "month" ? { from: ym + "-01", to: lastDay(ym) } : { from: gp.from, to: gp.to };
+async function loadGlance() { if (gp.mode === "month") { grows = rows; return; } const { from, to } = gRange(); grows = await q(sb.from("pickups").select("*").gte("day", from).lte("day", to).order("day", { ascending: false })); }
 
 const rates = () => { const o = JSON.parse(JSON.stringify(CUSTOMERS)); const ov = S.set?.pickup_rates || {}; for (const [c, v] of Object.entries(ov)) if (o[c]) { if (v.small != null) o[c].small.rate = +v.small; if (v.large != null) o[c].large.rate = +v.large; } return o; };
 const monthOf = d => d.slice(0, 7);
@@ -58,7 +63,7 @@ async function loadMonth() {
     q(sb.from("invoice_extras").select("*").eq("month", ym).order("created_at")).catch(() => []),
   ]);
 }
-const reload = async () => { await loadMonth(); render(); };
+const reload = async () => { await loadMonth(); await loadGlance(); render(); };
 
 // totals[cust][area] = { small, large }
 function totals() { const t = {}; for (const r of rows) { if (r.min_fee != null) continue; const c = (t[r.customer] ??= {}); const a = (c[r.area] ??= { small: 0, large: 0 }); a.small += r.small; a.large += r.large; } return t; }
@@ -82,7 +87,60 @@ export function pickupsTab() {
   const [y, m] = ym.split("-").map(Number); const to = lastDay(ym);
   const bar = `<div class="wkbar"><button class="ar" data-pu-m="-1">‹</button><b>${MONTH_L[m - 1]} ${y} <span class="meta">(1 – ${+to.slice(8)} ${MON[m - 1]})</span></b><button class="ar" data-pu-m="1">›</button></div>
     ${canEdit() ? `<div class="nav" style="margin-top:-4px"><button data-pu-sub="invoices" class="${sub === "invoices" ? "on" : ""}">Invoices</button><button data-pu-sub="entry" class="${sub === "entry" ? "on" : ""}">Data entry</button></div>` : ""}`;
-  return bar + (sub === "entry" ? entryView() : invoicesView());
+  return bar + glance() + (sub === "entry" ? entryView() : invoicesView());
+}
+
+/* At a glance: the month's pick-ups by customer, area, driver and day, plus downloads (entries CSV, full Excel report) */
+const fee = r => { if (r.min_fee != null) return +r.min_fee; const C = rates()[r.customer]; return C ? r.small * C.small.rate + r.large * C.large.rate : 0; };
+function glance() {
+  if (gp.mode === "month") grows = rows;
+  const rows_ = grows; const R = rates(); const [, m] = ym.split("-").map(Number); const t = today(); const { from: gF, to: gT } = gRange(); const inRange = gF <= t && t <= gT;
+  const pname = gp.mode === "month" ? MONTH_L[m - 1] : gp.mode === "week" ? `week of ${label(gF)}` : `${label(gF)} – ${label(gT)}`;
+  const parcels = rows_.reduce((a, r) => a + (r.small || 0) + (r.large || 0), 0);
+  const invNet = rows_.reduce((a, r) => a + fee(r), 0) + (gp.mode === "month" ? extras.reduce((a, x) => a + (+x.qty) * (+x.price), 0) : 0);
+  const days = [...new Set(rows_.map(r => r.day))].sort().reverse();
+  const wkFrom = addDays(t, -((new Date(t + "T12:00:00Z").getUTCDay() + 6) % 7));
+  const sumP = rs => rs.reduce((a, r) => a + (r.small || 0) + (r.large || 0), 0);
+  const tile = (v, l) => `<div class="tile"><span class="v">${v}</span><span class="l">${l}</span></div>`;
+  const tiles = `<div class="tiles">${tile(parcels, "parcels picked up")}${tile(money(invNet), "to invoice (excl GST)")}${tile(days.length, "days with pick-ups")}${tile(days.length ? Math.round(parcels / days.length) : "–", "parcels a day (avg)")}${inRange ? tile(sumP(rows_.filter(r => r.day === t)), "today") + tile(sumP(rows_.filter(r => r.day >= wkFrom)), "this week") : ""}</div>`;
+  // area × customer
+  const cell = (area, c) => { const rs = rows_.filter(r => r.area === area && r.customer === c); if (!rs.length) return `<td class="meta" align="right">–</td>`; const sm = rs.reduce((a, r) => a + (r.small || 0), 0), lg = rs.reduce((a, r) => a + (r.large || 0), 0), mins = rs.filter(r => r.min_fee != null).length; return `<td align="right">${sm}${lg ? ` + ${lg}L` : ""}${mins ? ` <span class="meta">· ${mins} min</span>` : ""}<div class="meta">${money(rs.reduce((a, r) => a + fee(r), 0))}</div></td>`; };
+  const custs = Object.keys(CUSTOMERS);
+  const areaTbl = `<table class="dt"><tr><th>Area</th>${custs.map(c => `<th align="right">${esc(R[c].short)}</th>`).join("")}<th align="right">Total</th></tr>${AREAS.map(a => { const rs = rows_.filter(r => r.area === a); return `<tr><td>${a}</td>${custs.map(c => cell(a, c)).join("")}<td align="right"><b>${sumP(rs)}</b><div class="meta">${money(rs.reduce((x, r) => x + fee(r), 0))}</div></td></tr>`; }).join("")}
+    <tr><td><b>Total</b></td>${custs.map(c => { const rs = rows_.filter(r => r.customer === c); return `<td align="right"><b>${sumP(rs)}</b><div class="meta">${money(rs.reduce((x, r) => x + fee(r), 0))}</div></td>`; }).join("")}<td align="right"><b>${parcels}</b><div class="meta">${money(rows_.reduce((x, r) => x + fee(r), 0))}</div></td></tr></table>`;
+  // by driver
+  const drv = Object.entries(rows_.reduce((a, r) => { const o = (a[r.driver] ??= { n: 0, p: 0, f: 0 }); o.n++; o.p += (r.small || 0) + (r.large || 0); o.f += fee(r); return a; }, {})).sort((a, b) => b[1].p - a[1].p);
+  const drvTbl = drv.length ? `<table class="dt"><tr><th>Driver</th><th align="right">Entries</th><th align="right">Parcels</th><th align="right">Value</th></tr>${drv.map(([d, o]) => `<tr><td>${esc(nm(d))}</td><td align="right">${o.n}</td><td align="right">${o.p}</td><td align="right">${money(o.f)}</td></tr>`).join("")}</table>` : "";
+  // by day (latest first)
+  const dayTbl = days.length ? `<table class="dt"><tr><th>Day</th>${custs.map(c => `<th align="right">${esc(R[c].short)}</th>`).join("")}<th align="right">Total</th><th>Areas</th></tr>${days.slice(0, 31).map(d => { const rs = rows_.filter(r => r.day === d); return `<tr><td>${label(d)}</td>${custs.map(c => `<td align="right">${sumP(rs.filter(r => r.customer === c)) || `<span class="meta">–</span>`}</td>`).join("")}<td align="right"><b>${sumP(rs)}</b></td><td class="meta">${[...new Set(rs.map(r => r.area))].join(", ")}</td></tr>`; }).join("")}</table>` : "";
+  const canRep = S.me?.isOwner || S.me?.id === "AL";
+  return `<div class="card"><h2>Pick-ups at a glance<span>${esc(pname)} · small + large (L) · value at invoice rates, excl GST</span></h2>
+    <div class="row" style="align-items:flex-end;margin-bottom:8px"><div class="nav" style="margin:0;flex:0 0 auto">${[["month", "Month"], ["week", "Week"], ["custom", "Dates"]].map(([k, l]) => `<button data-gp="${k}" class="${gp.mode === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      ${gp.mode === "week" ? `<div class="wkbar" style="margin:0;flex:1 1 220px"><button class="ar" data-gw="-1">‹</button><b>${label(gF)} – ${label(gT)}</b><button class="ar" data-gw="1">›</button></div>` : ""}
+      ${gp.mode === "custom" ? `<label class="f" style="flex:1 1 130px">From<input class="in" type="date" id="gp-from" value="${gF}"></label><label class="f" style="flex:1 1 130px">To<input class="in" type="date" id="gp-to" value="${gT}"></label><button class="btn sm" id="gp-go" style="flex:0 0 auto">Show</button>` : ""}
+      ${gp.mode === "month" ? `<span class="meta" style="flex:1 1 200px">Use ‹ › at the top to change month.</span>` : ""}</div>${tiles}
+    ${rows_.length ? `<div class="scroll" style="margin-top:8px">${areaTbl}</div>
+    <div class="row" style="align-items:flex-start;gap:12px;margin-top:8px"><div style="flex:1 1 260px"><h4 style="margin:4px 0">By driver</h4><div class="scroll">${drvTbl}</div></div><div style="flex:2 1 360px"><h4 style="margin:4px 0">By day</h4><div class="scroll" style="max-height:320px;overflow:auto">${dayTbl}</div></div></div>` : `<p class="meta">No pick-ups logged for ${esc(pname)}.</p>`}
+    <div class="row" style="margin-top:10px">${rows_.length ? `<button class="btn ghost sm" id="pu-csv" style="flex:0 0 auto">⬇ Pick-up entries (CSV)</button>` : ""}${canRep ? `<button class="btn ghost sm" id="pu-rep" style="flex:0 0 auto">⬇ Full report for ${esc(pname)} (Excel)</button>` : ""}</div></div>`;
+}
+function entriesCsv() {
+  const head = ["Date", "Driver", "Area", "Customer", "Source", "Small", "Large", "Split fee", "Value excl GST", "Note", "Entered"];
+  const lines = [...grows].sort((a, b) => a.day.localeCompare(b.day) || a.area.localeCompare(b.area)).map(r => [r.day, nm(r.driver), r.area, rates()[r.customer]?.short || r.customer, r.source || "depot", r.small, r.large, r.min_fee ?? "", fee(r).toFixed(2), r.note || "", (r.created_at || "").slice(0, 16).replace("T", " ")]);
+  const csv = [head, ...lines].map(r => r.map(csvCell).join(",")).join("\r\n");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); { const r = gRange(); a.download = gp.mode === "month" ? `pick-ups-${ym}.csv` : `pick-ups-${r.from}-to-${r.to}.csv`; } document.body.appendChild(a); a.click(); a.remove();
+}
+/** Full spreadsheet (same as the emailed daily/weekly report) for any dates, built on the server. Owner and Alejandro only. */
+export async function downloadReport(from, to, btn) {
+  if (btn) { btn.disabled = true; btn.dataset.l ??= btn.textContent; btn.textContent = "Building report…"; }
+  try {
+    const { data, error } = await sb.functions.invoke("report", { body: { download: true, from, to } });
+    if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch { } throw new Error(m); }
+    if (!data?.b64) throw new Error(data?.error || "No file came back");
+    const bin = atob(data.b64); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([u8], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })); a.download = data.filename; document.body.appendChild(a); a.click(); a.remove();
+    toast("Report downloaded", "ok");
+  } catch (e) { toast("Couldn't build the report: " + e.message, "err"); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = btn.dataset.l; } }
 }
 
 function invoicesView() {
@@ -184,6 +242,15 @@ export function pickupSheet(existing = null, onSaved = null) {
 }
 
 export function wirePickups() {
+  $("#pu-csv")?.addEventListener("click", entriesCsv);
+  $("#pu-rep")?.addEventListener("click", e => { const r = gRange(); downloadReport(r.from, r.to < today() ? r.to : (r.from > today() ? r.to : today()), e.currentTarget); });
+  $$("[data-gp]").forEach(b => b.onclick = async () => { const k = b.dataset.gp; const t = today();
+    if (k === "week") { const f = monOfD(t); gp = { mode: k, from: f, to: addDays(f, 6) }; }
+    else if (k === "custom") gp = { mode: k, from: gp.from || ym + "-01", to: gp.to || (lastDay(ym) < t ? lastDay(ym) : t) };
+    else gp = { mode: "month", from: null, to: null };
+    await loadGlance(); render(); });
+  $$("[data-gw]").forEach(b => b.onclick = async () => { const f = addDays(gp.from, 7 * +b.dataset.gw); gp = { mode: "week", from: f, to: addDays(f, 6) }; await loadGlance(); render(); });
+  $("#gp-go")?.addEventListener("click", async () => { const f = $("#gp-from").value, t2 = $("#gp-to").value; if (!f || !t2 || t2 < f) return toast("Pick a from and to date", "err"); gp = { mode: "custom", from: f, to: t2 }; await loadGlance(); render(); });
   $$("[data-pu-m]").forEach(b => b.onclick = async () => { ym = shiftMonth(ym, +b.dataset.puM); await reload(); });
   $$("[data-pu-sub]").forEach(b => b.onclick = () => { sub = b.dataset.puSub; render(); });
   $$("[data-pu-del]").forEach(b => b.onclick = async () => { if (!confirm("Delete this pick-up?")) return; await q(sb.from("pickups").delete().eq("id", b.dataset.puDel)); await reload(); });

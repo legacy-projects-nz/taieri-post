@@ -4,6 +4,8 @@
 // Body (optional, for testing/resends): { kind: "daily"|"weekly", day: "YYYY-MM-DD" (daily) | from: "YYYY-MM-DD" (weekly Monday), to?: email, dry?: true, force?: true }
 // The scoring engine is the app's own web/shared/score.js from the repo (same rules as the owner portal; bump the commit when score.js changes); deno.json maps its core.js import to ./core.js.
 // Daily goes to the owner and Alejandro (admin, id AL); weekly to the owner.
+// Download: the owner portal calls this signed in, with { download: true, from, to }; the owner or Alejandro gets the same spreadsheet back
+// as { filename, b64 } instead of an email.
 import * as XLSX from "npm:xlsx@0.18.5";
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import { cfg, scoreFor, setEvidence, segTimes, addName, STATE_LABEL } from "https://cdn.jsdelivr.net/gh/legacy-projects-nz/taieri-post@da05319f36a24f44e0bdb36df2388f3a589b0bc8/web/shared/score.js";
@@ -14,7 +16,9 @@ const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&a
 async function secrets(sb: any) { const { data } = await sb.from("app_secrets").select("key,value"); const o: Record<string, string> = {}; for (const r of data || []) o[r.key] = r.value; return o; }
 async function settings(sb: any) { const { data } = await sb.from("settings").select("key,value"); const o: Record<string, any> = {}; for (const r of data || []) o[r.key] = r.value; return o; }
 const wrap = (body: string) => `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.5;color:#111;max-width:680px">${body}<p style="color:#777;font-size:12px;margin-top:24px">Taieri Post · automatic report from the driver system.</p></div>`;
-const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json" } });
+const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
+const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json", ...CORS } });
+const isoDay = (v: unknown) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 const DAILY_AT = 20 * 60 + 40, WEEKLY_AT = 21 * 60;
 const tsNZ = (iso?: string | null) => { if (!iso) return ""; const n = nz(new Date(iso)); return `${n.date} ${n.hhmm}`; };
@@ -94,8 +98,21 @@ async function build(sb: any, from: string, to: string) {
 }
 
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const sb = admin(); const sec = await secrets(sb);
-  if (req.headers.get("x-cron-secret") !== sec.cron_secret) return json({ error: "nope" }, 401);
+  if (req.headers.get("x-cron-secret") !== sec.cron_secret) {
+    // signed-in download from the owner portal: owner or Alejandro only
+    const tok = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+    const { data: u } = tok ? await sb.auth.getUser(tok) : { data: null };
+    if (!u?.user) return json({ error: "Please sign in again" }, 401);
+    const { data: p } = await sb.from("people").select("id,role,active").eq("user_id", u.user.id).maybeSingle();
+    if (!p?.active || !(p.role === "owner" || p.id === "AL")) return json({ error: "Reports are for the owner and Alejandro" }, 403);
+    const b = await req.json().catch(() => ({}));
+    if (!isoDay(b.from) || !isoDay(b.to) || b.to < b.from) return json({ error: "Pick a from and to date" }, 400);
+    if ((Date.parse(b.to) - Date.parse(b.from)) / 86400e3 > 92) return json({ error: "Up to 3 months at a time" }, 400);
+    const R = await build(sb, b.from, b.to);
+    return json({ filename: b.from === b.to ? `Taieri Post report ${b.from}.xlsx` : `Taieri Post report ${b.from} to ${b.to}.xlsx`, b64: R.b64, counts: R.counts });
+  }
   const body = await req.json().catch(() => ({})); const now = nz();
   const jobs: { kind: string; from: string; to: string }[] = [];
   if (body.kind === "daily") { const d = body.day || now.date; jobs.push({ kind: "daily", from: d, to: d }); }
