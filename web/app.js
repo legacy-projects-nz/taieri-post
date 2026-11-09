@@ -175,16 +175,16 @@ function breakBtn(T, sod) {
   const open = (S.breaks || []).find(b => !b.ended_at);
   const ids = new Set(T.segs.map(x => x.shift.id)); const todays = (S.breaks || []).filter(b => ids.has(b.shift_id) && b.ended_at);
   const mins = todays.reduce((a, b) => a + Math.round((new Date(b.ended_at) - new Date(b.started_at)) / 60000), 0);
-  const taken = todays.length ? `${todays.length} break${todays.length > 1 ? "s" : ""} today · ${mins} min` : "";
+  const taken = todays.length ? `${todays.length} unpaid break${todays.length > 1 ? "s" : ""} today · ${mins} min` : "";
   if (open) { const m = Math.max(0, Math.round((Date.now() - new Date(open.started_at)) / 60000));
-    return S.viewAs ? `<div class="qb brk on"><b>☕ On break</b><small>since ${fmtTime(open.started_at)} · ${m} min</small></div>`
-      : `<button class="btn qb brk on" id="brk-end"><b>■ End break</b><small>on break since ${fmtTime(open.started_at)} · ${m} min</small></button>`; }
-  if (!sod || allEod) return taken ? `<div class="qb brk off"><b>☕ Break</b><small>${taken}</small></div>` : "";
-  if (S.viewAs) return `<div class="qb brk off"><b>☕ Break</b><small>${taken || "none taken yet"}</small></div>`;
-  return `<button class="btn ghost qb brk" id="brk-start" data-shift="${(runs.find(x => !x.eod) || T.segs[T.segs.length - 1]).shift.id}"><b>☕ Start break</b><small>${taken || "tap when you stop for a break"}</small></button>`;
+    return S.viewAs ? `<div class="qb brk on"><b>☕ On unpaid break</b><small>since ${fmtTime(open.started_at)} · ${m} min</small></div>`
+      : `<button class="btn qb brk on" id="brk-end"><b>■ End unpaid break</b><small>on unpaid break since ${fmtTime(open.started_at)} · ${m} min</small></button>`; }
+  if (!sod || allEod) return taken ? `<div class="qb brk off"><b>☕ Unpaid break</b><small>${taken}</small></div>` : "";
+  if (S.viewAs) return `<div class="qb brk off"><b>☕ Unpaid break</b><small>${taken || "none taken yet"}</small></div>`;
+  return `<button class="btn ghost qb brk" id="brk-start" data-shift="${(runs.find(x => !x.eod) || T.segs[T.segs.length - 1]).shift.id}"><b>☕ Start unpaid break</b><small>${taken || "tap when you stop for an unpaid break"}</small></button>`;
 }
-async function startBreak(shiftId) { const { error } = await sb.rpc("break_start", { p_shift: shiftId }); if (error) return toast(error.message, "err"); toast("Break started ☕", "ok"); await loadAll(); render(); }
-async function endBreak() { const { error } = await sb.rpc("break_end"); if (error) return toast(error.message, "err"); toast("Break ended ✓", "ok"); await loadAll(); render(); }
+async function startBreak(shiftId) { const { error } = await sb.rpc("break_start", { p_shift: shiftId }); if (error) return toast(error.message, "err"); toast("Unpaid break started ☕", "ok"); await loadAll(); render(); }
+async function endBreak() { const { error } = await sb.rpc("break_end"); if (error) return toast(error.message, "err"); toast("Unpaid break ended ✓", "ok"); await loadAll(); render(); }
 
 /* ---------- Roster changes ---------- */
 function linePast(item, n) {
