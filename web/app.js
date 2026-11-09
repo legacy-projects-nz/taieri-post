@@ -519,19 +519,32 @@ const puAreaLines = (area, day) => (S.pickups || []).filter(r => r.area === area
 const puEditBtn = (key, day) => { const a = puAreaOf(key); return a && puAreaLines(a, day).length ? `<button class="btn ghost sm" data-puarea="${esc(a)}" data-puday="${day}" style="flex:0 0 auto;min-height:34px">Edit</button>` : ""; };
 function editPickupArea(area, day) {
   const rs = puAreaLines(area, day); if (!rs.length) return;
-  if (rs.length === 1) return editPickup(rs[0].id);
-  sheet(`<h3>Edit pick-ups · ${esc(area)}</h3><p class="hint">${label(day)} · change the figures and tap Save changes.</p><form class="frm" id="pa">
-    <div class="full"><table class="dt" style="width:100%"><tr><th>Customer</th><th>Small</th><th>Large</th><th></th></tr>${rs.map(r => `<tr data-pr="${r.id}"><td>${esc(PU_CUST[r.customer] || r.customer)}<div class="meta">${PU_SRC_L[r.source] || "depot"}</div></td>${r.min_fee != null ? `<td colspan="2" class="meta">none · split fee</td>` : `<td><input class="in" data-pk="small" inputmode="numeric" value="${r.small}" style="width:54px"></td><td><input class="in" data-pk="large" inputmode="numeric" value="${r.large}" style="width:54px"></td>`}<td><button type="button" class="btn ghost sm" data-pdel="${r.id}">Delete</button></td></tr>`).join("")}</table></div>
+  const mins = rs.filter(r => r.min_fee != null); const lines = rs.filter(r => r.min_fee == null);
+  const grp = (c, src) => lines.filter(r => r.customer === c && (r.source || "depot") === src);
+  const val = (c, src, k) => grp(c, src).reduce((a, r) => a + (r[k] || 0), 0);
+  const note = lines.find(r => r.note)?.note || "";
+  sheet(`<h3>Edit pick-ups · ${esc(area)}</h3><p class="hint">${label(day)} · change, add or clear (0) any figure, then Save changes.</p><form class="frm" id="pa">
+    <div class="full"><table class="dt" style="width:100%"><tr><th rowspan="2">Customer</th><th colspan="2">Depot</th><th colspan="2">Customer</th></tr><tr><th>Small</th><th>Large</th><th>Small</th><th>Large</th></tr>${Object.entries(PU_CUST).filter(([k]) => puCust(area).includes(k)).map(([k, v]) => `<tr><td>${esc(v)}</td>${PU_SRC.map(src => `<td><input class="in" data-pa="${k}.${src}.small" inputmode="numeric" placeholder="0" value="${val(k, src, "small") || ""}" style="width:54px"></td><td><input class="in" data-pa="${k}.${src}.large" inputmode="numeric" placeholder="0" value="${val(k, src, "large") || ""}" style="width:54px"></td>`).join("")}</tr>`).join("")}</table></div>
+    <label class="f full">Note (optional)<input class="in" id="pa-n" value="${esc(note)}"></label>
+    ${mins.length ? `<p class="meta full">Also logged: none · split fee ($${(+mins[0].min_fee).toFixed(2)} each). It's removed if you enter parcels.</p>` : ""}
     <button class="btn full" type="submit">Save changes</button></form>`, (bg, close) => {
-    const fin = async msg => { close(); toast(msg, "ok"); await loadAll(); render(); };
+    let confirmClear = false;
     bg.querySelector("#pa").addEventListener("submit", async e => { e.preventDefault();
-      for (const r of rs) { if (r.min_fee != null) continue; const tr = bg.querySelector(`[data-pr="${r.id}"]`); const n = k => Math.max(0, parseInt(tr.querySelector(`[data-pk="${k}"]`).value) || 0);
-        const small = n("small"), large = n("large"); if (small === r.small && large === r.large) continue;
-        const { error } = small || large ? await sb.from("pickups").update({ small, large }).eq("id", r.id) : await sb.from("pickups").delete().eq("id", r.id);
-        if (error) return toast(error.message, "err"); }
-      fin("Pick-ups updated ✓"); });
-    bg.querySelectorAll("[data-pdel]").forEach(b => b.onclick = async () => { if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Sure?"; return; }
-      const { error } = await sb.from("pickups").delete().eq("id", b.dataset.pdel); if (error) return toast(error.message, "err"); fin("Pick-up line deleted"); });
+      const g = k => Math.max(0, parseInt(bg.querySelector(`[data-pa="${k}"]`).value) || 0); const nt = bg.querySelector("#pa-n").value.trim() || null;
+      let any = false; const ops = [];
+      for (const c of Object.keys(PU_CUST).filter(k => puCust(area).includes(k))) for (const src of PU_SRC) {
+        const small = g(`${c}.${src}.small`), large = g(`${c}.${src}.large`); const ex = grp(c, src); if (small || large) any = true;
+        if (!ex.length) { if (small || large) ops.push(sb.from("pickups").insert({ day, area, customer: c, source: src, small, large, note: nt, driver: S.me.id, created_by: S.me.id })); continue; }
+        if (!small && !large) { for (const r of ex) ops.push(sb.from("pickups").delete().eq("id", r.id)); continue; }
+        const [first, ...rest] = ex;
+        if (rest.length || first.small !== small || first.large !== large || (first.note || null) !== nt) ops.push(sb.from("pickups").update({ small, large, note: nt }).eq("id", first.id));
+        for (const r of rest) ops.push(sb.from("pickups").delete().eq("id", r.id));
+      }
+      if (any) for (const r of mins) ops.push(sb.from("pickups").delete().eq("id", r.id));
+      if (!ops.length) { close(); return toast("No changes", "ok"); }
+      if (!any && lines.length && !confirmClear) { confirmClear = true; return toast("Everything's 0, so this deletes all of them. Tap Save again to confirm.", "err"); }
+      const res = await Promise.all(ops); const err = res.find(r => r.error)?.error; if (err) return toast(err.message, "err");
+      close(); toast("Pick-ups updated ✓", "ok"); await loadAll(); render(); });
   });
 }
 /** Pick-up entry task: the add-on's pick-up area, if it has one */
@@ -620,7 +633,7 @@ function wire() {
   $("#access-edit")?.addEventListener("click", editAccess);
   $("#pu-log")?.addEventListener("click", () => logPickup());
   $$("[data-puarea]").forEach(b => b.onclick = e => { e.stopPropagation(); editPickupArea(b.dataset.puarea, b.dataset.puday); });
-  $$("[data-puedit]").forEach(b => b.onclick = e => { e.stopPropagation(); editPickup(b.dataset.puedit); });
+  $$("[data-puedit]").forEach(b => b.onclick = e => { e.stopPropagation(); const r = (S.pickups || []).find(x => x.id === b.dataset.puedit); if (!r) return; r.min_fee != null && !puAreaLines(r.area, r.day).some(x => x.min_fee == null) ? editPickup(r.id) : editPickupArea(r.area, r.day); });
   $$("[data-rsphoto]").forEach(inp => inp.onchange = async () => { const f = inp.files?.[0]; if (!f) return; const sh = S.shifts.find(z => z.id === inp.dataset.rsphoto); const lab = inp.closest("label"); if (lab) lab.style.opacity = ".5";
     const rk = inp.dataset.rskey || "tw_twrunsheet"; toast("Uploading photo…");
     const path = `${sh?.driver || S.me.id}/${sh?.day || today()}/${inp.dataset.rsphoto}-${rk}-${Date.now()}.${(f.name.split(".").pop() || "jpg").toLowerCase()}`;
