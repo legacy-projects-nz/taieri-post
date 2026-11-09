@@ -181,7 +181,9 @@ export function scoreFor(driver, from, to, D, C) {
     const sod = d.segs.map(x => D.sods.find(s => s.shift_id === x.shift.id)).find(Boolean);
     const rows = runs.map((x, i) => { const eod = D.eods.find(e => e.shift_id === x.shift.id), ov = D.ovs?.find(o => o.shift_id === x.shift.id); const c = effCalc(x, eod, ov, C, D.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? nzNow(new Date(sod.sent_at)).min : null }); if (c) { c.shift = x.shift; c.eod = eod; c.ov = ov; } return c; }).filter(Boolean);
     const live = rows.filter(r => !r.trainDay);
-    if (live.length && live.every(r => r.perf != null && !r.need.length)) { const A = live.reduce((a, r) => a + r.allowed, 0) / 60, T = live.reduce((a, r) => a + r.takenTrk, 0); const v = Math.max(0, Math.min(150, C.rules.effMethod === "tdt" ? (2 - T / A) * 100 : A / T * 100)); effDays.push({ day: d.day, v, est: live.some(r => r.est), rows, allowed: A, taken: T }); }
+    // unpaid breaks come off the time taken, for the owner only (drivers' efficiency keeps the full SOD → EOD time)
+    const brk = (D.effBreakFor || []).includes(driver) ? (D.breaks || []).filter(b => b.driver === driver && b.ended_at && nzNow(new Date(b.started_at)).date === d.day).reduce((a, b) => a + Math.max(0, (Date.parse(b.ended_at) - Date.parse(b.started_at)) / 3600e3), 0) : 0;
+    if (live.length && live.every(r => r.perf != null && !r.need.length)) { const A = live.reduce((a, r) => a + r.allowed, 0) / 60, T = Math.max(0.01, live.reduce((a, r) => a + r.takenTrk, 0) - brk); const v = Math.max(0, Math.min(150, C.rules.effMethod === "tdt" ? (2 - T / A) * 100 : A / T * 100)); effDays.push({ day: d.day, v, est: live.some(r => r.est), rows, allowed: A, taken: T, brk }); }
     else if (d.day <= today()) effDays.push({ day: d.day, pending: true, need: rows.filter(r => r.need.length).map(r => `${r.code}: ${r.need.join(", ")}`).join("; "), rows });
   }
   const scored = effDays.filter(e => !e.pending); const eff = scored.length ? scored.reduce((a, e) => a + e.v, 0) / scored.length : null;
