@@ -24,12 +24,21 @@ export const fn = async (name, body) => { const { data, error } = await sb.funct
   await loadAll(); render();
   live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "people", "settings", "timing_rules", "addons", "vehicle_checks", "eff_overrides", "run_skills", "week_notes", "roster_sent", "breaks", "van_washes"], debounce(async (t) => { await loadAll(); render(true); }, 500), "ops");
   // safety net if a live update is missed (or skipped while a sheet was open): reload every 30 s and whenever the window comes back into focus
-  const refresh = async () => { if (document.visibilityState === "hidden") return; try { await loadAll(); render(true); } catch (e) { console.warn(e); } };
-  setInterval(refresh, 30000); window.addEventListener("focus", refresh); document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
+  const refresh = async () => { if (document.visibilityState === "hidden") return; const at = S._loadedAt; try { await loadAll({ ifStale: true }); if (S._loadedAt !== at) render(true); } catch (e) { console.warn(e); } };
+  setInterval(refresh, 60000); window.addEventListener("focus", refresh); document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
   window.addEventListener("hashchange", () => { S.tab = location.hash.slice(1) || "live"; render(); });
 })();
 
-export async function loadAll() {
+// One load at a time: the 60 s timer, window focus, tab coming back and realtime updates often fire together — share the one in flight,
+// and skip a timer/focus refresh if the data is under 10 s old.
+let _inflight = null; S._loadedAt = 0;
+export function loadAll(opts = {}) {
+  if (_inflight) return _inflight;
+  if (opts.ifStale && Date.now() - S._loadedAt < 10000) return Promise.resolve();
+  _inflight = loadAllNow().then(() => { S._loadedAt = Date.now(); S._sd = null; }).finally(() => { _inflight = null; });
+  return _inflight;
+}
+async function loadAllNow() {
   const t = today(); const wk = S.week; const mt = monOf(t); // ISO dates compare as strings (Math.min/max gave NaN, so weeks more than ~2 weeks out never loaded)
   const from = addDays(wk < mt ? wk : mt, -63), to = addDays(wk > mt ? wk : mt, 20);
   const [set, runs, vans, addons, rules, people, shifts, items, acks, sent, msgs, recips, leave, alerts, entries, marks, feed, ovs, locs, skills, notes, vchk] = await Promise.all([
@@ -141,7 +150,7 @@ export function teamStats(rg) {
   return { n: ss.length, team: k => avg(real.map(s => s[k])) };
 }
 export function wireRange() { $$("[data-tsr]").forEach(b => b.onclick = () => { S.tsRange = b.dataset.tsr; render(); }); }
-export const scoreData = () => ({ shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, ovs: S.ovs, runsBy: S.runsBy, breaks: S.breaks || [], effBreakFor: (S.people || []).filter(p => p.pay_exclude).map(p => p.id) });   // owner (Jeremy): unpaid breaks come off the time taken for efficiency
+export const scoreData = () => S._sd ||= ({ shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, ovs: S.ovs, runsBy: S.runsBy, breaks: S.breaks || [], effBreakFor: (S.people || []).filter(p => p.pay_exclude).map(p => p.id) });   // owner (Jeremy): unpaid breaks come off the time taken for efficiency
 
 /* ================= LIVE ================= */
 function liveTab() {

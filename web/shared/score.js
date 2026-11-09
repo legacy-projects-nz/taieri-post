@@ -154,7 +154,15 @@ export function meetRule(r, s) {
 export function addName(k) { return ({ outram: "Outram Depot", pgg: "PGG", airport: "Airport", milton: "Milton", balclutha: "Balclutha", owaka: "Owaka", rose: "Roseneath receiver", sb: "Sawyers Bay receiver", fish: "Harbour Fish pick-up", pc: "Port Chalmers receiver", digi: "Digi Art pick-up", fonterra: "Fonterra pick-up", waihola: "Waihola Store" })[k] || k; }
 
 /* ---- Scores for one driver over a date range ---- */
+// Same driver + dates + data snapshot → same answer, so keep it: a render asks for the same scores many times over (team averages,
+// 8-week trends, pay bands). The cache lives on the data object, so it's dropped as soon as fresh data is loaded.
+const MEMO = new WeakMap();
 export function scoreFor(driver, from, to, D, C) {
+  let m = MEMO.get(D); if (!m || m.C !== C) MEMO.set(D, m = { C, map: new Map() });
+  const k = driver + "|" + from + "|" + to; if (m.map.has(k)) return m.map.get(k);
+  const r = scoreForRaw(driver, from, to, D, C); m.map.set(k, r); return r;
+}
+function scoreForRaw(driver, from, to, D, C) {
   // D: {shifts, sods, eods, marks, entries, feed, runsBy, nowRef}
   const days = dayShifts(D.shifts.filter(s => s.day >= from && s.day <= to), D.runsBy, driver);
   const items = itemsFor(driver, days, D.sods, D.eods, D.marks, C, D.nowRef);
