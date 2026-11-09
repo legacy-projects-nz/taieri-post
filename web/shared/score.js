@@ -175,6 +175,7 @@ export function scoreFor(driver, from, to, D, C) {
   const safeE = ents.filter(e => e.safety_pct != null); const safe = safeE.length ? safeE.reduce((a, e) => a + (+e.safety_pct), 0) / safeE.length : 100;
   // efficiency
   const effDays = [];
+  const own = (D.effBreakFor || []).includes(driver);   // owner: unpaid breaks come off the time taken (drivers keep the full SOD → EOD time)
   for (const d of Object.values(days)) {
     if (d.day < C.rules.effStart) continue;
     const manual = ents.find(e => e.kind === "eff" && e.day === d.day && e.eff_pct != null);
@@ -184,7 +185,6 @@ export function scoreFor(driver, from, to, D, C) {
     const sod = d.segs.map(x => D.sods.find(s => s.shift_id === x.shift.id)).find(Boolean);
     const rows = runs.map((x, i) => { const eod = D.eods.find(e => e.shift_id === x.shift.id), ov = D.ovs?.find(o => o.shift_id === x.shift.id); const c = effCalc(x, eod, ov, C, D.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? nzNow(new Date(sod.sent_at)).min : null, brk: own ? ownerBreakHrs(D.breaks, x.shift.id) : 0 }); if (c) { c.shift = x.shift; c.eod = eod; c.ov = ov; } return c; }).filter(Boolean);
     const live = rows.filter(r => !r.trainDay);
-    const own = (D.effBreakFor || []).includes(driver);   // owner: unpaid breaks come off the time taken (drivers keep the full SOD → EOD time)
     if (live.length && live.every(r => r.perf != null && !r.need.length)) { const A = live.reduce((a, r) => a + r.allowed, 0) / 60, T = live.reduce((a, r) => a + r.takenTrk, 0); const v = Math.max(0, Math.min(150, C.rules.effMethod === "tdt" ? (2 - T / A) * 100 : A / T * 100)); effDays.push({ day: d.day, v, est: live.some(r => r.est), rows, allowed: A, taken: T }); }
     else if (d.day <= today()) effDays.push({ day: d.day, pending: true, need: rows.filter(r => r.need.length).map(r => `${r.code}: ${r.need.join(", ")}`).join("; "), rows });
   }
