@@ -50,14 +50,20 @@ async function loadAll() {
     q((S.viewer?.isStaff ? sb.from("vehicle_checks").select("*").eq("driver", m) : sb.from("vehicle_checks").select("*")).order("at", { ascending: false }).limit(12)),
   ]);
   S.set = set; S.C = cfg(set); S.runs = runs; S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vans = Object.fromEntries(vans.map(v => [v.plate, v])); S.addons = addons; S.rules = rules;
-  try { const { data: pk } = await sb.from("pickups").select("*").eq("driver", m).gte("day", t.slice(0, 7) + "-01").order("day", { ascending: false }).limit(40); S.pickups = pk || []; } catch { S.pickups = []; }
-  try { const { data: ai } = await sb.from("access_info").select("body,updated_at").eq("id", 1).maybeSingle(); S.access = ai || { body: "" }; } catch { S.access = { body: "" }; }
   S.people = Object.fromEntries(people.map(p => [p.id, p])); S.shifts = shifts.filter(s => s.driver === m); S.trainee = shifts.filter(s => s.trainee === m && s.driver !== m);
   S.changes = changes; S.acks = acks; S.msgs = msgs; S.leave = leave; S.alerts = alerts; S.entries = entries; S.marks = marks; S.feed = feed; S.vchk = vchk || [];
   const ids = S.shifts.map(s => s.id);
-  if (ids.length) { const [sods, eods, ovs] = await Promise.all([q(sb.from("sod").select("*").in("shift_id", ids)), q(sb.from("eod").select("*").in("shift_id", ids)), S.viewer?.isStaff ? q(sb.from("eff_overrides").select("*").in("shift_id", ids)) : sb.rpc("my_eff_overrides").then(r => r.data || [])]); S.sods = sods; S.eods = eods; S.ovs = ovs; } else { S.sods = []; S.eods = []; S.ovs = []; }
-  try { const { data: vw } = await sb.from("van_washes").select("*").gte("at", new Date(Date.now() - 60 * 86400e3).toISOString()).order("at", { ascending: false }).limit(300); S.washes = vw || []; } catch { S.washes = []; }
-  try { const { data: br } = await sb.from("breaks").select("*").eq("driver", m).gte("started_at", new Date(Date.now() - 2 * 86400e3).toISOString()).order("started_at"); S.breaks = br || []; } catch { S.breaks = []; }
+  // second round, all at once (was one after another): SOD/EOD/overrides, pick-ups, access info, van washes, breaks
+  const soft = (p, d) => Promise.resolve(p).then(r => r?.error ? d : (r?.data ?? d), () => d);
+  const [sods, eods, ovs, pk, ai, vw, br] = await Promise.all([
+    ids.length ? q(sb.from("sod").select("*").in("shift_id", ids)) : [], ids.length ? q(sb.from("eod").select("*").in("shift_id", ids)) : [],
+    !ids.length ? [] : S.viewer?.isStaff ? q(sb.from("eff_overrides").select("*").in("shift_id", ids)) : sb.rpc("my_eff_overrides").then(r => r.data || []),
+    soft(sb.from("pickups").select("*").eq("driver", m).gte("day", t.slice(0, 7) + "-01").order("day", { ascending: false }).limit(40), []),
+    soft(sb.from("access_info").select("body,updated_at").eq("id", 1).maybeSingle(), null),
+    soft(sb.from("van_washes").select("*").gte("at", new Date(Date.now() - 60 * 86400e3).toISOString()).order("at", { ascending: false }).limit(300), []),
+    soft(sb.from("breaks").select("*").eq("driver", m).gte("started_at", new Date(Date.now() - 2 * 86400e3).toISOString()).order("started_at"), []),
+  ]);
+  S.sods = sods; S.eods = eods; S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || [];
   setEvidence(S.shifts, S.eods);
   S.days = dayShifts(S.shifts, S.runsBy, m);
   for (const d of Object.values(S.days)) for (const x of d.segs) { x.sod = S.sods.find(s => s.shift_id === x.shift.id); x.eod = S.eods.find(e => e.shift_id === x.shift.id); x.ov = S.ovs.find(o => o.shift_id === x.shift.id); }

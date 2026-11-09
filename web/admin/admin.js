@@ -50,15 +50,22 @@ export async function loadAll() {
     q(sb.from("locations").select("*").gte("at", new Date(Date.now() - 12 * 3600e3).toISOString()).order("at", { ascending: false }).limit(2000)),
     q(sb.from("run_skills").select("*")), q(sb.from("week_notes").select("*")), q(sb.from("vehicle_checks").select("*").gte("week_start", addDays(monOf(t), -42))),
   ]);
-  S.login = {}; try { const { data: ls } = await sb.rpc("login_status"); for (const l of ls || []) S.login[l.person_id] = l; } catch { }   // who is signed in to the app
   Object.assign(S, { set, runs, vans, addons, rules, people, shifts, items, acks, sent, msgs, recips, leave, alerts, entries, marks, feed, ovs, locs, skills, notes, vchk });
   S.C = cfg(set); S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vansBy = Object.fromEntries(vans.map(v => [v.plate, v])); S.peopleBy = Object.fromEntries(people.map(p => [p.id, p]));
   const onRoster = new Set(shifts.map(s => s.driver)); // anyone who drives: drivers, Jeremy (owner, tracked separately), or whoever is on the roster
   S.drivers = people.filter(p => p.active && !p.cleared && (p.role === "driver" || p.role === "owner" || onRoster.has(p.id)));
-  const ids = shifts.map(s => s.id);
-  if (ids.length) { const [sods, eods] = await Promise.all([q(sb.from("sod").select("*").in("shift_id", ids)), q(sb.from("eod").select("*").in("shift_id", ids))]); S.sods = sods; S.eods = eods; } else { S.sods = []; S.eods = []; }
-  try { S.washes = await q(sb.from("van_washes").select("*").gte("at", new Date(Date.now() - 120 * 86400e3).toISOString()).order("at", { ascending: false }).limit(1000)); } catch { S.washes = []; }
-  try { S.breaks = await q(sb.from("breaks").select("*").gte("started_at", new Date(from + "T00:00:00+13:00").toISOString()).order("started_at", { ascending: false }).limit(3000)); } catch { S.breaks = []; }
+  // second round, all at once (was one after another): SOD/EOD for the loaded shifts (by date range, not a 500-id list in the URL), washes, breaks, sign-in status
+  const soft = (p, d) => p.then(r => r.error ? d : (r.data ?? d), () => d);
+  const strip = rows => rows.map(({ shifts: _s, ...r }) => r);
+  const [sods, eods, washes, breaks, ls] = await Promise.all([
+    q(sb.from("sod").select("*, shifts!inner(day)").gte("shifts.day", from).lte("shifts.day", to)).then(strip),
+    q(sb.from("eod").select("*, shifts!inner(day)").gte("shifts.day", from).lte("shifts.day", to)).then(strip),
+    soft(sb.from("van_washes").select("*").gte("at", new Date(Date.now() - 120 * 86400e3).toISOString()).order("at", { ascending: false }).limit(1000), []),
+    soft(sb.from("breaks").select("*").gte("started_at", new Date(from + "T00:00:00+13:00").toISOString()).order("started_at", { ascending: false }).limit(3000), []),
+    soft(sb.rpc("login_status"), []),
+  ]);
+  S.sods = sods; S.eods = eods; S.washes = washes; S.breaks = breaks;
+  S.login = {}; for (const l of ls || []) S.login[l.person_id] = l;   // who is signed in to the app
   S.sodBy = Object.fromEntries(S.sods.map(s => [s.shift_id, s])); S.eodBy = Object.fromEntries(S.eods.map(e => [e.shift_id, e]));
   setEvidence(S.shifts, S.eods);   // average figures per run & weekday → the estimate used until each EOD is in
 }

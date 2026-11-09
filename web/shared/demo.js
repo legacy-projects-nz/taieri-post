@@ -94,7 +94,7 @@ export function regen(s) { SEED = s ?? (Math.floor(Math.random() * 1e6) + 2); DB
 export function resetDemo() { return regen(SEED); }
 export function newRuns() { return regen(); }
 
-const FK = { roster_changes: ["change_id", "roster_changes"], messages: ["message_id", "messages"] };   // embedded selects used by the app
+const FK = { roster_changes: ["change_id", "roster_changes"], messages: ["message_id", "messages"], shifts: ["shift_id", "shifts"] };   // embedded selects used by the app
 function get(row, path) { return path.split(".").reduce((o, k) => o?.[k], row); }
 function builder(table) {
   const st = { table, op: "select", filters: [], order: null, limit: null, single: null, embed: [], rows: null, opts: {} };
