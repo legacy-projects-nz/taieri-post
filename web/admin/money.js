@@ -2,7 +2,8 @@
 //   Income – each run's base (a day, week or month figure, shared between the runs in its group whichever of them are on)
 //            For the runs with a total (PCB+RSB, TUA+Flyer, Lawrence, TGE, food bag) the base is half the total and the other half is
 //            parcels × a rate worked out from the 8-week average parcels (see groupRate). Parcels come from the EOD, the average until it's in.
-//            Plus Rural / Lawrence / Owaka / Balclutha pick-ups (NZ Couriers + Post Haste) and the TGE South total typed in. GST 15% on top.
+//            Plus pick-ups: NZ Couriers + Post Haste at $5 small / $8 large, TGE at $6 small / $7.50 large (Rural → TUA; Lawrence, Owaka,
+//            Balclutha and South TGE → D>B, which earns nothing per parcel delivered). GST 15% on top.
 //   Staff  – each driver's cost for the day (the same hours × rate as Labour), split across their runs by rostered minutes.
 //            Jeremy's hours are unpaid, so his runs show $0 staff cost.
 //   Costs  – business running costs (fuel, RUC, insurance, ACC, loan, software…) as a monthly figure each, defaulted to the Xero Aug–Oct 2026
@@ -16,9 +17,8 @@ import { driverDay } from "/admin/live.js";
 
 const GST = 0.15;
 const WK_PER_MONTH = 52 / 12;
-// Lawrence pick-ups (NZC + Post Haste) are D>B income: the D>B van brings them back.
-// D>B is paid $6 a parcel on every parcel it carries, TGE ones included, so the TGE South total never lands on DB (it would count them twice)
-const AREA_RUNS = { Rural: ["TUA"], South: ["TUA"], Lawrence: ["DB"], Owaka: ["DB", "FLY"], Balclutha: ["DB"] };   // which run a pick-up area's income lands on
+// D>B income is its pick-ups only (Balclutha, Owaka, Lawrence and South TGE), not a rate on parcels delivered.
+const AREA_RUNS = { Rural: ["TUA"], South: ["DB"], Lawrence: ["DB"], Owaka: ["DB", "FLY"], Balclutha: ["DB"] };   // which run a pick-up area's income lands on
 const money = n => (n < 0 ? "−$" : "$") + Math.abs(n).toFixed(2);
 const money0 = n => (n < 0 ? "−$" : "$") + Math.round(Math.abs(n)).toLocaleString();
 // shared bases: per = "day" | "week" | "month"; days = working days a week it's spread over
@@ -38,8 +38,8 @@ const RUN_DAYS = { FLY: 4 };   // days a week a run goes out, where it's fewer t
 const COSTS = [["fuel", "Fuel", 4251.46], ["ruc", "Road user charges", 590.78], ["veh", "Vehicle costs & repairs", 336.22], ["sub", "Subcontractors", 573.91], ["ins", "Insurance", 1569.09], ["acc", "ACC levy", 714.93],
   ["loan", "Loan fees & interest", 1078.66], ["soft", "Software", 897.35], ["staffx", "Staff training, uniforms, meetings", 1660.74], ["acct", "Accountancy", 496.57], ["office", "Office, phone, rent, marketing, bank", 597.8]];
 const COST_DAYS = 6;   // working days a week the monthly costs are spread over
-const PARCEL_RUNS = ["TUA", "FLY", "DB", "RAM", "PCB", "RSB", "LAW", "S", "T"];
-const DEF = { small: 5, large: 8, target: 70000, oncost: 11, parcel: { TUA: 0, FLY: 0, DB: 6, RAM: 1.8, PCB: 0, RSB: 0, LAW: 0, S: 0, T: 0 }, groups: Object.fromEntries(Object.entries(GROUPS).map(([k, g]) => [k, { per: g.per, amt: g.amt, days: g.days, basePct: BASE_PCT }])), costs: Object.fromEntries(COSTS.map(([k, , a]) => [k, a])) };
+const PARCEL_RUNS = ["TUA", "FLY", "RAM", "PCB", "RSB", "LAW", "S", "T"];
+const DEF = { small: 5, large: 8, tgeSmall: 6, tgeLarge: 7.5, target: 70000, oncost: 11, parcel: { TUA: 0, FLY: 0, DB: 0, RAM: 1.8, PCB: 0, RSB: 0, LAW: 0, S: 0, T: 0 }, groups: Object.fromEntries(Object.entries(GROUPS).map(([k, g]) => [k, { per: g.per, amt: g.amt, days: g.days, basePct: BASE_PCT }])), costs: Object.fromEntries(COSTS.map(([k, , a]) => [k, a])) };
 const model = () => { const v = S.set?.money_model || {}; return { ...DEF, ...v, parcel: { ...DEF.parcel, ...(v.parcel || {}) }, groups: Object.fromEntries(Object.keys(GROUPS).map(k => [k, { ...DEF.groups[k], ...(v.groups?.[k] || {}) }])), costs: { ...DEF.costs, ...(v.costs || {}) } }; };
 const onc = () => 1 + (+model().oncost || 0) / 100;   // holiday pay 8% + KiwiSaver 3% on top of gross wages
 const costMonth = () => Object.values(model().costs).reduce((a, b) => a + (+b || 0), 0);
@@ -126,21 +126,23 @@ function breakdown(d) {
       const onRows = rows.filter(y => !y.sort && G.runs.includes(y.run)); const on = onRows.length; const sp = G.split; const wsum = sp ? onRows.reduce((a, y) => a + (sp[y.run] ?? 0), 0) : 0; const share = sp && wsum ? (sp[r.run] ?? 0) / wsum : 1 / on;
       add(r, day * share, `${g} base · ${pct}% of ${perTxt(m)}${on > 1 ? (sp && wsum ? ` · ${Math.round(share * 100)}% to ${r.run}` : ` ÷ ${on} runs on`) : ""}`, !done(r)); }
     const RT = rateFor(r.run, M); const rate = RT.rate; if (rate) { const n = parcelsOf(r.shift); const rt = `$${rate.toFixed(2)}`; const why = RT.how && RT.how !== "typed in" ? ` · rate = ${RT.how}` : "";
-      const incl = r.run === "DB" ? " (NZ Post + TGE)" : ""; if (n != null) add(r, n * rate, `${n} parcels${incl} × ${rt}${why}`, false);
+      const incl = ""; if (n != null) add(r, n * rate, `${n} parcels${incl} × ${rt}${why}`, false);
       else { const ev = evidenceFor(r.run, d); if (ev?.parcels != null) add(r, Math.round(ev.parcels) * rate, `${Math.round(ev.parcels)} parcels${incl} × ${rt} (average ${ev.scope === "weekday" ? "for this weekday" : "of recent days"} until the EOD is in)${why}`, true); else { r.feeEst = true; r.feeLines.push({ amt: 0, line: `parcels × ${rt} · no history yet`, est: true }); } } } }
   const feeRow = (area) => { for (const code of AREA_RUNS[area] || []) if (byRun[code]) return byRun[code];
     const k = "__" + area; if (!byRun[k]) { byRun[k] = { run: `${area} pick-ups`, driver: null, staff: 0, fees: 0, feeEst: false, feeLines: [], noRun: true }; rows.push(byRun[k]); } return byRun[k]; };
   const runOn = area => (AREA_RUNS[area] || []).map(c => byRun[c]).find(Boolean);
   // pick-ups: NZC + Post Haste. Logged → final; none logged yet on a run that's on → estimate.
-  const pu = {}; for (const p of cache[d]?.rows || []) { if (p.customer === "TGE") continue; const a = (pu[p.area] ??= { small: 0, large: 0, min: 0 }); a.small += p.small || 0; a.large += p.large || 0; a.min += +p.min_fee || 0; }
-  for (const [area, a] of Object.entries(pu)) { const fee = a.small * M.small + a.large * M.large + a.min; if (fee) add(feeRow(area), fee, `${area} pick-ups: ${a.small} small × $${M.small}${a.large ? ` + ${a.large} large × $${M.large}` : ""}${a.min ? ` + split fee $${a.min.toFixed(2)}` : ""}`, false); }
-  if (cache[d] && !cache[d].loading) for (const area of ["Rural", "Lawrence", "Owaka"]) { if (pu[area]) continue; const r = runOn(area); if (!r || done(r)) continue;
-    const by = {}; for (const p of cache[d].hist) { if (p.customer === "TGE" || p.area !== area) continue; by[p.day] = (by[p.day] || 0) + p.small * M.small + p.large * M.large + (+p.min_fee || 0); }
+  // pick-ups: NZC + Post Haste at $small / $large, TGE at $tgeSmall / $tgeLarge. Logged → final; none logged yet on a run that's on → estimate.
+  const isT = p => p.customer === "TGE"; const sm = p => isT(p) ? M.tgeSmall : M.small, lg = p => isT(p) ? M.tgeLarge : M.large;
+  const feeOf = p => (p.small || 0) * sm(p) + (p.large || 0) * lg(p) + (+p.min_fee || 0);
+  const pu = {}; for (const p of cache[d]?.rows || []) { const k = p.area + "|" + (isT(p) ? "TGE" : "NZC/PH"); const a = (pu[k] ??= { area: p.area, tge: isT(p), small: 0, large: 0, min: 0 }); a.small += p.small || 0; a.large += p.large || 0; a.min += +p.min_fee || 0; }
+  for (const a of Object.values(pu)) { const S_ = a.tge ? M.tgeSmall : M.small, L_ = a.tge ? M.tgeLarge : M.large; const fee = a.small * S_ + a.large * L_ + a.min; if (fee) add(feeRow(a.area), fee, `${a.area} ${a.tge ? "TGE " : ""}pick-ups: ${a.small} small × $${S_}${a.large ? ` + ${a.large} large × $${L_}` : ""}${a.min ? ` + split fee $${a.min.toFixed(2)}` : ""}`, false); }
+  const areasLogged = new Set(Object.values(pu).map(a => a.area));
+  if (cache[d] && !cache[d].loading) for (const area of ["Rural", "Lawrence", "Owaka", "Balclutha", "South"]) { if (areasLogged.has(area)) continue; const r = runOn(area); if (!r || done(r)) continue;
+    const by = {}; for (const p of cache[d].hist) { if (p.area !== area) continue; by[p.day] = (by[p.day] || 0) + feeOf(p); }
     const e = avgDays(by, d); if (e) add(r, e, `${area} pick-ups (average of recent days)`, true); }
-  // TGE South: typed-in total → final; otherwise the average of past totals while the South run is on
-  const tge = tgeSouth(d); if (tge) add(feeRow("South"), tge, `TGE South total (typed in)`, false);
-  else { const r = runOn("South"); const hist = Object.fromEntries(Object.entries(S.set?.tge_south || {}).filter(([k, v]) => k < d && k >= addDays(d, -56) && +v).map(([k, v]) => [k, +v]));
-    const e = r ? avgDays(hist, d) : null; if (e) add(r, e, "TGE South (average of past totals)", true); }
+  // TGE South typed-in total: only used on a day with no South TGE pick-ups logged (they're priced above instead)
+  const tge = tgeSouth(d); if (tge && !pu["South|TGE"]) add(feeRow("South"), tge, `TGE South total (typed in)`, false);
   rows.sort((a, b) => (a.noRun ? 1 : 0) - (b.noRun ? 1 : 0) || (a.sort ? 1 : 0) - (b.sort ? 1 : 0) || (a.st ?? 0) - (b.st ?? 0));
   return rows;
 }
@@ -178,7 +180,7 @@ export function moneyCard(d) {
         <h4 style="margin:8px 0 4px">Run bases</h4><div class="scroll"><table class="dt"><tr><th>Base</th><th>Runs</th><th>Amount $</th><th>Per</th><th>Days a week</th><th>Base %</th><th align="right">Base a day</th><th align="right">Per parcel</th></tr>${Object.entries(GROUPS).map(([k, G]) => { const m = M.groups[k]; return `<tr><td><b>${esc(k)}</b></td><td class="meta">${G.runs.join(", ")}</td><td><input class="in" data-mg="${esc(k)}" data-mk="amt" inputmode="decimal" value="${m.amt}" style="width:96px"></td><td><select class="in" data-mg="${esc(k)}" data-mk="per">${["day", "week", "month"].map(p => `<option ${p === m.per ? "selected" : ""}>${p}</option>`).join("")}</select></td><td><input class="in" data-mg="${esc(k)}" data-mk="days" inputmode="numeric" value="${m.days}" style="width:56px"></td><td><input class="in" data-mg="${esc(k)}" data-mk="basePct" inputmode="numeric" value="${m.basePct ?? BASE_PCT}" style="width:56px"></td>${(() => { const R = groupRate(k, m); const pct = R?.none ? 100 : (m.basePct ?? BASE_PCT); return `<td align="right">${money(perDay(m) * pct / 100)}</td><td align="right" title="${esc(R?.how || "")}">${R?.rate ? "$" + R.rate.toFixed(2) : R?.none ? `<span class="meta">no parcel history · all base</span>` : "—"}</td>`; })()}</tr>`; }).join("")}</table></div>
         <h4 style="margin:8px 0 4px">Per parcel, on top of the base (parcels from the EOD) <span class="meta">· leave blank to use the rate worked out from the total</span></h4><div class="row" style="align-items:flex-end">${PARCEL_RUNS.map(k => { const g = groupOf(k); const R = g ? groupRate(g, M.groups[g]) : null; return `<label class="f" style="flex:1 1 90px">${k} $<input class="in" data-mp="${k}" inputmode="decimal" value="${+M.parcel[k] ? M.parcel[k] : ""}" placeholder="${R?.rate ? "auto " + R.rate.toFixed(2) : "0"}"></label>`; }).join("")}</div>
         <h4 style="margin:8px 0 4px">Business costs, $ a month excl GST <span class="meta">(Xero Aug–Oct average · ${money0(costMonth())} a month)</span></h4><div class="row" style="align-items:flex-end">${COSTS.map(([k, l]) => `<label class="f" style="flex:1 1 150px">${esc(l)}<input class="in" data-mc="${k}" inputmode="decimal" value="${M.costs[k] ?? 0}"></label>`).join("")}</div>
-        <h4 style="margin:8px 0 4px">Pick-ups and target</h4><div class="row" style="align-items:flex-end"><label class="f" style="flex:1 1 110px">Pick-up small $<input class="in" id="mn-s" inputmode="decimal" value="${M.small}"></label><label class="f" style="flex:1 1 110px">Pick-up large $<input class="in" id="mn-l" inputmode="decimal" value="${M.large}"></label><label class="f" style="flex:1 1 140px">Monthly income target $<input class="in" id="mn-tg" inputmode="decimal" value="${M.target}"></label>
+        <h4 style="margin:8px 0 4px">Pick-ups and target</h4><div class="row" style="align-items:flex-end"><label class="f" style="flex:1 1 110px">Pick-up small $<input class="in" id="mn-s" inputmode="decimal" value="${M.small}"></label><label class="f" style="flex:1 1 110px">Pick-up large $<input class="in" id="mn-l" inputmode="decimal" value="${M.large}"></label><label class="f" style="flex:1 1 110px">TGE pick-up small $<input class="in" id="mn-ts" inputmode="decimal" value="${M.tgeSmall}"></label><label class="f" style="flex:1 1 110px">TGE pick-up large $<input class="in" id="mn-tl" inputmode="decimal" value="${M.tgeLarge}"></label><label class="f" style="flex:1 1 140px">Monthly income target $<input class="in" id="mn-tg" inputmode="decimal" value="${M.target}"></label>
         <button class="btn sm" type="submit" style="flex:0 0 auto">Save rates</button></div></details></form>
     <p class="hint">Each total is split: the base % is paid as a fixed base (shared when both runs in a pair are on), the rest by the parcel at a rate worked out from the 8-week average parcels, so an average month comes back to the total. Until the EOD is in, parcels are the 8-week average for that run, and pick-ups, the TGE South total and staff hours are estimates too; business costs are always an estimate — grey until the real figures land, then green.</p></div>`;
 }
@@ -225,7 +227,7 @@ export function wireMoney(d) {
     const groups = {}; $$("[data-mg]").forEach(i => { const g = (groups[i.dataset.mg] ??= {}); g[i.dataset.mk] = i.dataset.mk === "per" ? i.value : i.dataset.mk === "basePct" ? (i.value === "" ? BASE_PCT : Math.min(100, Math.max(0, +i.value || 0))) : (+i.value || 0); });
     const parcel = {}; $$("[data-mp]").forEach(i => parcel[i.dataset.mp] = +i.value || 0);
     const costs = {}; $$("[data-mc]").forEach(i => costs[i.dataset.mc] = +i.value || 0);
-    const mdl = { costs, small: +$("#mn-s").value || 0, large: +$("#mn-l").value || 0, target: +$("#mn-tg").value || 0, groups, parcel };
+    const mdl = { costs, small: +$("#mn-s").value || 0, large: +$("#mn-l").value || 0, tgeSmall: +$("#mn-ts").value || 0, tgeLarge: +$("#mn-tl").value || 0, target: +$("#mn-tg").value || 0, groups, parcel };
     const [a, b] = await Promise.all([sb.from("settings").upsert({ key: "tge_south", value: tge }), sb.from("settings").upsert({ key: "money_model", value: mdl })]);
     const err = a.error || b.error; if (err) return toast(err.message, "err");
     S.set.tge_south = tge; S.set.money_model = mdl; toast("Saved", "ok"); render(true); });
