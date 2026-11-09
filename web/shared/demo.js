@@ -34,7 +34,7 @@ export function generate(s = 1) {
   seed = s; uid = 0;
   const t = nz().date, n = nz();
   const D = { people: [{ ...ME }], people_public: [{ id: ME.id, name: ME.name, role: "driver" }, JEREMY], runs: RUNS, vans: VANS.map(v => ({ ...v, wof_due: addDays(t, between(20, 150)), rego_due: addDays(t, between(10, 300)), odometer_at: addDays(t, -between(1, 6)) })), addons: ADDONS, timing_rules: RULES,
-    settings: Object.entries(SETTINGS).map(([key, value]) => ({ key, value })), shifts: [], sod: [], eod: [], marks: [], entries: [], nzpost_feed: [], roster_changes: [], roster_change_items: [], change_acks: [], messages: [], message_recipients: [], leave_requests: [], alerts: [], breaks: [], pickups: [], vehicle_checks: [], eff_overrides: [], locations: [], push_subs: [], access_info: [{ id: 1, body: "Demo only — these aren't real.\nScanner PIN: 1234\nDepot key box: 0000", updated_at: nowIso(), updated_by: JEREMY.id }] };
+    settings: Object.entries(SETTINGS).map(([key, value]) => ({ key, value })), shifts: [], sod: [], eod: [], marks: [], entries: [], nzpost_feed: [], roster_changes: [], roster_change_items: [], change_acks: [], messages: [], message_recipients: [], leave_requests: [], alerts: [], breaks: [], van_washes: [], pickups: [], vehicle_checks: [], eff_overrides: [], locations: [], push_subs: [], access_info: [{ id: 1, body: "Demo only — these aren't real.\nScanner PIN: 1234\nDepot key box: 0000", updated_at: nowIso(), updated_by: JEREMY.id }] };
   // weekly pattern: a sort then a run most weekdays, a second run some afternoons, some Saturdays
   const patterns = [
     { Mon: ["SUP", "TUA"], Tue: ["SUP", "TUA", "RAM"], Wed: ["SUP", "TUA"], Thu: ["SUP", "TUA", "RAM"], Fri: ["SUP", "TUA"], Sat: ["WH"] },

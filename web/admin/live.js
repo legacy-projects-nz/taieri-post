@@ -245,6 +245,7 @@ function feed(t) {
   for (const r of S.recips) if (nzDay(r.read_at) === t) ev.push({ at: r.confirmed_at || r.read_at, txt: `${nm(r.person)} ${r.confirmed_at ? "confirmed" : "read"} a message`, cls: "", go: { k: "msg", id: r.message_id } });
   for (const l of S.leave) if (nzDay(l.created_at) === t) ev.push({ at: l.created_at, txt: `${nm(l.driver)} asked for leave · ${label(l.date_from)}`, cls: "warn", go: { k: "leave", id: l.id } });
   for (const a of S.alerts) if (nzDay(a.created_at) === t) ev.push({ at: a.created_at, txt: `⚠ ${a.title}`, cls: a.resolved_at ? "" : "crit", go: { k: "alert", id: a.id } });
+  for (const w of S.washes || []) if (nzDay(w.at) === t) ev.push({ at: w.at, txt: `${nm(w.driver)} · washed ${w.van}`, cls: "ok", go: null });
   for (const c of S.vchk) if (nzDay(c.at) === t) ev.push({ at: c.at, txt: `${nm(c.driver)} · vehicle check ${c.van}`, cls: "ok", go: { k: "vchk", id: c.id } });
   ev.sort((a, b) => b.at.localeCompare(a.at));
   return ev.length ? `<div class="list" style="max-height:420px;overflow:auto">${ev.slice(0, 60).map(e => `<div class="item clk ${e.cls}" style="padding:6px 10px" ${e.go && (e.go.key !== "") ? `data-feed="${esc(JSON.stringify(e.go))}"` : ""} title="Tap to open"><span class="m">${fmtTime(e.at)}</span> ${esc(e.txt)}</div>`).join("")}</div><p class="hint">Tap a line to open the post, alert or check behind it.</p>` : `<p class="empty">Nothing yet today. SODs, EODs, confirmations and alerts show here as they happen.</p>`;

@@ -19,7 +19,7 @@ S.open = {};   // which folded boxes are open this visit (not saved: everything 
   await loadAll();
   render();
   window.addEventListener("hashchange", async () => { await viewAs(); await loadAll(); render(); });
-  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons", "breaks"], debounce(async () => { await loadAll(); render(); }, 400), "drv");
+  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons", "breaks", "van_washes"], debounce(async () => { await loadAll(); render(); }, 400), "drv");
   setInterval(render, 60000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadAll().then(render); } });
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => { });
@@ -56,6 +56,7 @@ async function loadAll() {
   S.changes = changes; S.acks = acks; S.msgs = msgs; S.leave = leave; S.alerts = alerts; S.entries = entries; S.marks = marks; S.feed = feed; S.vchk = vchk || [];
   const ids = S.shifts.map(s => s.id);
   if (ids.length) { const [sods, eods, ovs] = await Promise.all([q(sb.from("sod").select("*").in("shift_id", ids)), q(sb.from("eod").select("*").in("shift_id", ids)), S.viewer?.isStaff ? q(sb.from("eff_overrides").select("*").in("shift_id", ids)) : sb.rpc("my_eff_overrides").then(r => r.data || [])]); S.sods = sods; S.eods = eods; S.ovs = ovs; } else { S.sods = []; S.eods = []; S.ovs = []; }
+  try { const { data: vw } = await sb.from("van_washes").select("*").gte("at", new Date(Date.now() - 60 * 86400e3).toISOString()).order("at", { ascending: false }).limit(300); S.washes = vw || []; } catch { S.washes = []; }
   try { const { data: br } = await sb.from("breaks").select("*").eq("driver", m).gte("started_at", new Date(Date.now() - 2 * 86400e3).toISOString()).order("started_at"); S.breaks = br || []; } catch { S.breaks = []; }
   setEvidence(S.shifts, S.eods);
   S.days = dayShifts(S.shifts, S.runsBy, m);
@@ -532,6 +533,7 @@ function moreCard() {
     ${vault ? `<a class="btn ghost" href="${esc(vault)}" target="_blank" rel="noopener">🔐 Vault (Damstra)</a>` : ""}
     <button class="btn ghost" id="push-btn">🔔 Notifications: <span id="push-state">…</span></button>
     <button class="btn ghost" id="vchk-btn">🚐 Weekly vehicle check</button>
+    <button class="btn ghost" id="wash-btn">🧽 Van washed</button>
     <button class="btn ghost" id="signout">Sign out</button></div>
     <p class="hint">Add this page to your Home Screen for one-tap access and notifications (iPhone: Share → Add to Home Screen).</p></div>`;
 }
@@ -545,7 +547,7 @@ function wire() {
     sheet(`<h3>View as</h3><p class="meta">White = not signed in · <span class="c-ok">light green</span> = signed in to the app · <b class="c-ok">dark green</b> = GPS in the last 20 min</p><div class="vagrid"><button class="vapick" data-va="">— me (${esc(first(S.viewer.name))}) —</button>${list.map(d => { const st = appState(d.id); return `<button class="vapick ${st} ${S.viewAs?.id === d.id ? "cur" : ""}" data-va="${d.id}"><b>${esc(d.name)}</b>${d.role !== "driver" ? ` <span class="meta">(${esc(d.role)})</span>` : ""}<span class="meta">${st === "gps" ? `GPS ${ago(S.gps[d.id])}` : esc(loginState(d.id).tag)}</span></button>`; }).join("")}</div>`,
       (bg, close) => bg.querySelectorAll("[data-va]").forEach(b => b.onclick = () => { close(); location.hash = b.dataset.va ? "as=" + b.dataset.va : ""; })); });
   $$("#va-prev,#va-next").forEach(b => b.onclick = () => { if (b.dataset.id) location.hash = "as=" + b.dataset.id; });
-  if (S.viewAs) { $$("#gotit,#gotit-again,[data-confirm],[data-addon],[data-plan],[data-meet],#leave-new,#push-btn,#vchk-btn").forEach(el => { el.disabled = true; el.title = "Only " + first(S.viewAs.name) + " can do this"; el.style.opacity = ".5"; }); }
+  if (S.viewAs) { $$("#gotit,#gotit-again,[data-confirm],[data-addon],[data-plan],[data-meet],#leave-new,#push-btn,#vchk-btn,#wash-btn").forEach(el => { el.disabled = true; el.title = "Only " + first(S.viewAs.name) + " can do this"; el.style.opacity = ".5"; }); }
   pushState().then(s => { const el = $("#push-state"); if (el) el.textContent = s === "on" ? "on" : s === "denied" ? "blocked in phone settings" : s === "unsupported" ? "add to Home Screen first" : "off, tap to turn on"; });
   $("#push-btn")?.addEventListener("click", async () => { const r = await enablePush(S.me.id, VAPID_PUBLIC); toast(r.ok ? "Notifications are on" : r.why, r.ok ? "ok" : "err"); render(); });
   $("#gotit")?.addEventListener("click", async e => { const ids = e.currentTarget.dataset.ids.split(","); for (const id of ids) S.gotit[id] = new Date().toISOString(); localStorage.setItem("tp-gotit", JSON.stringify(S.gotit)); render();
@@ -589,6 +591,7 @@ function wire() {
   $$("[data-statv]").forEach(c => c.onclick = () => toast(c.dataset.statv, "ok"));
   $("#prof-edit")?.addEventListener("click", profileForm);
   $("#vchk-btn")?.addEventListener("click", vehicleCheckForm);
+  $("#wash-btn")?.addEventListener("click", () => vanWashForm());
   bindDetail(app);
 }
 /* every tile, row and chip with a data-…v attribute opens the detail behind it */
@@ -690,6 +693,19 @@ function profileForm() {
       if (error) return toast(error.message, "err"); close(); toast("Saved", "ok"); if (forOther) Object.assign(S.me, v); else S.me = await me(); render(); };
   });
 }
+/* Van wash: one quick tap to record that a van was washed (separate from the weekly check) */
+const lastWash = plate => (S.washes || []).filter(w => w.van === plate).sort((a, b) => b.at.localeCompare(a.at))[0];
+function vanWashForm(plate) {
+  const n = nzNow(); const T = S.days[n.date]; const plates = [...new Set([...(T ? T.segs.map(x => x.shift.van) : []), ...S.shifts.filter(s => s.day <= n.date).sort((a, b) => b.day.localeCompare(a.day)).map(s => s.van)].filter(Boolean))];
+  const pick = plate || plates[0]; const all = [...plates, ...Object.keys(S.vans).filter(p => !plates.includes(p) && p !== "OTHER")];
+  const lw = p => { const w = lastWash(p); return w ? `Last washed ${label(nzNow(new Date(w.at)).date)}` : "No wash recorded yet"; };
+  sheet(`<h3>🧽 Van washed</h3><form class="frm" id="wf"><label class="f full">Van<select class="in" id="wvan">${opt(all.map(p => [p, p]), pick)}</select></label><p class="meta full" id="wlast">${esc(lw(pick))}</p><label class="f full">Note (optional)<input class="in" id="wnote" placeholder="e.g. inside and out"></label><button class="btn full" type="submit">Record wash</button></form>`, (bg, close) => {
+    bg.querySelector("#wvan").onchange = e => { bg.querySelector("#wlast").textContent = lw(e.target.value); };
+    bg.querySelector("#wf").onsubmit = async e => { e.preventDefault(); const b = bg.querySelector("button[type=submit]"); b.disabled = true;
+      const { error } = await sb.from("van_washes").insert({ van: bg.querySelector("#wvan").value, driver: S.me.id, note: bg.querySelector("#wnote").value || null });
+      if (error) { b.disabled = false; return toast(error.message, "err"); } close(); toast("Van wash recorded 🧽", "ok"); await loadAll(); render(); };
+  });
+}
 function vehicleCheckForm() {
   const n = nzNow(); const T = S.days[n.date]; const plates = [...new Set([...(T ? T.segs.map(x => x.shift.van) : []), ...S.shifts.filter(s => s.day <= n.date).sort((a, b) => b.day.localeCompare(a.day)).map(s => s.van)].filter(Boolean))];
   sheet(`<h3>Weekly vehicle check</h3><p class="hint">Due Thursday by 5pm. Four photos: exterior, cab, oil dipstick, coolant level.</p>
@@ -780,10 +796,11 @@ function vanSheet(plate) {
   const left = !v.no_ruc && v.ruc_paid_to && v.odometer ? v.ruc_paid_to - v.odometer : null;
   sheet(`<h3><span class="plate">${esc(plate)}</span> ${esc(v.model || "")}</h3><p class="meta">${esc([v.make, v.colour].filter(Boolean).join(" · "))}</p>
     <dl class="kv"><dt>WOF</dt><dd>${v.wof_due ? label(v.wof_due, true) + " " : ""}${v.wof_failed ? pill("failed", "crit") : st(v.wof_due)}</dd><dt>Rego</dt><dd>${v.rego_due ? label(v.rego_due, true) + " " : ""}${st(v.rego_due)}</dd><dt>RUCs</dt><dd>${v.no_ruc ? "not needed (petrol)" : v.ruc_paid_to ? `paid to ${v.ruc_paid_to.toLocaleString()} km${left != null ? ` · ${left.toLocaleString()} km left ${left <= 0 ? pill("overdue", "crit") : left <= (S.C.rules.rucSoonKm || 1000) ? pill("low", "warn") : pill("✓", "ok")}` : ""}` : pill("not on file", "grey")}</dd><dt>Odometer</dt><dd>${v.odometer ? `${v.odometer.toLocaleString()} km` : "—"}${v.odometer_at ? ` <span class="meta">(${label(v.odometer_at)})</span>` : ""}</dd></dl>
-    ${!S.viewAs ? `<button class="btn ghost" id="vchk-go">🚐 Do the weekly vehicle check</button>` : ""}
+    <p class="meta">🧽 ${lastWash(plate) ? `Last washed ${label(nzNow(new Date(lastWash(plate).at)).date)}` : "No wash recorded in the last 60 days"}</p>
+    ${!S.viewAs ? `<div class="row"><button class="btn ghost" id="vchk-go">🚐 Do the weekly vehicle check</button><button class="btn ghost" id="wash-go">🧽 Van washed</button></div>` : ""}
     <h4>Your checks on this van</h4>${mine.length ? `<div class="scroll"><table class="dt"><tr><th>Week of</th><th>Sent</th><th>Odometer</th><th>RUCs left</th><th>Notes</th></tr>${mine.map(c => `<tr><td>${label(c.week_start)}</td><td class="mono">${fmtTs(c.at)}</td><td class="num">${c.odometer?.toLocaleString() || "—"}</td><td class="num">${c.rucs_left?.toLocaleString() || "—"}</td><td class="meta">${esc([c.washed ? "washed" : "not washed", c.tyres_ok ? "" : "tyres", c.vault_ok ? "" : "vault", c.bodywork, c.notes].filter(Boolean).join(" · "))}</td></tr>`).join("")}</table></div>` : `<p class="meta">None yet.</p>`}
     <h4>Your shifts with it</h4><div class="scroll"><table class="dt"><tr><th>Day</th><th>Run</th><th>Times</th></tr>${use.map(s => { const D = S.days[s.day]; const x = D?.segs.find(y => y.shift.id === s.id); return `<tr class="clk" data-dayv="${s.day}"><td>${label(s.day)}</td><td>${esc(s.run)}</td><td class="mono">${x ? `${fmtT(x.st)}–${fmtT(x.en)}` : ""}</td></tr>`; }).join("") || `<tr><td colspan="3" class="meta">—</td></tr>`}</table></div><p class="hint">Low or overdue? Tell Stu.</p>`,
-    (bg, close) => { bg.querySelector("#vchk-go")?.addEventListener("click", () => { close(); vehicleCheckForm(); }); }, { wide: true });
+    (bg, close) => { bg.querySelector("#vchk-go")?.addEventListener("click", () => { close(); vehicleCheckForm(); }); bg.querySelector("#wash-go")?.addEventListener("click", () => { close(); vanWashForm(plate); }); }, { wide: true });
 }
 function alertSheet(a) {
   const sh = a.shift_id ? S.shifts.find(x => x.id === a.shift_id) : null; const rule = a.rule_id ? S.rules.find(r => r.id === a.rule_id) : null; const what = ALERT_WHAT[a.kind] || "";
