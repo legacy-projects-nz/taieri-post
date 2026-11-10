@@ -94,12 +94,12 @@ function nowCard(n) {
   }
   due.sort((a, b) => a.k - b.k);
   const nLate = ppl.filter(p => p.lv === "crit").length, nOver = due.filter(d => d.lv === "crit").length;
-  const ok = !nLate && !nOver;
   const pRow = p => `<div class="item clk ${p.lv}" data-personof="${esc(p.id)}" title="Tap for ${esc(first(nm(p.id)))}'s sheet"><div class="row" style="justify-content:space-between;align-items:baseline"><b>${esc(nm(p.id))}</b><b class="c-${p.lv === "crit" ? "crit" : p.lv === "warn" ? "warn" : "ok"}">${p.lv === "ok" ? "● " : ""}${esc(p.st)}</b></div><div class="m">${esc(p.what)} · ${fmtT(p.D.start)}–${fmtT(p.D.end)} · ${esc(p.sub)}</div></div>`;
   const dRow = d => `<div class="item clk ${d.lv}" data-task="${d.s.id}"${d.rule ? ` data-rule="${esc(d.rule)}"` : ""} title="Tap for the plan, history and the driver's day"><div class="row" style="justify-content:space-between;align-items:baseline"><b>${esc(d.name)}</b><span class="meta">${esc(d.s.run)} · ${esc(fnm(d.s.driver))}</span></div><div class="m ${d.lv === "crit" ? "c-crit" : ""}">${esc(d.txt)}</div></div>`;
-  return `<div class="card ${ok ? "" : "hot"}" id="rightnow"><h2>Right now · ${fmtT(now)}<span>${ok ? "✓ everything due is on time" : [nLate ? `${nLate} late for shift` : "", nOver ? `${nOver} add-on${nOver > 1 ? "s" : ""} overdue` : ""].filter(Boolean).join(" · ")} · updates every minute</span></h2>
-    <div class="grid2"><div><div class="meta mono" style="margin-bottom:4px">ON SHIFT NOW · ${ppl.length}</div>${ppl.length ? `<div class="list">${ppl.map(pRow).join("")}</div>` : `<p class="empty">Nobody due on shift right now.</p>`}</div>
-    <div><div class="meta mono" style="margin-bottom:4px">ADD-ONS DUE NOW · ${due.length}</div>${due.length ? `<div class="list">${due.map(dRow).join("")}</div>` : `<p class="empty">✓ Nothing due or overdue.</p>`}</div></div></div>`;
+  return `<div class="card ${nLate ? "hot" : ""}" id="rightnow"><h2>Shift right now · ${fmtT(now)}<span>${ppl.length} on${nLate ? ` · <b class="c-crit">${nLate} late for shift</b>` : " · ✓ nobody late"} · updates every minute</span></h2>
+    ${ppl.length ? `<div class="list">${ppl.map(pRow).join("")}</div>` : `<p class="empty">Nobody due on shift right now.</p>`}</div>
+  <div class="card ${nOver ? "hot" : ""}" id="rightnow-addons"><h2>Add-ons right now · ${fmtT(now)}<span>${due.length} due${nOver ? ` · <b class="c-crit">${nOver} overdue</b>` : " · ✓ nothing overdue"} · updates every minute</span></h2>
+    ${due.length ? `<div class="list">${due.map(dRow).join("")}</div>` : `<p class="empty">✓ Nothing due or overdue.</p>`}</div>`;
 }
 
 /* ---- Add-ons & timings · one board for the day: every add-on and timed task on every run, done or not ---- */
