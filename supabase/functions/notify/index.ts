@@ -51,6 +51,20 @@ Deno.serve(async (req) => {
     const n = await push(sb, sec, set, [r.driver], { title: `${r.kind === "early" ? "Early" : "Late"} start ${ok ? "signed off ✓" : "not signed off"}`, body: ok ? `Today's run times now start at ${fmtT(toMin(r.started))}.${r.reply ? " " + r.reply : ""}` : `Your rostered times stay as they were.${r.reply ? " " + r.reply : ""}`, url: "/", tag: "sodreq-" + r.id });
     return json({ ok: true, pushed: n });
   }
+  if (body.type === "hazard") {   // driver reported a hazard: push the owner(s) for high ones, and other drivers on the same run(s)
+    const { data: h } = await sb.from("hazards").select("*").eq("id", body.id).maybeSingle(); if (!h) return json({ error: "no hazard" }, 404);
+    if (h.reported_by !== caller.id && !can("roster")) return json({ error: "no" }, 403);
+    const owners = Object.values(people).filter((p: any) => p.role === "owner" && p.active !== false).map((p: any) => p.id);
+    const what = (h.kinds || []).join(", "); const who = first(people[h.reported_by]?.name || "A driver");
+    let n = 0;
+    if (h.severity === "high") n += await push(sb, sec, set, owners.filter(o => o !== caller.id), { title: `⚠️ High hazard: ${h.address}`, body: `${who} reported ${what}${h.note ? ` · ${String(h.note).slice(0, 120)}` : ""}`, url: "/admin/#hazards", tag: "hz-" + h.id, urgent: true });
+    if (h.severity !== "low" && (h.runs || []).length) {
+      const today = nz().date; const { data: sh } = await sb.from("shifts").select("driver,run").eq("day", today).in("run", h.runs);
+      const drv = [...new Set((sh || []).map((s: any) => s.driver).filter((d: string) => d && d !== caller.id && !owners.includes(d)))];
+      if (drv.length) n += await push(sb, sec, set, drv, { title: `⚠️ New hazard on your run: ${h.address}`, body: `${what}${h.note ? ` · ${String(h.note).slice(0, 120)}` : ""}`, url: "/", tag: "hz-" + h.id });
+    }
+    return json({ ok: true, pushed: n });
+  }
   if (body.type === "message") {
     if (!can("messages")) return json({ error: "no" }, 403);
     const { data: m } = await sb.from("messages").select("*").eq("id", body.message_id).single(); const { data: rs } = await sb.from("message_recipients").select("person").eq("message_id", m.id);

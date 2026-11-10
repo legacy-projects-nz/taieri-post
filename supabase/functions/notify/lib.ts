@@ -31,7 +31,7 @@ export async function sendEmail(sec: Record<string, string>, set: Record<string,
 export const wrap = (body: string) => `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.5;color:#111;max-width:620px">${body}<p style="color:#777;font-size:12px;margin-top:24px">Taieri Post · this is an automatic email from the driver system. If something looks wrong, just reply and Jeremy will take a look.</p></div>`;
 
 /* ---- Push ---- */
-export async function push(sb: ReturnType<typeof admin>, sec: Record<string, string>, set: Record<string, any>, people: string[], payload: { title: string; body?: string; url?: string; tag?: string }) {
+export async function push(sb: ReturnType<typeof admin>, sec: Record<string, string>, set: Record<string, any>, people: string[], payload: { title: string; body?: string; url?: string; tag?: string; urgent?: boolean }) {
   const priv = sec.vapid_private, pub = set.push?.vapid_public || sec.vapid_public; if (!priv || !pub || !people.length) return 0;
   webpush.setVapidDetails("mailto:jeremy@lpnz.co.nz", pub, priv);
   const { data: subs } = await sb.from("push_subs").select("*").in("person", people); let n = 0;

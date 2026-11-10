@@ -137,3 +137,11 @@ hr.gl{display:none}
 .ib{flex:0 0 auto;width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:var(--soft);color:var(--accent);font:700 14px var(--fd);line-height:1;padding:0;cursor:pointer}
 .ihint{font:500 13px/1.35 var(--fd);color:var(--ink2);letter-spacing:0;text-transform:none}
 .ihint[hidden]{display:none}
+/* hazard register */
+.hzlist{display:flex;flex-direction:column;gap:6px}
+.hzrow{display:flex;gap:10px;align-items:flex-start;text-align:left;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--soft);color:inherit;font:inherit;cursor:pointer}
+.hzrow .hzbody{flex:1;min-width:0;line-height:1.35}
+.hzsev{flex:0 0 10px;height:10px;border-radius:50%;margin-top:5px;background:var(--grey,#999)}
+.hzsev.high{background:var(--crit)}.hzsev.medium{background:var(--warn)}
+.hznear{border:2px solid var(--crit);border-radius:12px;padding:8px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px}
+.hznear>b{color:var(--crit);font-size:13px;text-transform:uppercase;letter-spacing:.06em}

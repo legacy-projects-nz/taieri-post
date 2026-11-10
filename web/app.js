@@ -25,7 +25,7 @@ S.open = {};   // which folded boxes are open this visit (not saved: everything 
   }
   render();
   window.addEventListener("hashchange", async () => { try { await viewAs(); await loadAll(); render(); } catch (e) { reportError("viewas", e); toast("Couldn't load that just now. Try again.", "err"); } });
-  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons", "breaks", "van_washes", "sod_requests"], debounce(async () => { await loadAll(); render(true); }, 400), "drv");
+  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons", "breaks", "van_washes", "sod_requests", "hazards"], debounce(async () => { await loadAll(); render(true); }, 400), "drv");
   setInterval(() => render(true), 60000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadAll().then(() => render(true)); } });
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => { });
@@ -72,7 +72,7 @@ async function loadAllNow() {
   const ids = S.shifts.map(s => s.id);
   // second round, all at once (was one after another): SOD/EOD/overrides, pick-ups, access info, van washes, breaks
   const soft = (p, d) => Promise.resolve(p).then(r => r?.error ? d : (r?.data ?? d), () => d);
-  const [sods, eods, ovs, pk, ai, vw, br, sr] = await Promise.all([
+  const [sods, eods, ovs, pk, ai, vw, br, sr, hz] = await Promise.all([
     ids.length ? q(sb.from("sod").select("*").in("shift_id", ids)) : [], ids.length ? q(sb.from("eod").select("*").in("shift_id", ids)) : [],
     !ids.length ? [] : S.viewer?.isStaff ? q(sb.from("eff_overrides").select("*").in("shift_id", ids)) : sb.rpc("my_eff_overrides").then(r => r.data || []),
     soft(sb.from("pickups").select("*").eq("driver", m).gte("day", t.slice(0, 7) + "-01").order("day", { ascending: false }).limit(40), []),
@@ -80,8 +80,9 @@ async function loadAllNow() {
     soft(sb.from("van_washes").select("*").gte("at", new Date(Date.now() - 60 * 86400e3).toISOString()).order("at", { ascending: false }).limit(300), []),
     soft(sb.from("breaks").select("*").eq("driver", m).gte("started_at", new Date(Date.now() - 2 * 86400e3).toISOString()).order("started_at"), []),
     soft(sb.from("sod_requests").select("*").eq("driver", m).gte("day", from), []),
+    soft(sb.from("hazards").select("*").is("resolved_at", null).order("created_at", { ascending: false }).limit(2000), []),
   ]);
-  S.sods = sods; S.eods = eods; S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || []; S.sodReqs = sr || [];
+  S.sods = sods; S.eods = eods; S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || []; S.sodReqs = sr || []; S.hazards = hz || [];
   setEvidence(S.shifts, S.eods);
   S.days = dayShifts(S.shifts, S.runsBy, m);
   for (const d of Object.values(S.days)) for (const x of d.segs) { x.sod = S.sods.find(s => s.shift_id === x.shift.id); x.eod = S.eods.find(e => e.shift_id === x.shift.id); x.ov = S.ovs.find(o => o.shift_id === x.shift.id); }
@@ -156,6 +157,7 @@ function renderNow() {
     ${part("Today's tasks", () => addonsCard(T, nextDay, n))}
     ${part("Roster changes", () => rosterChanges(n))}
     ${part("Alerts", () => alertsCard())}
+    ${part("Hazards", () => hazardsCard(T))}
     ${part("Messages", () => messagesCard())}
     ${part("My scores", () => scoresCard())}
     ${part("Parcel pick-ups", () => pickupsCard(T))}
@@ -632,7 +634,7 @@ function wire() {
     sheet(`<h3>View as</h3><p class="meta">White = not signed in · <span class="c-ok">light green</span> = signed in to the app · <b class="c-ok">dark green</b> = GPS in the last 20 min</p><div class="vagrid"><button class="vapick" data-va="">— me (${esc(first(S.viewer.name))}) —</button>${list.map(d => { const st = appState(d.id); return `<button class="vapick ${st} ${S.viewAs?.id === d.id ? "cur" : ""}" data-va="${d.id}"><b>${esc(d.name)}</b>${d.role !== "driver" ? ` <span class="meta">(${esc(d.role)})</span>` : ""}<span class="meta">${st === "gps" ? `GPS ${ago(S.gps[d.id])}` : esc(loginState(d.id).tag)}</span></button>`; }).join("")}</div>`,
       (bg, close) => bg.querySelectorAll("[data-va]").forEach(b => b.onclick = () => { close(); location.hash = b.dataset.va ? "as=" + b.dataset.va : ""; })); });
   $$("#va-prev,#va-next").forEach(b => b.onclick = () => { if (b.dataset.id) location.hash = "as=" + b.dataset.id; });
-  if (S.viewAs) { $$("#gotit,#gotit-again,[data-confirm],[data-addon],[data-plan],[data-meet],#leave-new,#push-btn,#vchk-btn,#wash-btn").forEach(el => { el.disabled = true; el.title = "Only " + first(S.viewAs.name) + " can do this"; el.style.opacity = ".5"; }); }
+  if (S.viewAs) { $$("#gotit,#gotit-again,[data-confirm],[data-addon],[data-plan],[data-meet],#leave-new,#push-btn,#vchk-btn,#wash-btn,#hz-new").forEach(el => { el.disabled = true; el.title = "Only " + first(S.viewAs.name) + " can do this"; el.style.opacity = ".5"; }); }
   pushState().then(s => { const el = $("#push-state"); if (el) el.textContent = s === "on" ? "on" : s === "denied" ? "blocked in phone settings" : s === "unsupported" ? "add to Home Screen first" : "off, tap to turn on"; });
   $("#push-btn")?.addEventListener("click", async () => { const r = await enablePush(S.me.id, VAPID_PUBLIC); toast(r.ok ? "Notifications are on" : r.why, r.ok ? "ok" : "err"); render(); });
   $("#gotit")?.addEventListener("click", async e => { const ids = e.currentTarget.dataset.ids.split(","); for (const id of ids) S.gotit[id] = new Date().toISOString(); localStorage.setItem("tp-gotit", JSON.stringify(S.gotit)); render();
@@ -679,6 +681,9 @@ function wire() {
   $("#prof-edit")?.addEventListener("click", profileForm);
   $("#vchk-btn")?.addEventListener("click", vehicleCheckForm);
   $("#wash-btn")?.addEventListener("click", () => vanWashForm());
+  $("#hz-new")?.addEventListener("click", () => hazardForm());
+  $("#hz-all")?.addEventListener("click", () => hazardList());
+  $$("[data-hz]").forEach(b => b.addEventListener("click", () => hazardDetail(b.dataset.hz)));
   bindDetail(app);
 }
 /* every tile, row and chip with a data-…v attribute opens the detail behind it */
@@ -1011,8 +1016,86 @@ function locationTick() {
   const should = !!(sodSeg && !finished && "geolocation" in navigator);
   if (should && !locWatch) {
     S.locOn = true; S.locShift = (runs.find(x => !x.eod) || T.segs[0]).shift.id;
-    locWatch = navigator.geolocation.watchPosition(p => { lastPos = p; const now = Date.now(); if (now - lastSent > 120000) send(p); }, () => { }, { enableHighAccuracy: true, maximumAge: 60000 });
+    locWatch = navigator.geolocation.watchPosition(p => { lastPos = p; hazardNear(p); const now = Date.now(); if (now - lastSent > 120000) send(p); }, () => { }, { enableHighAccuracy: true, maximumAge: 60000 });
     S.locTimer = setInterval(() => { if (lastPos && Date.now() - lastSent > 120000) send(lastPos); }, 60000);
   } else if (!should && locWatch) { navigator.geolocation.clearWatch(locWatch); locWatch = null; clearInterval(S.locTimer); S.locOn = false; }
   function send(p) { lastSent = Date.now(); sb.from("locations").insert({ driver: S.me.id, shift_id: S.locShift, lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy, speed: p.coords.speed, heading: p.coords.heading }).then(() => { }); }
 }
+
+/* ================= hazard register: drivers report dogs, aggressive people, bad driveways, ice… and see what's on today's runs ================= */
+const HZ_KINDS = [["dog", "🐕 Dog"], ["person", "😠 Aggressive person"], ["driveway", "⛰️ Steep / tight driveway"], ["access", "🚧 Access / no-go"], ["ice", "🧊 Ice / slippery"], ["road", "🚗 Road / traffic"], ["rail", "🚆 Rail crossing"], ["lifting", "📦 Lifting / slips"], ["info", "ℹ️ Info"], ["other", "❓ Other"]];
+const HZ_PICK = ["dog", "person", "driveway", "access", "ice", "road", "other"];
+const hzLabel = k => (HZ_KINDS.find(x => x[0] === k) || [k, k])[1];
+const HZ_SEV = { high: ["High", "crit"], medium: ["Medium", "warn"], low: ["Low", "grey"] };
+const hzSev = s => pill(HZ_SEV[s]?.[0] || s, HZ_SEV[s]?.[1] || "");
+const hzDist = (h, p) => { if (h.lat == null || !p) return Infinity; const R = 6371e3, r = x => x * Math.PI / 180, a = p.coords.latitude, b = p.coords.longitude;
+  const d = Math.sin(r(h.lat - a) / 2) ** 2 + Math.cos(r(a)) * Math.cos(r(h.lat)) * Math.sin(r(h.lng - b) / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(d)); };
+const hzRow = h => `<button class="hzrow" data-hz="${h.id}" type="button"><span class="hzsev ${h.severity}"></span><span class="hzbody"><b>${esc(h.address)}</b>${h.area ? ` <span class="meta">${esc(h.area)}</span>` : ""}<br><span class="meta">${(h.kinds || []).map(hzLabel).join(" · ")}${h.rule && h.rule !== "INFO" ? ` · <b>${esc(h.rule)}</b>` : ""} · ${esc(h.note || "")}</span></span></button>`;
+const hzToday = T => { const codes = new Set(T ? T.segs.map(x => x.shift.run) : []); return (S.hazards || []).filter(h => (h.runs || []).some(c => codes.has(c))); };
+function hazardsCard(T) {
+  const all = S.hazards || []; const today = hzToday(T).filter(h => h.severity !== "low");
+  const near = lastPos ? all.filter(h => h.severity !== "low" && hzDist(h, lastPos) < 250).sort((a, b) => hzDist(a, lastPos) - hzDist(b, lastPos)) : [];
+  const ord = { high: 0, medium: 1, low: 2 }; today.sort((a, b) => ord[a.severity] - ord[b.severity] || a.address.localeCompare(b.address));
+  const show = today.slice(0, S.hzMore ? 999 : 6);
+  return `<div class="card" id="hazards"><h2>⚠️ Hazards<span>${all.length} on the register</span></h2>
+    ${near.length ? `<div class="hznear"><b>Near you now</b>${near.slice(0, 3).map(hzRow).join("")}</div>` : ""}
+    ${T ? (today.length ? `<p class="meta" style="margin:0 0 4px">On today's run${T.segs.length > 1 ? "s" : ""} (high and medium):</p><div class="hzlist">${show.map(hzRow).join("")}</div>${today.length > show.length ? `<button class="btn ghost sm" id="hz-more" type="button">Show all ${today.length}</button>` : ""}` : `<p class="meta">Nothing high or medium on today's run${T.segs.length > 1 ? "s" : ""}.</p>`) : ""}
+    <div class="row" style="margin-top:8px"><button class="btn warn" id="hz-new" type="button">⚠️ Report a hazard</button><button class="btn ghost" id="hz-all" type="button">🔎 Search all</button></div>
+    <p class="hint" style="margin:6px 0 0">If it doesn't feel right, don't do it. Card it and report it.</p></div>`;
+}
+document.addEventListener("click", e => { if (e.target.id === "hz-more") { S.hzMore = true; render(); } });
+function hazardDetail(id) {
+  const h = (S.hazards || []).find(x => x.id === id); if (!h) return;
+  const who = h.reported_by ? S.people[h.reported_by]?.name || h.reported_by : null;
+  sheet(`<h3>${esc(h.address)}</h3><p>${hzSev(h.severity)} ${(h.kinds || []).map(k => pill(hzLabel(k))).join(" ")}${h.rule ? " " + pill(h.rule, h.rule === "NO-GO" ? "crit" : "") : ""}</p>
+    ${h.area ? `<p class="meta">${esc(h.area)}${(h.runs || []).length ? ` · runs: ${esc(h.runs.join(", "))}` : ""}</p>` : ""}
+    ${h.note ? `<p><b>Hazard:</b> ${esc(h.note)}</p>` : ""}${h.control ? `<p><b>What to do:</b> ${esc(h.control)}</p>` : ""}
+    <p class="meta">${who ? `Reported by ${esc(first(who))} · ` : ""}${h.ref ? esc(h.ref) + " · " : ""}${esc(h.source || "")}${h.created_at ? ` · ${label(nzNow(new Date(h.created_at)).date)}` : ""}</p>
+    ${h.lat != null ? `<a class="btn ghost" target="_blank" rel="noopener" href="https://maps.google.com/?q=${h.lat},${h.lng}">📍 Open in Maps</a>` : ""}`);
+}
+function hazardList() {
+  const all = S.hazards || [];
+  sheet(`<h3>🔎 Hazard register</h3><input class="in" id="hzq" placeholder="Street, suburb, dog, ice…" autocomplete="off"><label class="chk" style="margin:8px 0"><input type="checkbox" id="hzlow">Include low / info</label><div id="hzres" class="hzlist"></div>`, (bg, close) => {
+    const q = bg.querySelector("#hzq"), lo = bg.querySelector("#hzlow"), out = bg.querySelector("#hzres");
+    const draw = () => { const t = q.value.trim().toLowerCase(); const ord = { high: 0, medium: 1, low: 2 };
+      const res = all.filter(h => (lo.checked || h.severity !== "low") && (!t || [h.address, h.area, h.note, h.control, h.rule, ...(h.kinds || []).map(hzLabel), ...(h.runs || [])].join(" ").toLowerCase().includes(t)))
+        .sort((a, b) => ord[a.severity] - ord[b.severity] || a.address.localeCompare(b.address));
+      out.innerHTML = res.length ? res.slice(0, 150).map(hzRow).join("") + (res.length > 150 ? `<p class="meta">…and ${res.length - 150} more. Type to narrow it down.</p>` : "") : `<p class="meta">Nothing matches.</p>`;
+      out.querySelectorAll("[data-hz]").forEach(b => b.onclick = () => { close(); hazardDetail(b.dataset.hz); }); };
+    q.oninput = draw; lo.onchange = () => { lo.parentElement.classList.toggle("on", lo.checked); draw(); }; draw(); setTimeout(() => q.focus(), 50);
+  }, { wide: true });
+}
+function hazardForm() {
+  const n = nzNow(); const T = S.days[n.date]; const runs = T ? [...new Set(T.segs.filter(x => !x.sort).map(x => x.shift.run))] : [];
+  const known = [...new Set((S.hazards || []).map(h => h.address).filter(a => /^\d/.test(a)))].sort();
+  let pos = null;
+  sheet(`<h3>⚠️ Report a hazard</h3><form class="frm" id="hzf">
+    <div class="f full">What is it?<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px">${HZ_PICK.map(k => `<label class="chk"><input type="checkbox" name="kind" value="${k}">${hzLabel(k)}</label>`).join("")}</div></div>
+    <label class="f full">Address<input class="in" id="hzaddr" list="hzknown" placeholder="e.g. 57 Stevenson Avenue" required autocomplete="off"><datalist id="hzknown">${known.map(a => `<option value="${esc(a)}">`).join("")}</datalist></label>
+    <div class="full"><button class="btn ghost sm" id="hzgps" type="button">📍 Use where I am</button> <span class="meta" id="hzgpsmsg"></span></div>
+    <label class="f full">How bad?<select class="in" id="hzsev"><option value="high">High – don't go near it</option><option value="medium" selected>Medium – take care / card it</option><option value="low">Low – good to know</option></select></label>
+    <label class="f full">What happened? (optional)<textarea class="in" id="hznote" rows="3" placeholder="Tap the 🎤 on your keyboard to say it instead of typing"></textarea></label>
+    ${runs.length ? `<p class="meta full">Will be added to: ${esc(runs.join(", "))}</p>` : ""}
+    <button class="btn warn full" type="submit">Send hazard</button></form>`, (bg, close) => {
+    bg.querySelectorAll(".chk input").forEach(i => i.onchange = () => i.parentElement.classList.toggle("on", i.checked));
+    const msg = bg.querySelector("#hzgpsmsg"), addr = bg.querySelector("#hzaddr");
+    const fill = async p => { pos = p; msg.textContent = "Finding the address…";
+      try { const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&lat=${p.coords.latitude}&lon=${p.coords.longitude}`, { headers: { "Accept-Language": "en-NZ" } }); const j = await r.json(); const a = j.address || {};
+        const line = [a.house_number, a.road].filter(Boolean).join(" "); if (line && !addr.value) addr.value = line; msg.textContent = line ? `${[a.suburb || a.village || a.town, a.city].filter(Boolean).join(", ")} · check the number` : "Location saved. Type the address.";
+      } catch { msg.textContent = "Location saved. Type the address."; } };
+    bg.querySelector("#hzgps").onclick = () => { if (lastPos && Date.now() - lastPos.timestamp < 120000) return fill(lastPos); if (!("geolocation" in navigator)) return (msg.textContent = "No GPS on this phone.");
+      msg.textContent = "Getting your location…"; navigator.geolocation.getCurrentPosition(fill, () => { msg.textContent = "Couldn't get your location. Type the address."; }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }); };
+    if (lastPos && Date.now() - lastPos.timestamp < 120000) fill(lastPos);
+    bg.querySelector("#hzf").onsubmit = async e => { e.preventDefault(); const b = bg.querySelector("button[type=submit]");
+      const kinds = [...bg.querySelectorAll("input[name=kind]:checked")].map(i => i.value); if (!kinds.length) return toast("Pick what the hazard is", "err");
+      b.disabled = true; const sev = bg.querySelector("#hzsev").value; const note = bg.querySelector("#hznote").value.trim();
+      const { data, error } = await sb.from("hazards").insert({ address: addr.value.trim(), kinds, severity: sev, note: note || null, runs, area: null, lat: pos?.coords.latitude ?? null, lng: pos?.coords.longitude ?? null, source: "Driver app", reported_by: S.me.id }).select("id").single();
+      if (error) { b.disabled = false; return toast(error.message, "err"); }
+      if (data?.id && !DEMO) sb.functions.invoke("notify", { body: { type: "hazard", id: data.id } }).catch(() => { });
+      close(); toast(sev === "high" ? "Hazard sent – Jeremy has been told ⚠️" : "Hazard added to the register ✓", "ok"); await loadAll(); render(); };
+  });
+}
+/** on each GPS fix: a quick heads-up the first time a driver comes within ~150 m of a medium/high hazard that has a location */
+function hazardNear(p) { const seen = S.hzSeen ||= {};
+  for (const h of S.hazards || []) { if (h.severity === "low" || seen[h.id] || hzDist(h, p) > 150) continue; seen[h.id] = 1;
+    toast(`⚠️ ${h.address}: ${h.note || (h.kinds || []).map(hzLabel).join(", ")}`, h.severity === "high" ? "err" : ""); try { navigator.vibrate?.([200, 100, 200]); } catch { } render(true); break; } }
