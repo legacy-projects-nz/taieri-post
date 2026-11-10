@@ -41,6 +41,8 @@ export function dayShifts(shifts, runsBy, driver) {
     const segs = list.map(s => { const { st, en } = segTimes(s, runsBy); return { shift: s, st, en, sort: isSort(s.run) }; }).filter(x => x.st != null).sort((a, b) => a.st - b.st);
     // sort shifts without an end run until the next run starts (max 3 h)
     segs.forEach((x, i) => { if (x.sort && (x.en == null || x.en <= x.st)) { const nx = segs.slice(i + 1).find(y => !y.sort); x.en = nx ? Math.min(nx.st, x.st + 180) : x.st + 90; } });
+    // a sort ends when the driver's run starts: if a run begins part-way through the rostered sort, the sort is shown and counted up to that start (rostEn keeps the rostered end)
+    segs.forEach(x => { if (!x.sort) return; const nx = segs.find(y => !y.sort && y.st > x.st && y.st < x.en); if (nx) { x.rostEn = x.en; x.en = nx.st; } });
     const start = Math.min(...segs.map(x => x.st)), end = Math.max(...segs.map(x => x.en ?? x.st));
     // No time is counted twice: where shifts overlap (e.g. a sort rostered to 12:30 with a run starting at 8:30) the overlap counts once.
     // Runs keep their full time; a sort only counts the minutes no run covers; a later run only counts what an earlier run doesn't cover.
