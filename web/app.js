@@ -1089,7 +1089,7 @@ function hazardForm() {
     bg.querySelector("#hzf").onsubmit = async e => { e.preventDefault(); const b = bg.querySelector("button[type=submit]");
       const kinds = [...bg.querySelectorAll("input[name=kind]:checked")].map(i => i.value); if (!kinds.length) return toast("Pick what the hazard is", "err");
       b.disabled = true; const sev = bg.querySelector("#hzsev").value; const note = bg.querySelector("#hznote").value.trim();
-      const { data, error } = await sb.from("hazards").insert({ address: addr.value.trim(), kinds, severity: sev, note: note || null, runs, area: null, lat: pos?.coords.latitude ?? null, lng: pos?.coords.longitude ?? null, source: "Driver app", reported_by: S.me.id }).select("id").single();
+      const { data, error } = await sb.from("hazards").insert({ address: addr.value.trim(), kinds, severity: sev, note: note || null, runs, area: null, lat: pos?.coords.latitude ?? null, lng: pos?.coords.longitude ?? null, geo_precision: pos ? "gps" : null, source: "Driver app", reported_by: S.me.id }).select("id").single();
       if (error) { b.disabled = false; return toast(error.message, "err"); }
       if (data?.id && !DEMO) sb.functions.invoke("notify", { body: { type: "hazard", id: data.id } }).catch(() => { });
       close(); toast(sev === "high" ? "Hazard sent – Jeremy has been told ⚠️" : "Hazard added to the register ✓", "ok"); await loadAll(); render(); };

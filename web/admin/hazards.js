@@ -26,7 +26,7 @@ function list() {
   const r = rows();
   return r.length ? r.map(h => `<div class="item ${SEV[h.severity]?.[1] || ""}" data-hzedit="${h.id}" style="cursor:pointer">
       <div class="row" style="justify-content:space-between;align-items:baseline"><b>${esc(h.address)}</b><span>${pill(SEV[h.severity][0], SEV[h.severity][1])}${h.rule ? " " + pill(h.rule, h.rule === "NO-GO" ? "crit" : "") : ""}</span></div>
-      <div class="meta">${(h.kinds || []).map(kl).join(" · ")}${h.area ? ` · ${esc(h.area)}` : ""}${(h.runs || []).length ? ` · ${esc(h.runs.join(", "))}` : ""}${h.ref ? ` · ${esc(h.ref)}` : ""}</div>
+      <div class="meta">${(h.kinds || []).map(kl).join(" · ")}${h.area ? ` · ${esc(h.area)}` : ""}${(h.runs || []).length ? ` · ${esc(h.runs.join(", "))}` : ""}${h.ref ? ` · ${esc(h.ref)}` : ""} · ${h.lat != null ? `<a href="https://maps.google.com/?q=${h.lat},${h.lng}" target="_blank" rel="noopener">📍 ${h.geo_precision === "street" ? "street" : h.geo_precision === "manual" ? "set by hand" : h.geo_precision === "gps" ? "driver GPS" : "address"}</a>` : "no GPS"}</div>
       ${h.note ? `<div>${esc(h.note)}</div>` : ""}${h.control ? `<div class="meta">→ ${esc(h.control)}</div>` : ""}
       ${h.reported_by ? `<div class="meta">Reported by ${esc(first(S.peopleBy[h.reported_by]?.name || h.reported_by))} · ${label(nzNow(new Date(h.created_at)).date)}${h.lat != null ? ` · <a href="https://maps.google.com/?q=${h.lat},${h.lng}" target="_blank" rel="noopener">map</a>` : ""}</div>` : ""}
     </div>`).join("") + `<p class="meta">${r.length} shown</p>` : `<div class="empty">Nothing matches.</div>`;
@@ -66,6 +66,8 @@ function edit(id) {
     <div class="f full">Type<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px">${HZ_KINDS.map(([k, l]) => `<label class="chk ${h.kinds?.includes(k) ? "on" : ""}"><input type="checkbox" name="kind" value="${k}" ${h.kinds?.includes(k) ? "checked" : ""}>${l}</label>`).join("")}</div></div>
     <div class="f full">Runs<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px">${runCodes.map(c => `<label class="chk ${h.runs?.includes(c) ? "on" : ""}"><input type="checkbox" name="run" value="${c}" ${h.runs?.includes(c) ? "checked" : ""}>${esc(c)}</label>`).join("")}</div></div>
     <label class="f">Delivery rule<select class="in" id="e-rule">${RULES.map(r => `<option value="${r}" ${(h.rule || "") === r ? "selected" : ""}>${r || "—"}</option>`).join("")}</select></label>
+    <label class="f full">GPS (lat, lng) – paste from Google Maps (long-press the spot) to set or correct the pin<input class="in" id="e-gps" value="${h.lat != null ? `${(+h.lat).toFixed(6)}, ${(+h.lng).toFixed(6)}` : ""}" placeholder="-45.81234, 170.61234"></label>
+    <p class="meta full">${h.lat == null ? "No pin yet – drivers only get the near-me heads-up for hazards with a pin." : h.geo_precision === "street" ? "Pin is the middle of the street (the exact number wasn't found). Correct it if it matters." : h.geo_precision === "manual" ? "Pin set by hand." : "Pin from the address lookup."}</p>
     <label class="f full">Hazard<textarea class="in" id="e-note" rows="2">${esc(h.note || "")}</textarea></label>
     <label class="f full">What to do (control)<textarea class="in" id="e-ctl" rows="2">${esc(h.control || "")}</textarea></label>
     ${h.reported_by ? `<p class="meta full">Reported by ${esc(S.peopleBy[h.reported_by]?.name || h.reported_by)} · ${label(nzNow(new Date(h.created_at)).date, true)}</p>` : h.source ? `<p class="meta full">${esc(h.ref || "")} · ${esc(h.source)}</p>` : ""}
@@ -76,7 +78,10 @@ function edit(id) {
     const g = s => bg.querySelector(s);
     const done = async (msg) => { close(); toast(msg, "ok"); await loadAll(); render(); };
     g("#hzf").onsubmit = async e => { e.preventDefault();
-      const row = { address: g("#e-addr").value.trim(), area: g("#e-area").value.trim() || null, severity: g("#e-sev").value, rule: g("#e-rule").value || null, note: g("#e-note").value.trim() || null, control: g("#e-ctl").value.trim() || null,
+      const gps = g("#e-gps").value.trim(); const m = gps.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+      if (gps && !m) return toast("GPS needs to look like -45.81234, 170.61234", "err");
+      const pin = !gps ? { lat: null, lng: null, geo_precision: null } : (h.lat != null && Math.abs(+m[1] - h.lat) < 1e-6 && Math.abs(+m[2] - h.lng) < 1e-6) ? {} : { lat: +m[1], lng: +m[2], geo_precision: "manual" };
+      const row = { ...pin, address: g("#e-addr").value.trim(), area: g("#e-area").value.trim() || null, severity: g("#e-sev").value, rule: g("#e-rule").value || null, note: g("#e-note").value.trim() || null, control: g("#e-ctl").value.trim() || null,
         kinds: [...bg.querySelectorAll("input[name=kind]:checked")].map(i => i.value), runs: [...bg.querySelectorAll("input[name=run]:checked")].map(i => i.value) };
       const { error } = id ? await sb.from("hazards").update(row).eq("id", id) : await sb.from("hazards").insert({ ...row, source: "Owner portal", reported_by: S.me.id });
       if (error) return toast(error.message, "err"); done("Saved ✓"); };
