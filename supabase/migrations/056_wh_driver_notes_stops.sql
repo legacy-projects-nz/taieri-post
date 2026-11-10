@@ -1,0 +1,8 @@
+-- Pick-up / timing stops from the RSB and PCB Driver Notes (help sheets) that weren't in the West Harbour register.
+insert into public.hazards (ref, runs, area, address, kinds, severity, rule, note, control, source) values
+('WH-122', array['RSB','PCB','WH'], 'Sawyers Bay', 'Harbour Fish (Sawyers Bay industrial)', array['info'], 'low', 'INFO', 'Pickup ready 10:30–11:00 am; must be collected by 2:00 pm (to be confirmed). Kim and Zoe. They collect their own fish from us now.', 'PCB: first stop – drop the stationery parcels and collect the pickup.', 'RSB / PCB Driver Notes (Greg handover, 25 Sep 2026)'),
+('WH-123', array['RSB','PCB','WH'], 'Sawyers Bay', 'Fiordland Lobster', array['info'], 'low', 'INFO', 'Occasional pickup; parcels dropped here', null, 'RSB / PCB Driver Notes (Greg handover, 25 Sep 2026)'),
+('WH-124', array['RSB','PCB','WH'], 'Sawyers Bay', 'DG Engineering', array['info'], 'low', 'INFO', 'Leave on the table inside – no signature', null, 'RSB / PCB Driver Notes (Greg handover, 25 Sep 2026)'),
+('WH-125', array['RSB','WH'], 'Sawyers Bay', 'Sawyers Bay street receiver', array['info'], 'low', 'INFO', 'Clear no earlier than 12:00 noon', null, 'RSB Driver Notes (Greg handover, 25 Sep 2026)'),
+('WH-126', array['PCB','WH'], 'Port Chalmers', 'Business first – George Street', array['info'], 'low', 'INFO', 'Do the George Street businesses first thing, then Careys Bay, then Port Chalmers. If down early, do a loop and come back when the pharmacy opens.', null, 'PCB Driver Notes (Greg handover, 25 Sep 2026)')
+on conflict (ref) do update set runs = excluded.runs, area = excluded.area, address = excluded.address, note = excluded.note, control = excluded.control, source = excluded.source;
