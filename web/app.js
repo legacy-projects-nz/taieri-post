@@ -19,7 +19,7 @@ S.open = {};   // which folded boxes are open this visit (not saved: everything 
   await loadAll();
   render();
   window.addEventListener("hashchange", async () => { await viewAs(); await loadAll(); render(); });
-  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons", "breaks", "van_washes"], debounce(async () => { await loadAll(); render(); }, 400), "drv");
+  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons", "breaks", "van_washes", "sod_requests"], debounce(async () => { await loadAll(); render(); }, 400), "drv");
   setInterval(render, 60000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadAll().then(render); } });
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => { });
@@ -55,15 +55,16 @@ async function loadAll() {
   const ids = S.shifts.map(s => s.id);
   // second round, all at once (was one after another): SOD/EOD/overrides, pick-ups, access info, van washes, breaks
   const soft = (p, d) => Promise.resolve(p).then(r => r?.error ? d : (r?.data ?? d), () => d);
-  const [sods, eods, ovs, pk, ai, vw, br] = await Promise.all([
+  const [sods, eods, ovs, pk, ai, vw, br, sr] = await Promise.all([
     ids.length ? q(sb.from("sod").select("*").in("shift_id", ids)) : [], ids.length ? q(sb.from("eod").select("*").in("shift_id", ids)) : [],
     !ids.length ? [] : S.viewer?.isStaff ? q(sb.from("eff_overrides").select("*").in("shift_id", ids)) : sb.rpc("my_eff_overrides").then(r => r.data || []),
     soft(sb.from("pickups").select("*").eq("driver", m).gte("day", t.slice(0, 7) + "-01").order("day", { ascending: false }).limit(40), []),
     soft(sb.from("access_info").select("body,updated_at").eq("id", 1).maybeSingle(), null),
     soft(sb.from("van_washes").select("*").gte("at", new Date(Date.now() - 60 * 86400e3).toISOString()).order("at", { ascending: false }).limit(300), []),
     soft(sb.from("breaks").select("*").eq("driver", m).gte("started_at", new Date(Date.now() - 2 * 86400e3).toISOString()).order("started_at"), []),
+    soft(sb.from("sod_requests").select("*").eq("driver", m).gte("day", from), []),
   ]);
-  S.sods = sods; S.eods = eods; S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || [];
+  S.sods = sods; S.eods = eods; S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || []; S.sodReqs = sr || [];
   setEvidence(S.shifts, S.eods);
   S.days = dayShifts(S.shifts, S.runsBy, m);
   for (const d of Object.values(S.days)) for (const x of d.segs) { x.sod = S.sods.find(s => s.shift_id === x.shift.id); x.eod = S.eods.find(e => e.shift_id === x.shift.id); x.ov = S.ovs.find(o => o.shift_id === x.shift.id); }
@@ -299,7 +300,7 @@ function todayCard(T, N, n) {
     const sodSeg = T.segs.find(x => x.sod); const allEod = T.segs.filter(x => !x.sort).length ? T.segs.filter(x => !x.sort).every(x => x.eod) : T.segs.some(x => x.eod);
     if (left.length || (!allEod && sodSeg)) {
       const sodBtn = !sodSeg ? `<p class="hint">No SOD yet — tap <b>SOD</b> at the top when you start.</p>`
-        : `<div class="row"><div class="meta c-ok">✓ SOD ${fmtTime(sodSeg.sod.sent_at)}${sodSeg.sod.van ? ` · ${esc(sodSeg.sod.van)}` : ""}${sodSeg.sod.edited_at ? " (edited)" : ""}</div>${allEod ? "" : `<button class="btn ghost sm" id="sod-edit" data-shift="${sodSeg.shift.id}">Edit SOD</button>`}</div>`;
+        : `<div class="row"><div class="meta c-ok">✓ SOD ${fmtTime(sodSeg.sod.sent_at)}${sodSeg.sod.van ? ` · ${esc(sodSeg.sod.van)}` : ""}${sodSeg.sod.edited_at ? " (edited)" : ""}</div>${allEod ? "" : `<button class="btn ghost sm" id="sod-edit" data-shift="${sodSeg.shift.id}">Edit SOD</button>`}</div>${sodReqLine(T)}`;
       const sortOnly = !T.segs.some(x => !x.sort) && sodSeg && !allEod;
       return `<div class="card today"><h2>Today<span>${label(T.day)}</span></h2><div class="big bigrow"><span>${fmtT((left[0] || T.segs[0]).st)}–${fmtT(T.end)}</span>${vanChips(T)}</div>${left.length === T.segs.length ? `<div class="meta" style="margin-top:-4px">${T.hours} h rostered</div>` : ""}
         ${sodBtn}${(left.length ? left : T.segs).map(x => segRow(x, T.day, n, true, false)).join("")}
@@ -689,11 +690,41 @@ async function sendSod(shiftId, lateMode = false) {
   if (lateMode) { // late: ask for the actual start time
     sheet(`<h3>Post your SOD for ${label(shift.day)}</h3><p class="hint">This one is late, so it counts as late on your Admin score, but a late post is better than a missing one.</p>
       <label class="f">When did you start?<input class="in" type="time" id="st" value="${fmt24s(D.start)}"></label><label class="f">Van<select class="in" id="van">${opt([["", "—"], ...Object.keys(S.vans).map(p => [p, p])], van)}</select></label><label class="f">Note (optional)<input class="in" id="note" placeholder="e.g. forgot to post"></label><button class="btn" id="go">Send SOD</button>`, (bg, close) => {
-      bg.querySelector("#go").onclick = async () => { const t = bg.querySelector("#st").value; const { error } = await sb.from("sod").insert({ shift_id: shiftId, driver: S.me.id, van: bg.querySelector("#van").value || null, run_id: runId, note: bg.querySelector("#note").value || null, sent_at: nzToIso(shift.day, t) }); if (error) return toast(error.message, "err"); close(); toast("SOD sent", "ok"); await loadAll(); render(); };
+      bg.querySelector("#go").onclick = async () => { const t = bg.querySelector("#st").value; const note = bg.querySelector("#note").value || null; const { error } = await sb.from("sod").insert({ shift_id: shiftId, driver: S.me.id, van: bg.querySelector("#van").value || null, run_id: runId, note, sent_at: nzToIso(shift.day, t) }); if (error) return toast(error.message, "err");
+        const off = toMin(t) - D.start; if (Math.abs(off) > reqMins()) await sendSodReq(shiftId, D, toMin(t), note);
+        close(); toast(Math.abs(off) > reqMins() ? "SOD sent · start time sent to Jeremy to sign off" : "SOD sent", "ok"); await loadAll(); render(); };
+    }); return;
+  }
+  const now = nzNow().min; const off = shift.day === nzNow().date ? now - D.start : 0;
+  if (Math.abs(off) > reqMins()) {   // more than 20 min early or late: the SOD still goes in, plus a sign-off request to Jeremy
+    const early = off < 0; const mins = Math.abs(off);
+    sheet(`<h3>${early ? "Starting early" : "Starting late"}</h3><p class="hint">You're starting <b>${minsTxt(mins)} ${early ? "before" : "after"}</b> your rostered start of <b>${fmtT(D.start)}</b>. Your SOD goes in now, and Jeremy gets a request to sign off the ${early ? "earlier" : "later"} start. When he approves it, today's run times move to match (${fmtT(D.start + off)}–${fmtT(D.end + off)}).${early ? ` Until then your hours count from ${fmtT(D.start)}.` : ""}</p>
+      <label class="f">Note for Jeremy (optional)<textarea class="in" id="note" rows="3" placeholder="${early ? "e.g. parcels in early, getting a head start" : "e.g. van wouldn't start"}"></textarea></label><button class="btn" id="go">Send SOD + request</button>`, (bg, close) => {
+      bg.querySelector("#go").onclick = async e => { e.currentTarget.disabled = true; const note = bg.querySelector("#note").value.trim() || null;
+        const { error } = await sb.from("sod").insert({ shift_id: shiftId, driver: S.me.id, van, run_id: runId, note }); if (error) { e.currentTarget.disabled = false; return toast(error.message, "err"); }
+        await sendSodReq(shiftId, D, now, note); close(); toast(`SOD sent ${fmtT(now)} ✓ · Jeremy will sign off the start`, "ok"); await loadAll(); render(); };
     }); return;
   }
   const { error } = await sb.from("sod").insert({ shift_id: shiftId, driver: S.me.id, van, run_id: runId }); if (error) return toast(error.message, "err");
   toast(`SOD sent ${fmtT(nzNow().min)} ✓`, "ok"); await loadAll(); render();
+}
+/* ---- start-time sign-off (SOD more than 20 min off the rostered start) ---- */
+const reqMins = () => S.C.rules.sodReqMins ?? 20;
+const minsTxt = m => m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}` : `${m} min`;
+const clampT = m => Math.max(0, Math.min(1439, m));
+async function sendSodReq(shiftId, D, startMin, note) {
+  const off = startMin - D.start;
+  const moves = D.segs.map(x => ({ shift_id: x.shift.id, start_at: fmt24s(clampT(x.st + off)), end_at: x.sort && !x.shift.end_at ? null : fmt24s(clampT((x.en ?? x.st) + off)) }));
+  const { data, error } = await sb.from("sod_requests").insert({ shift_id: shiftId, driver: S.me.id, day: D.day, kind: off < 0 ? "early" : "late", rostered: fmt24s(D.start), started: fmt24s(clampT(startMin)), delta_min: off, moves, note }).select("id").single();
+  if (error) return toast("SOD is in, but the sign-off request didn't send: " + error.message, "err");
+  const rid = (Array.isArray(data) ? data[0] : data)?.id; if (rid && !DEMO) sb.functions.invoke("notify", { body: { type: "sod_request", id: rid } }).catch(() => { });
+}
+function sodReqLine(T) {
+  const r = (S.sodReqs || []).find(x => x.day === T.day); if (!r) return "";
+  const what = `${r.kind === "early" ? "Early" : "Late"} start ${fmtT(toMin(r.started))} (rostered ${fmtT(toMin(r.rostered))})`;
+  return r.status === "pending" ? `<div class="meta c-warn">⏳ ${what} · waiting for Jeremy to sign off${r.kind === "early" ? ` · hours count from ${fmtT(toMin(r.rostered))} until then` : ""}</div>`
+    : r.status === "approved" ? `<div class="meta c-ok">✓ ${what} · signed off by Jeremy, run times updated${r.reply ? ` · ${esc(r.reply)}` : ""}</div>`
+    : `<div class="meta c-crit">✗ ${what} · not signed off${r.kind === "early" ? `, hours count from ${fmtT(toMin(r.rostered))}` : ""}${r.reply ? ` · ${esc(r.reply)}` : ""}</div>`;
 }
 function fmt24s(min) { return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`; }
 function editSod(shiftId) {

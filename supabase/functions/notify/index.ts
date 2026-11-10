@@ -36,6 +36,21 @@ Deno.serve(async (req) => {
     if (p?.email) await sendEmail(sec, set, p.email, `Leave ${ok ? "approved" : "declined"} – ${l.date_from === l.date_to ? label(l.date_from) : `${label(l.date_from)} to ${label(l.date_to)}`}`, wrap(`<p>Hi ${esc(first(p.name))},</p><p>Your ${esc((LEAVE_T[l.type] || l.type).toLowerCase())} request for <b>${esc(dates)}</b>${l.part !== "full" ? ` (${l.part === "AM" ? "morning" : "afternoon"} off)` : ""} has been <b>${ok ? "approved" : "declined"}</b>.</p>${l.reply ? `<p>${esc(l.reply)}</p>` : ""}${ok ? "<p>It's on the roster as leave. Enjoy the time off.</p>" : "<p>If you'd like to talk about it, give Jeremy a call.</p>"}${sig}`));
     return json({ ok: true });
   }
+  if (body.type === "sod_request") {   // driver's SOD was more than 20 min off the rostered start → push Jeremy (owner) to sign it off
+    const { data: r } = await sb.from("sod_requests").select("*").eq("id", body.id).maybeSingle(); if (!r) return json({ error: "no request" }, 404);
+    if (r.driver !== caller.id && !can("roster")) return json({ error: "no" }, 403);
+    const owners = Object.values(people).filter((p: any) => p.role === "owner" && p.active !== false).map((p: any) => p.id);
+    const off = Math.abs(r.delta_min); const offT = off >= 60 ? `${Math.floor(off / 60)} h ${off % 60} min` : `${off} min`;
+    const n = await push(sb, sec, set, owners, { title: `${first(people[r.driver]?.name)} started ${offT} ${r.kind} · sign off?`, body: `SOD ${fmtT(toMin(r.started))}, rostered ${fmtT(toMin(r.rostered))}${r.note ? ` · ${String(r.note).slice(0, 120)}` : ""}`, url: "/admin/#live", tag: "sodreq-" + r.id });
+    return json({ ok: true, pushed: n });
+  }
+  if (body.type === "sod_request_decided") {
+    if (caller.role !== "owner") return json({ error: "no" }, 403);
+    const { data: r } = await sb.from("sod_requests").select("*").eq("id", body.id).maybeSingle(); if (!r || r.status === "pending") return json({ error: "not decided" }, 400);
+    const ok = r.status === "approved";
+    const n = await push(sb, sec, set, [r.driver], { title: `${r.kind === "early" ? "Early" : "Late"} start ${ok ? "signed off ✓" : "not signed off"}`, body: ok ? `Today's run times now start at ${fmtT(toMin(r.started))}.${r.reply ? " " + r.reply : ""}` : `Your rostered times stay as they were.${r.reply ? " " + r.reply : ""}`, url: "/", tag: "sodreq-" + r.id });
+    return json({ ok: true, pushed: n });
+  }
   if (body.type === "message") {
     if (!can("messages")) return json({ error: "no" }, 403);
     const { data: m } = await sb.from("messages").select("*").eq("id", body.message_id).single(); const { data: rs } = await sb.from("message_recipients").select("person").eq("message_id", m.id);

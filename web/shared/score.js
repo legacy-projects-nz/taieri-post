@@ -18,6 +18,13 @@ export const LEG_RUNS = { TUA: ["outram", "pgg", "airport"], FLY: ["airport", "m
 
 export function cfg(settings) { const o = {}; for (const k of Object.keys(DEF)) o[k] = { ...DEF[k], ...(settings[k] || {}) }; o.runCodes = settings.runCodes || {}; o.holidays = settings.holidays || {}; o.bands = settings.bands || {}; return o; }
 
+/* ---- Start-time sign-off: a SOD more than rules.sodReqMins (20) before the rostered start counts from the rostered start
+   until Jeremy approves the early start (approving moves the roster, so the SOD is no longer early). From rules.sodReqStart on. ---- */
+export function sodStart(sod, dayStart, C) {
+  if (!sod) return null; const m = nzNow(new Date(sod.sent_at)).min; const R = C?.rules || {};
+  if (dayStart == null || nzNow(new Date(sod.sent_at)).date < (R.sodReqStart ?? "2026-11-11")) return m;
+  return m < dayStart - (R.sodReqMins ?? 20) ? dayStart : m;
+}
 /* ---- Shift windows (minutes) ---- */
 export function segTimes(s, runsBy) {
   let st = toMin(s.start_at), en = toMin(s.end_at);
@@ -191,7 +198,7 @@ function scoreForRaw(driver, from, to, D, C) {
     const runs = d.segs.filter(x => !x.sort); if (!runs.length) continue;
     const sortRost = d.segs.filter(x => x.sort).reduce((a, x) => a + ((x.en ?? x.st) - x.st), 0);
     const sod = d.segs.map(x => D.sods.find(s => s.shift_id === x.shift.id)).find(Boolean);
-    const rows = runs.map((x, i) => { const eod = D.eods.find(e => e.shift_id === x.shift.id), ov = D.ovs?.find(o => o.shift_id === x.shift.id); const c = effCalc(x, eod, ov, C, D.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? nzNow(new Date(sod.sent_at)).min : null, brk: own ? ownerBreakHrs(D.breaks, x.shift.id) : 0 }); if (c) { c.shift = x.shift; c.eod = eod; c.ov = ov; } return c; }).filter(Boolean);
+    const rows = runs.map((x, i) => { const eod = D.eods.find(e => e.shift_id === x.shift.id), ov = D.ovs?.find(o => o.shift_id === x.shift.id); const c = effCalc(x, eod, ov, C, D.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? sodStart(sod, d.start, C) : null, brk: own ? ownerBreakHrs(D.breaks, x.shift.id) : 0 }); if (c) { c.shift = x.shift; c.eod = eod; c.ov = ov; } return c; }).filter(Boolean);
     const live = rows.filter(r => !r.trainDay);
     if (live.length && live.every(r => r.perf != null && !r.need.length)) { const A = live.reduce((a, r) => a + r.allowed, 0) / 60, T = live.reduce((a, r) => a + r.takenTrk, 0); const v = Math.max(0, Math.min(150, C.rules.effMethod === "tdt" ? (2 - T / A) * 100 : A / T * 100)); effDays.push({ day: d.day, v, est: live.some(r => r.est), rows, allowed: A, taken: T }); }
     else if (d.day <= today()) effDays.push({ day: d.day, pending: true, need: rows.filter(r => r.need.length).map(r => `${r.code}: ${r.need.join(", ")}`).join("; "), rows });

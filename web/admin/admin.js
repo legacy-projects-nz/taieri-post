@@ -22,7 +22,7 @@ export const fn = async (name, body) => { const { data, error } = await sb.funct
   try { S.me = await requireUser(app, { staff: true }); } catch { return; }
   if (!S.me.isStaff) { app.innerHTML = `<div class="wrap"><div class="card"><h2>Drivers' page is at the main link</h2><p><a href="/">Open the driver portal</a></p></div></div>`; return; }
   await loadAll(); render();
-  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "people", "settings", "timing_rules", "addons", "vehicle_checks", "eff_overrides", "run_skills", "week_notes", "roster_sent", "breaks", "van_washes"], debounce(async (t) => { await loadAll(); render(true); }, 500), "ops");
+  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "people", "settings", "timing_rules", "addons", "vehicle_checks", "eff_overrides", "run_skills", "week_notes", "roster_sent", "breaks", "van_washes", "sod_requests"], debounce(async (t) => { await loadAll(); render(true); }, 500), "ops");
   // safety net if a live update is missed (or skipped while a sheet was open): reload every 30 s and whenever the window comes back into focus
   const refresh = async () => { if (document.visibilityState === "hidden") return; const at = S._loadedAt; try { await loadAll({ ifStale: true }); if (S._loadedAt !== at) render(true); } catch (e) { console.warn(e); } };
   setInterval(refresh, 60000); window.addEventListener("focus", refresh); document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
@@ -66,14 +66,15 @@ async function loadAllNow() {
   // second round, all at once (was one after another): SOD/EOD for the loaded shifts (by date range, not a 500-id list in the URL), washes, breaks, sign-in status
   const soft = (p, d) => p.then(r => r.error ? d : (r.data ?? d), () => d);
   const strip = rows => rows.map(({ shifts: _s, ...r }) => r);
-  const [sods, eods, washes, breaks, ls] = await Promise.all([
+  const [sods, eods, washes, breaks, ls, sodReqs] = await Promise.all([
     q(sb.from("sod").select("*, shifts!inner(day)").gte("shifts.day", from).lte("shifts.day", to)).then(strip),
     q(sb.from("eod").select("*, shifts!inner(day)").gte("shifts.day", from).lte("shifts.day", to)).then(strip),
     soft(sb.from("van_washes").select("*").gte("at", new Date(Date.now() - 120 * 86400e3).toISOString()).order("at", { ascending: false }).limit(1000), []),
     soft(sb.from("breaks").select("*").gte("started_at", new Date(from + "T00:00:00+13:00").toISOString()).order("started_at", { ascending: false }).limit(3000), []),
     soft(sb.rpc("login_status"), []),
+    soft(sb.from("sod_requests").select("*").gte("day", from).order("created_at", { ascending: false }), []),
   ]);
-  S.sods = sods; S.eods = eods; S.washes = washes; S.breaks = breaks;
+  S.sods = sods; S.eods = eods; S.washes = washes; S.breaks = breaks; S.sodReqs = sodReqs || [];
   S.login = {}; for (const l of ls || []) S.login[l.person_id] = l;   // who is signed in to the app
   S.sodBy = Object.fromEntries(S.sods.map(s => [s.shift_id, s])); S.eodBy = Object.fromEntries(S.eods.map(e => [e.shift_id, e]));
   setEvidence(S.shifts, S.eods);   // average figures per run & weekday → the estimate used until each EOD is in
@@ -101,7 +102,7 @@ export function render(soft = false) {
   if (soft && (document.activeElement?.matches("input,textarea,select") || $(".sheet-bg"))) return;
   const n = nzNow(); const tabs = TABS.filter(([, , a]) => S.me.can(a));
   if (!tabs.some(([k]) => k === S.tab)) S.tab = tabs[0][0];
-  const badge = { live: S.alerts.filter(a => !a.resolved_at).length, leave: S.leave.filter(l => l.status === "pending").length, runboard: S.items.filter(i => i.roster_changes.status === "awaiting_approval").length, fix: S.me.can("scorecard") ? fixCount() : 0, alerts: S.alerts.filter(a => !a.resolved_at).length };
+  const badge = { live: S.alerts.filter(a => !a.resolved_at).length + (S.me.isOwner ? (S.sodReqs || []).filter(r => r.status === "pending").length : 0), leave: S.leave.filter(l => l.status === "pending").length, runboard: S.items.filter(i => i.roster_changes.status === "awaiting_approval").length, fix: S.me.can("scorecard") ? fixCount() : 0, alerts: S.alerts.filter(a => !a.resolved_at).length };
   app.innerHTML = `<div class="wrap">
     <div class="top"><div><div class="brand">Taieri Ops</div><h1>${({ live: "Live board", runboard: "Run Board", classic: "Run Board (classic)", scorecard: "Driver Scorecard", fix: "Fix posts", routes: "Routes", allowances: "Back-up & on-call allowances", pickups: "Pick-ups to invoice", alerts: "Alerts & timings", messages: "Messages", leave: "Leave", fleet: "Fleet", timing: "Timing rules", people: "People & settings", pay: "Penalties & pay" })[S.tab]}</h1></div>
       <div class="upd">${S.me.can("scorecard") ? `<span class="row" style="gap:6px;justify-content:flex-end;margin-bottom:6px"><a class="btn ghost sm" href="/" style="flex:0 0 auto;text-decoration:none">Driver portals</a><button class="btn ghost sm" id="quick-err" style="flex:0 0 auto">+ Record</button></span>` : ""}<span class="dot live"></span>live · ${fmtT(n.min)}<br>${esc(first(S.me.name))} · <button class="linkbtn" id="signout">sign out</button></div></div>

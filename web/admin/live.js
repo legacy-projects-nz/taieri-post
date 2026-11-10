@@ -1,7 +1,7 @@
 // Live board: the old Scorecard dashboard, live. Day chips, KPIs, receivers & pick-ups, important points, team scores + labour,
 // add-ons & timings board, hours by day, admin action centre, roster changes not confirmed, drivers grid, posts board + live feed, map.
 import { sb, q, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, toast, pill, first, col, pct, isSort, avg, sum } from "/shared/core.js";
-import { scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, ownerBreakHrs, band, fortnightBand, payBand, money, dayShifts, segTimes, addName, meetRule, meetOn } from "/shared/score.js";
+import { sodStart, scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, ownerBreakHrs, band, fortnightBand, payBand, money, dayShifts, segTimes, addName, meetRule, meetOn } from "/shared/score.js";
 import { S, sheet, opt, nm, fnm, loadAll, render, scoreData, alertRow, fn, teamRange, rangeBar, teamStats } from "/admin/admin.js";
 import { itemKeyFor } from "/admin/detail.js";
 import { moneyCard, wireMoney } from "/admin/money.js";
@@ -33,7 +33,7 @@ export function liveTab() {
     : `<div class="tiles">${tile("Team on-time rate", closed.length ? ok / closed.length * 100 : null, `${ok} of ${closed.length} posts on time`, null, k("rate"))}${tile("Late", String(late.length), "posted after the due time", late.length ? "c-crit" : "", k("late"))}${tile("Missing", String(miss.length), "never posted", miss.length ? "c-crit" : "", k("miss"))}${tile("Drivers rostered", String(rostered), "tracked this week", "", k("rostered"))}</div>`;
 
   const cur = monOf(t);
-  return `${nowCard(n)}${weekNav(wk)}${wk > cur ? `<p class="hint" style="margin:0 0 6px">Next week: the planned roster. Nothing is posted yet, so scores fill in as the days come.</p>` : ""}<div class="card">${chips}${kpi}</div>
+  return `${sodReqCard()}${nowCard(n)}${weekNav(wk)}${wk > cur ? `<p class="hint" style="margin:0 0 6px">Next week: the planned roster. Nothing is posted yet, so scores fill in as the days come.</p>` : ""}<div class="card">${chips}${kpi}</div>
     ${addonBoard(one ? days[0] : t, n)}
     ${moneyCard(one ? days[0] : t)}
     <div class="grid2">${important(scores, n)}${teamAndLabour(scores, team, wk)}</div>
@@ -202,7 +202,7 @@ export function driverDay(drv, d) {
   const runSegs = D.segs.filter(x => !x.sort); const sod = D.segs.map(x => S.sodBy[x.shift.id]).find(Boolean); const eods = runSegs.map(x => S.eodBy[x.shift.id]).filter(Boolean);
   const sortRost = D.segs.filter(x => x.sort).reduce((a, x) => a + ((x.en ?? x.st) - x.st), 0);
   let exp = 0, est = false, train = 0; const effRows = [];
-  runSegs.forEach((x, i) => { const ov = S.ovs.find(o => o.shift_id === x.shift.id); const eod = S.eodBy[x.shift.id]; const c = effCalc(x, eod, ov, S.C, S.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? nzNow(new Date(sod.sent_at)).min : null, brk: drv.pay_exclude ? ownerBreakHrs(S.breaks, x.shift.id) : 0 });
+  runSegs.forEach((x, i) => { const ov = S.ovs.find(o => o.shift_id === x.shift.id); const eod = S.eodBy[x.shift.id]; const c = effCalc(x, eod, ov, S.C, S.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? sodStart(sod, D.start, S.C) : null, brk: drv.pay_exclude ? ownerBreakHrs(S.breaks, x.shift.id) : 0 });
     if (!c) { exp += ((x.en ?? x.st) - x.st) / 60; est = true; return; }                       // no formula for this run yet → rostered length, flagged as an estimate
     effRows.push({ d, drv, x, eod, ov, c }); if (c.trainDay) { train += c.taken || 0; return; } exp += c.allowed / 60; if (!eod || c.est) est = true; if (ov?.train_min) train += ov.train_min / 60; });
   if (!runSegs.length) { exp = D.hours; est = !D.segs.some(x => S.eodBy[x.shift.id]); }     // sort-only day
@@ -210,12 +210,13 @@ export function driverDay(drv, d) {
   const anyE = runSegs.length ? eods : D.segs.map(x => S.eodBy[x.shift.id]).filter(Boolean); const lastE = anyE[anyE.length - 1];
   const endOf = e => e.finish_time ? toMin(e.finish_time) : nzNow(new Date(e.sent_at)).min;
   const brk = breakMins(drv.id, d) / 60;   // unpaid breaks that day, taken off the SOD → EOD hours
-  let act = null, badTimes = false; if (complete) { const sm = nzNow(new Date(sod.sent_at)).min, em = endOf(lastE); if (em > sm) act = Math.max(0, (em - sm) / 60 - brk); else badTimes = true; } // SOD posted after the finish (e.g. both posts sent together at the end) → not a measured day
+  let act = null, badTimes = false; if (complete) { const sm = sodStart(sod, D.start, S.C), em = endOf(lastE); if (em > sm) act = Math.max(0, (em - sm) / 60 - brk); else badTimes = true; } // SOD posted after the finish (e.g. both posts sent together at the end) → not a measured day
   // estimated actual when the SOD and/or EODs are not in: what is in + the roster for the rest; nothing at all → the expected hours
   let actEst = act, actHow = "SOD → EOD"; if (act == null) { const n = nzNow(); const over = d < n.date || (d === n.date && n.min >= D.end);
     if (badTimes) { actEst = exp + train; actHow = "SOD time is after the EOD finish · = expected · fix the times"; }
     else if (!sod && !anyE.length) { actEst = exp + train; actHow = over ? "no SOD or EOD · = expected" + (train ? " + training" : "") : "to come · = expected" + (train ? " + training" : ""); }
-    else { const sm = sod ? nzNow(new Date(sod.sent_at)).min : D.start; const em = (complete || (anyE.length && (!runSegs.length || eods.length === runSegs.length))) ? endOf(lastE) : (lastE && over ? Math.max(endOf(lastE), D.end) : D.end); actEst = Math.max(0, (em - sm) / 60 - brk); actHow = `${sod ? "SOD" : "roster start"} → ${anyE.length === (runSegs.length || 1) ? "EOD" : "roster end"}`; } }
+    else { const sm = sod ? sodStart(sod, D.start, S.C) : D.start; const em = (complete || (anyE.length && (!runSegs.length || eods.length === runSegs.length))) ? endOf(lastE) : (lastE && over ? Math.max(endOf(lastE), D.end) : D.end); actEst = Math.max(0, (em - sm) / 60 - brk); actHow = `${sod ? "SOD" : "roster start"} → ${anyE.length === (runSegs.length || 1) ? "EOD" : "roster end"}`; } }
+  if (sod && sodStart(sod, D.start, S.C) !== nzNow(new Date(sod.sent_at)).min) actHow += ` · early start not signed off, counted from ${fmtT(D.start)}`;
   if (brk && (act != null || /→/.test(actHow))) actHow += ` − ${Math.round(brk * 60)} min unpaid break`;
   // tracked = SOD in, every EOD in, and the expected worked out from the EOD figures (nothing averaged or guessed)
   const tracked = act != null && !est;
@@ -299,12 +300,36 @@ function feed(t) {
   for (const b of S.breaks || []) { if (nzDay(b.started_at) === t) ev.push({ at: b.started_at, txt: `${nm(b.driver)} · started an unpaid break`, cls: "", go: null }); if (nzDay(b.ended_at) === t) ev.push({ at: b.ended_at, txt: `${nm(b.driver)} · ended unpaid break (${Math.round((new Date(b.ended_at) - new Date(b.started_at)) / 60000)} min)`, cls: "", go: null }); }
   for (const a of S.acks) if (nzDay(a.confirmed_at) === t) ev.push({ at: a.confirmed_at, txt: `${nm(a.driver)} confirmed a roster change${a.confirmed_by ? ` (by ${fnm(a.confirmed_by)})` : ""}`, cls: "ok", go: { k: "changes", d: a.driver } });
   for (const r of S.recips) if (nzDay(r.read_at) === t) ev.push({ at: r.confirmed_at || r.read_at, txt: `${nm(r.person)} ${r.confirmed_at ? "confirmed" : "read"} a message`, cls: "", go: { k: "msg", id: r.message_id } });
+  for (const r of S.sodReqs || []) if (nzDay(r.created_at) === t) ev.push({ at: r.created_at, txt: `${nm(r.driver)} · ${r.kind === "early" ? "early" : "late"} start ${fmtT(toMin(r.started))} to sign off${r.status !== "pending" ? ` · ${r.status}` : ""}`, cls: r.status === "pending" ? "warn" : "", go: null });
   for (const l of S.leave) if (nzDay(l.created_at) === t) ev.push({ at: l.created_at, txt: `${nm(l.driver)} asked for leave · ${label(l.date_from)}`, cls: "warn", go: { k: "leave", id: l.id } });
   for (const a of S.alerts) if (nzDay(a.created_at) === t) ev.push({ at: a.created_at, txt: `⚠ ${a.title}`, cls: a.resolved_at ? "" : "crit", go: { k: "alert", id: a.id } });
   for (const w of S.washes || []) if (nzDay(w.at) === t) ev.push({ at: w.at, txt: `${nm(w.driver)} · washed ${w.van}`, cls: "ok", go: null });
   for (const c of S.vchk) if (nzDay(c.at) === t) ev.push({ at: c.at, txt: `${nm(c.driver)} · vehicle check ${c.van}`, cls: "ok", go: { k: "vchk", id: c.id } });
   ev.sort((a, b) => b.at.localeCompare(a.at));
   return ev.length ? `<div class="list" style="max-height:420px;overflow:auto">${ev.slice(0, 60).map(e => `<div class="item clk ${e.cls}" style="padding:6px 10px" ${e.go && (e.go.key !== "") ? `data-feed="${esc(JSON.stringify(e.go))}"` : ""} title="Tap to open"><span class="m">${fmtTime(e.at)}</span> ${esc(e.txt)}</div>`).join("")}</div><p class="hint">Tap a line to open the post, alert or check behind it.</p>` : `<p class="empty">Nothing yet today. SODs, EODs, confirmations and alerts show here as they happen.</p>`;
+}
+
+/* ---- Start-time sign-off: SODs posted more than 20 min before or after the rostered start. Approving moves that driver's
+   run times for the day by the same amount (start and end); declining leaves the roster as it was. Only Jeremy (owner) decides. ---- */
+const minsOff = m => { const a = Math.abs(m); return a >= 60 ? `${Math.floor(a / 60)} h${a % 60 ? ` ${a % 60} min` : ""}` : `${a} min`; };
+function sodReqCard() {
+  const all = S.sodReqs || []; const pend = all.filter(r => r.status === "pending"); const recent = all.filter(r => r.status !== "pending").slice(0, 8);
+  if (!pend.length && !recent.length) return "";
+  const what = r => `${r.kind === "early" ? "Started early" : "Started late"} · SOD ${fmtT(toMin(r.started))}, rostered ${fmtT(toMin(r.rostered))} (${minsOff(r.delta_min)} ${r.kind === "early" ? "early" : "late"})`;
+  const moves = r => (r.moves || []).map(m => { const sh = S.shifts.find(s => s.id === m.shift_id); return sh ? `${esc(sh.run)} → ${fmtT(toMin(m.start_at))}${m.end_at ? `–${fmtT(toMin(m.end_at))}` : ""}` : ""; }).filter(Boolean).join(" · ");
+  const row = r => `<div class="item ${r.status === "pending" ? "warn" : r.status === "approved" ? "done" : ""}"><div class="row" style="justify-content:space-between"><b>${esc(nm(r.driver))} · ${label(r.day)}</b><span class="meta">${ago(r.created_at)}</span></div>
+    <div>${what(r)}</div>${r.note ? `<div class="meta">“${esc(r.note)}”</div>` : `<div class="meta">No note</div>`}
+    ${r.status === "pending" ? `<div class="meta">If approved, run times become: ${moves(r) || "—"}${r.kind === "early" ? ` · until then hours count from ${fmtT(toMin(r.rostered))}` : ""}</div>
+      ${S.me.isOwner ? `<div class="row" style="margin-top:6px"><input class="in" data-sreply="${r.id}" placeholder="Reply to ${esc(first(nm(r.driver)))} (optional)" style="flex:2 1 160px"><button class="btn sm" data-sreq="${r.id}" data-ok="1">✓ Approve</button><button class="btn ghost sm" data-sreq="${r.id}" data-ok="0">Decline</button></div>` : `<div class="meta">Waiting for Jeremy</div>`}`
+      : `<div class="meta ${r.status === "approved" ? "c-ok" : "c-crit"}">${r.status === "approved" ? "✓ Approved · run times moved" : "✗ Declined · roster unchanged"}${r.decided_by ? ` by ${esc(fnm(r.decided_by))}` : ""}${r.reply ? ` · ${esc(r.reply)}` : ""}</div>`}</div>`;
+  return `<div class="card ${pend.length ? "hot" : ""}" id="sodreq"><h2>Start times to sign off<span>${pend.length ? `${pend.length} waiting` : "nothing waiting"} · SOD more than ${S.C.rules.sodReqMins ?? 20} min off the roster</span></h2>
+    ${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : ""}${recent.length ? `<details><summary>Recent decisions</summary><div class="list" style="margin-top:8px">${recent.map(row).join("")}</div></details>` : ""}</div>`;
+}
+async function decideSodReq(id, ok) {
+  const reply = $(`[data-sreply="${id}"]`)?.value.trim() || null;
+  const { error } = await sb.rpc("sod_request_decide", { p_id: id, p_approve: ok, p_reply: reply }); if (error) return toast(error.message, "err");
+  fn("notify", { type: "sod_request_decided", id }).catch(() => { });
+  toast(ok ? "Approved · run times updated" : "Declined", "ok"); await loadAll(); render();
 }
 
 /* ---- wiring ---- */
@@ -314,6 +339,7 @@ export function wireLive() {
   $$("[data-days]").forEach(b => b.onclick = () => { const today_ = b.dataset.days === "today"; if (today_) S.liveWk = monOf(today()); const wk = liveWk(); S.daySel = today_ ? [today()] : DAYS.map((_, i) => addDays(wk, i)); S.daySelWk = wk; render(); });
   $$("[data-lwk]").forEach(b => b.onclick = () => { const cur = monOf(today()); const v = b.dataset.lwk; S.liveWk = v === "0" ? cur : v === "next" ? addDays(cur, 7) : addDays(liveWk(), +v * 7); render(); });
   $$("[data-go]").forEach(b => b.onclick = () => { S.tab = b.dataset.go; location.hash = S.tab; render(); });
+  $$("[data-sreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideSodReq(b.dataset.sreq, b.dataset.ok === "1"); });
   $$("[data-dismiss]").forEach(b => b.addEventListener("click", e => e.stopPropagation()));
   $$("[data-dismiss]").forEach(b => b.onclick = async () => { await q(sb.from("marks").upsert({ key: b.dataset.dismiss, status: "exc", reviewed: true, note: "Dismissed on the dashboard", by_person: S.me.id, at: new Date().toISOString() })); });
   $("#imp-undismiss")?.addEventListener("click", async () => { await sb.from("marks").delete().like("key", "imp|%"); });

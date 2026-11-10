@@ -3,7 +3,7 @@
 // actual = SOD → last EOD; where a post is missing the figure is estimated (flagged).
 // Jeremy (pay_exclude) is left out.
 import { addDays, label, fmtT, toMin, nzNow, today, esc, $, toast } from "/shared/core.js";
-import { fortnight } from "/shared/score.js";
+import { fortnight, sodStart } from "/shared/score.js";
 import { S, render } from "/admin/admin.js";
 import { driverDay } from "/admin/live.js";
 
@@ -21,7 +21,7 @@ function build(from) {
       if (d > t && !r.holiday) continue;                      // future days: not worked yet
       const hrs = r.act ?? r.actEst ?? r.exp ?? 0; if (!hrs) continue;
       const isEst = r.act == null && !r.holiday; run += hrs; n++; if (isEst) est += hrs; else act += hrs;
-      const sod = r.sod ? nzNow(new Date(r.sod.sent_at)).min : null; const lastE = r.eods?.[r.eods.length - 1];
+      const sod = r.sod ? sodStart(r.sod, r.D?.start, S.C) : null; const lastE = r.eods?.[r.eods.length - 1];
       const fin = lastE ? (lastE.finish_time ? toMin(lastE.finish_time) : nzNow(new Date(lastE.sent_at)).min) : null;
       daily.push({ d, hrs, isEst, how: r.holiday ? `Public holiday (${r.hol?.name || ""})` : r.actHow, sod, fin, brk: r.brk || 0, run, runs: (r.D?.segs || []).map(x => x.shift.run).join(" + ") });
     }
