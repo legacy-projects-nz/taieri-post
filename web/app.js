@@ -204,7 +204,21 @@ function quickBar(T, n) {
     : runs.map(x => { const due = (x.en ?? x.st) + S.C.rules.eodHours * 60; const late = sod && !x.eod && n.min > due;
         return x.eod ? `<div class="qb done"><b>✓ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${fmtTime(x.eod.sent_at)}${x.eod.finish_time ? ` · finished ${fmtT(toMin(x.eod.finish_time))}` : ""}</small></div>`
           : va ? offB(`■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}`, late ? "overdue" : "not posted yet") : `<button class="btn qb ${late ? "warn" : "accent"}" data-eod="${x.shift.id}" ${sod ? "" : "disabled"}><b>■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${!sod ? "after your SOD" : late ? "overdue" : "end of run"}</small></button>`; }).join("");
-  return `<div class="qbar">${sodBtn}${eodBtns}${breakBtn(T, sod)}</div>`;
+  return `<div class="qbar">${sodBtn}${eodBtns}${breakBtn(T, sod)}</div>${runBar(T, sod, runs, va, offB)}`;
+}
+/* SOR / EOR: only for drivers on more than one run today. The first run starts with the SOD; ▶ SOR starts the next run
+   and ends the one before it; ■ EOR ends the run you're on (e.g. a gap before the next one). */
+function runBar(T, sod, runs, va, offB) {
+  if (runs.length < 2 || !sod) return "";
+  const started = (x, i) => i === 0 ? true : !!x.shift.sor_at, ended = x => !!x.shift.eor_at || !!x.eod;
+  const st = (x, i) => i === 0 ? (Date.parse(sod.sent_at) || null) : x.shift.sor_at;
+  const cur = runs.map((x, i) => ({ x, i })).filter(({ x, i }) => started(x, i) && !ended(x)).pop();
+  const nxt = runs.map((x, i) => ({ x, i })).find(({ x, i }) => !started(x, i));
+  const lab = x => esc(x.shift.run);
+  const eorB = !cur ? "" : va ? offB(`■ EOR ${lab(cur.x)}`, "run going") : `<button class="btn qb ghost" data-runmark="eor" data-shift="${cur.x.shift.id}"><b>■ EOR ${lab(cur.x)}</b><small>end of run</small></button>`;
+  const sorB = !nxt ? "" : va ? offB(`▶ SOR ${lab(nxt.x)}`, "not started") : `<button class="btn qb" data-runmark="sor" data-shift="${nxt.x.shift.id}"><b>▶ SOR ${lab(nxt.x)}</b><small>start next run${cur ? ` · ends ${lab(cur.x)}` : ""}</small></button>`;
+  const line = runs.map((x, i) => { const s = st(x, i), e = x.shift.eor_at; return s ? `<b>${lab(x)}</b> ${fmtTime(typeof s === "number" ? new Date(s).toISOString() : s)}${e ? `–${fmtTime(e)}` : ended(x) ? " ✓" : " – now"}` : ""; }).filter(Boolean).join(" · ");
+  return `${eorB || sorB ? `<div class="qbar">${eorB}${sorB}</div>` : ""}${line ? `<p class="meta" style="margin:2px 0 6px;text-align:center">${line}</p>` : ""}`;
 }
 /* Break: one button between SOD and the last EOD. Tap to start, tap again to end. */
 function breakBtn(T, sod) {
@@ -692,6 +706,10 @@ function wire() {
     toast("Photo saved ✓", "ok"); await loadAll(); render(); });
   $$("[data-pumin]").forEach(b => b.onclick = async e => { e.stopPropagation(); b.disabled = true; if (!(await puMinFee(today(), b.dataset.shift, b.dataset.pumin))) b.disabled = false; });
   $$("[data-puopen]").forEach(b => b.onclick = e => { e.stopPropagation(); logPickup({ area: puAreaOf(b.dataset.puopen), key: b.dataset.puopen, shift: b.dataset.shift }); });
+  $$("[data-runmark]").forEach(b => b.onclick = async () => { b.disabled = true; const k = b.dataset.runmark;
+    const { error } = await sb.rpc("run_mark", { p_shift: b.dataset.shift, p_kind: k });
+    if (error) { b.disabled = false; return toast(error.message, "err"); }
+    toast(k === "sor" ? "Run started ▶ (previous run ended)" : "Run ended ■ · send its EOD when you can", "ok"); await loadAll(); render(); });
   $$("[data-done]").forEach(b => b.onclick = async () => { const undo = !!b.dataset.undo; b.disabled = true; const { error } = await sb.rpc(undo ? "task_undo" : "task_done", { p_shift: b.dataset.shift, p_addon: b.dataset.done }); if (error) { b.disabled = false; toast(error.message, "err"); } else { toast(undo ? "Done undone" : "Marked done ✓ · tap again to undo", "ok"); await loadAll(); render(); } });
   $$("[data-sc]").forEach(b => b.onclick = () => { S.scSel = S.scSel === b.dataset.sc ? null : b.dataset.sc; render(); setTimeout(() => $("#scores")?.scrollIntoView({ block: "nearest" }), 0); });
   $("#leave-new")?.addEventListener("click", leaveForm);
@@ -815,7 +833,7 @@ function eodForm(shiftId, sortOnly, edit = false) {
   // ⓘ beside the boxes drivers most often get wrong: tap it to show what goes in the box
   const lb = (text, k) => `<span class="lbl">${text}<button type="button" class="ib" data-ib="${k}" aria-label="What goes in ${text}?">i</button></span>`;
   const ih = k => `<span class="ihint" data-ih="${k}" hidden>${EOD_INFO[k]}</span>`;
-  let fields = `<label class="f full">Finish time<input class="in" type="time" id="finish" value="${ex?.finish_time ? ex.finish_time.slice(0, 5) : fmt24s(n.min)}" required></label>`;
+  let fields = `<label class="f full">Finish time<input class="in" type="time" id="finish" value="${ex?.finish_time ? ex.finish_time.slice(0, 5) : shift.eor_at ? fmt24s(nzNow(new Date(shift.eor_at)).min) : fmt24s(n.min)}" required></label>`;   // EOR tap time, if they tapped it
   if (!sortOnly && !isSort(code)) {
     if (isDB) fields += `<label class="f">TGE total<input class="in" id="db_tge" inputmode="numeric" required placeholder="0" value="${tgeV}"></label><label class="f">Everything else total<input class="in" id="db_other" inputmode="numeric" required placeholder="0" value="${othV}"></label><label class="f full">${lb("Stops total", "stops")}<input class="in" id="stops" inputmode="numeric" required value="${v("stops")}">${ih("stops")}</label>${ex ? "" : `<p class="hint full" style="margin:0">TGE total is filled in from today's TGE South pick-ups (depot + customer); change it if it's not right. Type in the total for everything else.</p>`}`;
     else if (net === "tge") fields += `<label class="f">Sorting time (min)<input class="in" id="sort_min" inputmode="numeric" placeholder="e.g. 90" value="${v("sort_min")}"></label><label class="f">${lb("Delivery total", "tgeParcels")}<input class="in" id="parcels" inputmode="numeric" required value="${v("parcels")}">${ih("tgeParcels")}</label><label class="f">${lb("Jobs (stops)", "stops")}<input class="in" id="stops" inputmode="numeric" required value="${v("stops")}">${ih("stops")}</label><label class="f">Pick-up stops<input class="in" id="pickups" inputmode="numeric" value="${v("pickups")}"></label><label class="f">Pick-up parcels<input class="in" id="pickup_parcels" inputmode="numeric" value="${v("pickup_parcels")}"></label><label class="f">Next cycled<input class="in" id="cycled" inputmode="numeric" value="${v("cycled")}"></label>`;

@@ -153,6 +153,10 @@ function rpc(name, a = {}) {
     case "break_start": { if (db.breaks.some(b => !b.ended_at)) return err("You're already on a break"); const r = { id: id("brk"), shift_id: a.p_shift, driver: ME.id, started_at: nowIso(), ended_at: null }; db.breaks.push(r); save(); return { data: r, error: null }; }
     case "break_end": { const r = db.breaks.find(b => !b.ended_at); if (!r) return err("No break running"); r.ended_at = nowIso(); save(); return { data: r, error: null }; }
     case "task_done": { const s = shift(); if (!s) return err("No such shift"); (s.done ??= {})[a.p_addon] = nowIso(); save(); return { data: null, error: null }; }
+    case "run_mark": { const s = shift(); if (!s) return err("No such shift"); const t = nowIso();
+      if (a.p_kind === "sor") { if (a.p_undo) s.sor_at = null; else { s.sor_at ??= t; const prev = db.shifts.filter(x => x.driver === s.driver && x.day === s.day && x.id !== s.id && x.run !== "BU" && (x.start_at || "00:00") <= (s.start_at || "23:59") && !x.eor_at).sort((p, q) => (q.start_at || "").localeCompare(p.start_at || ""))[0]; if (prev) prev.eor_at = t; } }
+      else if (a.p_kind === "eor") s.eor_at = a.p_undo ? null : (s.eor_at ?? t);
+      save(); return { data: { ok: true }, error: null }; }
     case "task_undo": { const s = shift(); if (s?.done) delete s.done[a.p_addon]; save(); return { data: null, error: null }; }
     case "set_my_addons": { const s = shift(); if (!s) return err("No such shift"); s.addons = a.p_addons; save(); return { data: null, error: null }; }
     case "set_my_plan": { const s = shift(); if (!s) return err("No such shift"); s.plan = a.p_plan; save(); return { data: null, error: null }; }

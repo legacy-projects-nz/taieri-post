@@ -151,7 +151,9 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   if (model.floor && min < model.floor) add("Minimum top-up", `run minimum ${model.floor} min (sorting + delivery)`, model.floor - min);
   const allowed = min;
   // taken
-  const start = ov?.start_at ? toMin(ov.start_at) : ctx.sodMin ?? seg.st; const endT = ov?.end_at ? toMin(ov.end_at) : (eod?.finish_time ? toMin(eod.finish_time) : (eod ? nzNow(new Date(eod.sent_at)).min : null));
+  // SOR / EOR taps (drivers on more than one run that day) give each run its own real start and finish
+  const sorM = seg.shift.sor_at ? nzNow(new Date(seg.shift.sor_at)).min : null, eorM = seg.shift.eor_at ? nzNow(new Date(seg.shift.eor_at)).min : null;
+  const start = ov?.start_at ? toMin(ov.start_at) : ctx.sodMin ?? sorM ?? seg.st; const endT = ov?.end_at ? toMin(ov.end_at) : eorM ?? (eod?.finish_time ? toMin(eod.finish_time) : (eod ? nzNow(new Date(eod.sent_at)).min : null));
   const taken = (start != null && endT != null && endT > start) ? (endT - start) / 60 : null;
   let takenTrk = taken; if (ov?.train_day) takenTrk = 0; else if (ov?.train_min && taken) takenTrk = Math.max(0.01, taken - ov.train_min / 60);
   const brkH = ctx.brk || 0; if (brkH && takenTrk) takenTrk = Math.max(0.01, takenTrk - brkH);   // owner's unpaid breaks
