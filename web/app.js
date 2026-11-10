@@ -81,9 +81,9 @@ async function loadAllNow() {
     soft(sb.from("breaks").select("*").eq("driver", m).gte("started_at", new Date(Date.now() - 2 * 86400e3).toISOString()).order("started_at"), []),
     soft(sb.from("sod_requests").select("*").eq("driver", m).gte("day", from), []),
     soft(sb.from("hazards").select("*").is("resolved_at", null).order("created_at", { ascending: false }).limit(2000), []),
-    soft(sb.from("hazard_acks").select("*").eq("driver", m), []),
+    soft(sb.from("hazard_acks").select("*").eq("driver", m), null),
   ]);
-  S.sods = sods; S.eods = eods; S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || []; S.sodReqs = sr || []; S.hazards = hz || []; S.hzAcks = Object.fromEntries((ha || []).map(a => [a.hazard_id, a.acked_at]));
+  S.sods = sods; S.eods = eods; S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || []; S.sodReqs = sr || []; S.hazards = hz || []; S.hzAckOn = Array.isArray(ha); S.hzAcks = Object.fromEntries((ha || []).map(a => [a.hazard_id, a.acked_at]));   // confirmations only once the table exists
   setEvidence(S.shifts, S.eods);
   S.days = dayShifts(S.shifts, S.runsBy, m);
   for (const d of Object.values(S.days)) for (const x of d.segs) { x.sod = S.sods.find(s => s.shift_id === x.shift.id); x.eod = S.eods.find(e => e.shift_id === x.shift.id); x.ov = S.ovs.find(o => o.shift_id === x.shift.id); }
@@ -1037,7 +1037,7 @@ const hzRow = h => `<button class="hzrow" data-hz="${h.id}" type="button"><span 
 const hzToday = T => { const codes = new Set(T ? T.segs.map(x => x.shift.run) : []); return (S.hazards || []).filter(h => (h.runs || []).some(c => codes.has(c))); };
 /** a confirmation counts for 30 days, and only if the hazard hasn't changed since */
 const HZ_ACK_DAYS = 30;
-const hzOk = h => { const a = S.hzAcks?.[h.id]; return !!a && a >= (h.updated_at || h.created_at) && Date.now() - new Date(a) < HZ_ACK_DAYS * 86400e3; };
+const hzOk = h => { if (!S.hzAckOn) return true; const a = S.hzAcks?.[h.id]; return !!a && a >= (h.updated_at || h.created_at) && Date.now() - new Date(a) < HZ_ACK_DAYS * 86400e3; };
 async function hazardAck(ids) {
   const now = new Date().toISOString(); for (const id of ids) (S.hzAcks ||= {})[id] = now; render();
   const { error } = await sb.from("hazard_acks").upsert(ids.map(id => ({ hazard_id: id, driver: S.me.id, acked_at: now })), { onConflict: "hazard_id,driver" });
@@ -1047,7 +1047,7 @@ function hazardsCard(T) {
   const all = S.hazards || []; const today = hzToday(T).filter(h => h.severity !== "low");
   const near = lastPos ? all.filter(h => h.severity !== "low" && hzDist(h, lastPos) < 250).sort((a, b) => hzDist(a, lastPos) - hzDist(b, lastPos)) : [];
   const ord = { high: 0, medium: 1, low: 2 }; today.sort((a, b) => ord[a.severity] - ord[b.severity] || a.address.localeCompare(b.address));
-  const todo = today.filter(h => !hzOk(h)), done = today.filter(hzOk);
+  const todo = today.filter(h => !hzOk(h)), done = S.hzAckOn ? today.filter(hzOk) : [];
   const line = (h, ack) => `<div class="hzline">${hzRow(h)}${ack ? `<button class="btn sm hzack" data-hzack="${h.id}" type="button">✓ Read</button>` : `<span class="hzok" title="Confirmed">✓</span>`}</div>`;
   const runs = T ? T.segs.length > 1 ? "today's runs" : "today's run" : "";
   return `<div class="card" id="hazards" data-fold-open="${todo.length || near.length ? "1" : ""}"><h2>⚠️ Hazards<span>${todo.length ? `<b class="c-crit">${todo.length} to confirm</b>` : `${all.length} on the register`}</span></h2>
@@ -1055,7 +1055,7 @@ function hazardsCard(T) {
     ${T ? (todo.length ? `<p class="meta" style="margin:0 0 4px">Read these for ${runs} and tap ✓ Read. They come back each month and whenever one changes.</p><div class="hzlist">${todo.slice(0, S.hzMore ? 999 : 8).map(h => line(h, true)).join("")}</div>
         ${todo.length > 8 && !S.hzMore ? `<button class="btn ghost sm" id="hz-more" type="button">Show all ${todo.length}</button>` : ""}
         ${todo.length > 1 ? `<button class="btn full" id="hz-ackall" data-ids="${todo.map(h => h.id).join(",")}" type="button" style="margin-top:6px">✓ I've read all ${todo.length}</button>` : ""}`
-      : today.length ? `<p class="meta">All ${today.length} high and medium hazards on ${runs} confirmed ✓</p>` : `<p class="meta">Nothing high or medium on ${runs}.</p>`) : ""}
+      : today.length && !S.hzAckOn ? `<div class="hzlist">${today.slice(0, 8).map(hzRow).join("")}</div>` : today.length ? `<p class="meta">All ${today.length} high and medium hazards on ${runs} confirmed ✓</p>` : `<p class="meta">Nothing high or medium on ${runs}.</p>`) : ""}
     ${done.length ? `<details style="margin-top:6px"><summary class="meta">Confirmed (${done.length})</summary><div class="hzlist" style="margin-top:6px">${done.map(h => line(h, false)).join("")}</div></details>` : ""}
     <div class="row" style="margin-top:8px"><button class="btn warn" id="hz-new" type="button">⚠️ Report a hazard</button><button class="btn ghost" id="hz-all" type="button">🔎 Search all</button></div>
     <p class="hint" style="margin:6px 0 0">If it doesn't feel right, don't do it. Card it and report it.</p></div>`;
