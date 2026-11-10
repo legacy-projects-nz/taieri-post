@@ -161,7 +161,7 @@ export function teamStats(rg) {
   return { n: ss.length, team: k => avg(real.map(s => s[k])) };
 }
 export function wireRange() { $$("[data-tsr]").forEach(b => b.onclick = () => { S.tsRange = b.dataset.tsr; render(); }); }
-export const scoreData = () => S._sd ||= ({ shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, ovs: S.ovs, runsBy: S.runsBy, breaks: S.breaks || [], effBreakFor: (S.people || []).filter(p => p.pay_exclude).map(p => p.id) });   // owner (Jeremy): unpaid breaks come off the time taken for efficiency
+export const scoreData = () => S._sd ||= ({ shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, ovs: S.ovs, runsBy: S.runsBy, breaks: S.breaks || [], effBreakFor: (S.people || []).filter(p => p.pay_exclude).map(p => p.id) });   // unpaid breaks come off efficiency time for everyone; the owner (Jeremy) also before 9 Nov
 
 /* ================= LIVE ================= */
 function liveTab() {

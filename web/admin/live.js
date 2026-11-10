@@ -190,7 +190,7 @@ export function sickHours(drv, d, sk) {
   const avg = hs.length ? hs.reduce((a, b) => a + b, 0) / hs.length : 0; return Math.round(Math.max(avg, rost) * 100) / 100;
 }
 // minutes of finished unpaid breaks a driver took on a day (NZ date). Only breaks from 2:48pm Mon 9 Nov 2026 on are taken off hours; earlier ones stay as they were.
-// Everyone's breaks are unpaid, Jeremy's included. Efficiency is never affected: it still uses the full SOD → EOD time.
+// Everyone's breaks are unpaid, Jeremy's included (from 9 Nov 2026). They come off paid hours here and off efficiency time (score.js ownerBreakHrs).
 const UNPAID_FROM = Date.parse("2026-11-09T01:48:00Z");
 export function breakMins(id, d) { return (S.breaks || []).filter(b => b.driver === id && b.ended_at && Date.parse(b.started_at) >= UNPAID_FROM && nzNow(new Date(b.started_at)).date === d).reduce((a, b) => a + Math.max(0, (Date.parse(b.ended_at) - Date.parse(b.started_at)) / 60000), 0); }
 export function driverDay(drv, d) {
@@ -203,7 +203,7 @@ export function driverDay(drv, d) {
   const runSegs = D.segs.filter(x => !x.sort); const sod = D.segs.map(x => S.sodBy[x.shift.id]).find(Boolean); const eods = runSegs.map(x => S.eodBy[x.shift.id]).filter(Boolean);
   const sortRost = D.segs.filter(x => x.sort).reduce((a, x) => a + x.min, 0);   // sort minutes not already covered by a run (no hour counted twice)
   let exp = 0, est = false, train = 0; const effRows = [];
-  runSegs.forEach((x, i) => { const ov = S.ovs.find(o => o.shift_id === x.shift.id); const eod = S.eodBy[x.shift.id]; const c = effCalc(x, eod, ov, S.C, S.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? sodStart(sod, D.start, S.C) : null, brk: drv.pay_exclude ? ownerBreakHrs(S.breaks, x.shift.id) : 0 });
+  runSegs.forEach((x, i) => { const ov = S.ovs.find(o => o.shift_id === x.shift.id); const eod = S.eodBy[x.shift.id]; const c = effCalc(x, eod, ov, S.C, S.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? sodStart(sod, D.start, S.C) : null, brk: ownerBreakHrs(S.breaks, x.shift.id, !!drv.pay_exclude) });
     if (!c) { exp += x.min / 60; est = true; return; }                       // no formula for this run yet → rostered length, flagged as an estimate
     effRows.push({ d, drv, x, eod, ov, c }); if (c.trainDay) { train += c.taken || 0; return; } exp += c.allowed / 60; if (!eod || c.est) est = true; if (ov?.train_min) train += ov.train_min / 60; });
   if (!runSegs.length) { exp = D.hours; est = !D.segs.some(x => S.eodBy[x.shift.id]); }     // sort-only day

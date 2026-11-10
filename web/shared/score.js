@@ -114,8 +114,10 @@ export function evidenceFor(code, day) { if (!EVID?.[code]) return null; const d
 export const evidence = () => EVID;
 
 /* ---- Efficiency ---- */
-/** Hours of finished unpaid breaks on one shift — counted off efficiency time for the owner (Jeremy) only. */
-export function ownerBreakHrs(breaks, shiftId) { return (breaks || []).filter(b => b.shift_id === shiftId && b.ended_at).reduce((a, b) => a + Math.max(0, (Date.parse(b.ended_at) - Date.parse(b.started_at)) / 3600e3), 0); }
+/** Breaks are unpaid from this moment (9 Nov 2026) — they come off paid hours and efficiency time from then on. */
+export const UNPAID_BREAKS_FROM = Date.parse("2026-11-09T01:48:00Z");
+/** Hours of finished unpaid breaks on one shift, taken off efficiency time for everyone. all = also count breaks before 9 Nov (the owner, Jeremy, always had his taken off). */
+export function ownerBreakHrs(breaks, shiftId, all = false) { return (breaks || []).filter(b => b.shift_id === shiftId && b.ended_at && (all || Date.parse(b.started_at) >= UNPAID_BREAKS_FROM)).reduce((a, b) => a + Math.max(0, (Date.parse(b.ended_at) - Date.parse(b.started_at)) / 3600e3), 0); }
 export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   const code = seg.shift.run, model = C.effSimple[code]; if (!model) return null;
   const net = model.net || NET(code); const g = []; const parts = []; const ev = evidenceFor(code, seg.shift.day);
@@ -201,7 +203,7 @@ function scoreForRaw(driver, from, to, D, C) {
   const safeE = ents.filter(e => e.safety_pct != null); const safe = safeE.length ? safeE.reduce((a, e) => a + (+e.safety_pct), 0) / safeE.length : 100;
   // efficiency
   const effDays = [];
-  const own = (D.effBreakFor || []).includes(driver);   // owner: unpaid breaks come off the time taken (drivers keep the full SOD → EOD time)
+  const own = (D.effBreakFor || []).includes(driver);   // unpaid breaks come off the time taken for everyone; the owner also from before 9 Nov
   for (const d of Object.values(days)) {
     if (d.day < C.rules.effStart) continue;
     const manual = ents.find(e => e.kind === "eff" && e.day === d.day && e.eff_pct != null);
@@ -209,7 +211,7 @@ function scoreForRaw(driver, from, to, D, C) {
     const runs = d.segs.filter(x => !x.sort); if (!runs.length) continue;
     const sortRost = d.segs.filter(x => x.sort).reduce((a, x) => a + x.min, 0);   // sort minutes not already covered by a run
     const sod = d.segs.map(x => D.sods.find(s => s.shift_id === x.shift.id)).find(Boolean);
-    const rows = runs.map((x, i) => { const eod = D.eods.find(e => e.shift_id === x.shift.id), ov = D.ovs?.find(o => o.shift_id === x.shift.id); const c = effCalc(x, eod, ov, C, D.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? sodStart(sod, d.start, C) : null, brk: own ? ownerBreakHrs(D.breaks, x.shift.id) : 0 }); if (c) { c.shift = x.shift; c.eod = eod; c.ov = ov; } return c; }).filter(Boolean);
+    const rows = runs.map((x, i) => { const eod = D.eods.find(e => e.shift_id === x.shift.id), ov = D.ovs?.find(o => o.shift_id === x.shift.id); const c = effCalc(x, eod, ov, C, D.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? sodStart(sod, d.start, C) : null, brk: ownerBreakHrs(D.breaks, x.shift.id, own) }); if (c) { c.shift = x.shift; c.eod = eod; c.ov = ov; } return c; }).filter(Boolean);
     const live = rows.filter(r => !r.trainDay);
     if (live.length && live.every(r => r.perf != null && !r.need.length)) { const A = live.reduce((a, r) => a + r.allowed, 0) / 60, T = live.reduce((a, r) => a + r.takenTrk, 0); const v = Math.max(0, Math.min(150, C.rules.effMethod === "tdt" ? (2 - T / A) * 100 : A / T * 100)); effDays.push({ day: d.day, v, est: live.some(r => r.est), rows, allowed: A, taken: T }); }
     else if (d.day <= today()) effDays.push({ day: d.day, pending: true, need: rows.filter(r => r.need.length).map(r => `${r.code}: ${r.need.join(", ")}`).join("; "), rows });

@@ -78,7 +78,7 @@ async function loadAllNow() {
     soft(sb.from("pickups").select("*").eq("driver", m).gte("day", t.slice(0, 7) + "-01").order("day", { ascending: false }).limit(40), []),
     soft(sb.from("access_info").select("body,updated_at").eq("id", 1).maybeSingle(), null),
     soft(sb.from("van_washes").select("*").gte("at", new Date(Date.now() - 60 * 86400e3).toISOString()).order("at", { ascending: false }).limit(300), []),
-    soft(sb.from("breaks").select("*").eq("driver", m).gte("started_at", new Date(Date.now() - 2 * 86400e3).toISOString()).order("started_at"), []),
+    soft(sb.from("breaks").select("*").eq("driver", m).gte("started_at", new Date(from + "T00:00:00+13:00").toISOString()).order("started_at"), []),   // whole score window: unpaid breaks come off efficiency time
     soft(sb.from("sod_requests").select("*").eq("driver", m).gte("day", from), []),
     soft(sb.from("hazards").select("*").is("resolved_at", null).order("created_at", { ascending: false }).limit(2000), []),
     soft(sb.from("hazard_acks").select("*").eq("driver", m), null),
@@ -458,7 +458,7 @@ function scoreRanges() { // this week (Mon–Sun) and this month, side by side
   return { week: { from: mon, to: addDays(mon, 6), l: "This week" }, month: { from: first, to: d.toISOString().slice(0, 10), l: "This month" } };
 }
 function scoresCard() {
-  const RG = scoreRanges(); const D = { shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, runsBy: S.runsBy, ovs: S.ovs };
+  const RG = scoreRanges(); const D = dataFor();
   const SC = { week: scoreFor(S.me.id, RG.week.from, RG.week.to, D, S.C), month: scoreFor(S.me.id, RG.month.from, RG.month.to, D, S.C) };
   S.sc = SC.month; S.F = RG.month; S.SC = SC; S.RG = RG;                       // To fix and the day sheets read the month (it covers the week)
   const [selK, selR] = (S.scSel || "").split("|");
@@ -474,7 +474,7 @@ function scoresCard() {
     ${selK && SC[selR] ? `<div class="meta mono" style="text-transform:uppercase">${RG[selR].l} · ${label(RG[selR].from)} – ${label(RG[selR].to)}</div>${scoreDetail(SC[selR], selK)}` : ""}
     ${historyBlock()}</div>`;
 }
-function dataFor() { return { shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, runsBy: S.runsBy, ovs: S.ovs }; }
+function dataFor() { return { shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, runsBy: S.runsBy, ovs: S.ovs, breaks: S.breaks || [], effBreakFor: S.me.pay_exclude ? [S.me.id] : [] }; }
 function scoreAt(from, to) { return scoreFor(S.me.id, from, to, dataFor(), S.C); }
 function historyBlock() {
   const t = today(); const weeks = Array.from({ length: 6 }, (_, i) => addDays(monOf(t), -7 * i)).map(w => ({ w, s: scoreAt(w, addDays(w, 6)) })).filter(x => x.s.closed || x.s.effDays.length || x.s.accDays.length);
