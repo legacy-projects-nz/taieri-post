@@ -707,7 +707,8 @@ function eodForm(shiftId, sortOnly, edit = false) {
   const shift = S.shifts.find(s => s.id === shiftId); const code = shift.run; const net = NET(code); const n = nzNow();
   const ex = edit ? S.eods.find(e => e.shift_id === shiftId) : null;   // editing the EOD already sent (same day or the day after)
   // Pick-up runs (e.g. D>B): pre-fill the parcel figure from the pick-up totals logged that day for this run's pick-up areas
-  const puAreas = (shift.addons || []).map(puAreaOf).filter(Boolean);
+  // D>B counts only TGE South and Owaka (depot + customer pick-ups); Lawrence and Balclutha stay out
+  const puAreas = code === "DB" ? ["South", "Owaka"] : (shift.addons || []).map(puAreaOf).filter(Boolean);
   const puTot = (S.pickups || []).filter(r => r.day === shift.day && r.driver === shift.driver && r.min_fee == null && puAreas.includes(r.area)).reduce((a, r) => a + (r.small || 0) + (r.large || 0), 0);
   const puKey = net === "tge" ? "pickup_parcels" : "parcels";
   const v = k => ex && ex[k] != null ? String(ex[k]) : (k === puKey && puTot ? String(puTot) : "");
@@ -720,7 +721,7 @@ function eodForm(shiftId, sortOnly, edit = false) {
     else fields += `<label class="f">Sorting time (min)<input class="in" id="sort_min" inputmode="numeric" placeholder="e.g. 90" value="${v("sort_min")}"></label><label class="f">Total parcels<input class="in" id="parcels" inputmode="numeric" required value="${v("parcels")}"></label><label class="f">Stops<input class="in" id="stops" inputmode="numeric" required value="${v("stops")}"></label><label class="f">Mail trays<input class="in" id="trays" inputmode="decimal" placeholder="e.g. 1 or 0.5" value="${v("trays")}"></label><label class="f">Sorted parcels?${yn("sorted_parcels")}</label><label class="f">Sorted mail?${yn("sorted_mail")}</label>${PICKUP_RUNS.includes(code) ? `<label class="f">NZC / PH pick-up?${yn("nzc_ph")}</label>` : ""}<label class="f">Next cycled<input class="in" id="cycled" inputmode="numeric" value="${v("cycled")}"></label>`;
     if (legs.length) fields += `<div class="full"><div class="meta mono" style="margin-bottom:6px">ADD-ON LEGS YOU DID</div><div class="row">${legs.map(l => `<label class="chk ${legOn(l) ? "on" : ""}"><input type="checkbox" name="leg" value="${l}" ${legOn(l) ? "checked" : ""}>${esc(addName(l))}</label>`).join("")}</div></div>`;
     if (newsRun) fields += `<label class="chk full ${ex?.newspapers ? "on" : ""}"><input type="checkbox" id="news" ${ex?.newspapers ? "checked" : ""}>Newspapers done today (once a week, ${S.C.news.byRun?.[code] ?? S.C.news.min} min allowed)</label>`;
-    if (puTot && !(ex && ex[puKey] != null)) fields += `<p class="hint full" style="margin:0">${net === "tge" ? "Pick-up parcels" : "Total parcels"} filled in from your pick-up totals today (${puTot}). Change it if that's not right.</p>`;
+    if (puTot && !(ex && ex[puKey] != null)) fields += `<p class="hint full" style="margin:0">${net === "tge" ? "Pick-up parcels" : "Total parcels"} filled in from your pick-up totals today (${puTot}${code === "DB" ? ": TGE South + Owaka" : ""}). Change it if that's not right.</p>`;
   } else fields += `<label class="f full">Sorting time (min)<input class="in" id="sort_min" inputmode="numeric" placeholder="e.g. 100" value="${v("sort_min")}"></label>`;
   // NZ Post runs: the runsheet photo is a standing task that has to be done before the EOD, so the form won't send until it's ticked (and ticking it marks the task done)
   const needRs = !ex && !sortOnly && !isSort(code) && !shift.done?.tw_twrunsheet && rulesFor({ shift }, shift.day).some(r => r.addon === "tw_twrunsheet");
