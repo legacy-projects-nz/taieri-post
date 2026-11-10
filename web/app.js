@@ -331,7 +331,13 @@ function todayCard(T, N, n) {
       const sodBtn = !sodSeg ? `<p class="hint">No SOD yet — tap <b>SOD</b> at the top when you start.</p>`
         : `<div class="row"><div class="meta c-ok">✓ SOD ${fmtTime(sodSeg.sod.sent_at)}${sodSeg.sod.van ? ` · ${esc(sodSeg.sod.van)}` : ""}${sodSeg.sod.edited_at ? " (edited)" : ""}</div>${allEod ? "" : `<button class="btn ghost sm" id="sod-edit" data-shift="${sodSeg.shift.id}">Edit SOD</button>`}</div>${sodReqLine(T)}`;
       const sortOnly = !T.segs.some(x => !x.sort) && sodSeg && !allEod;
-      return `<div class="card today"><h2>Today<span>${label(T.day)}</span></h2><div class="big bigrow"><span>${fmtT((left[0] || T.segs[0]).st)}–${fmtT(T.end)}</span>${vanChips(T)}</div>${left.length === T.segs.length ? `<div class="meta" style="margin-top:-4px">${T.hours} h rostered</div>` : ""}
+      // once the day has started (SOD in), Today shrinks to two rows; tap to see the full day again
+      if (sodSeg && !S.todayFull) { const cur = left[0] || T.segs[T.segs.length - 1]; const nxt = left[1];
+        const nm = x => x.sort ? (S.runsBy[x.shift.run]?.label || "Sort") : x.shift.run;
+        return `<div class="card today tdmini" id="today-mini" role="button" tabindex="0" aria-expanded="false" title="Tap for the full day">
+          <div class="tdr1"><b>Today</b><span class="big">${fmtT((left[0] || T.segs[0]).st)}–${fmtT(T.end)}</span>${vanChips(T)}<i class="fchev" aria-hidden="true"></i></div>
+          <div class="tdr2 meta"><span class="c-ok">✓ SOD ${fmtTime(sodSeg.sod.sent_at)}</span> · now <b>${esc(nm(cur))}</b> till ${fmtT(cur.en)}${nxt ? ` · next <b>${esc(nm(nxt))}</b> ${fmtT(nxt.st)}` : ""}${S.locOn ? " · 📍" : ""}</div></div>`; }
+      return `<div class="card today${sodSeg ? " " : ""}" ${sodSeg ? `id="today-full"` : ""}><h2>Today<span>${label(T.day)}${sodSeg ? ` <button class="btn ghost sm" id="today-less" type="button" style="min-height:28px;padding:2px 10px">Less ▴</button>` : ""}</span></h2><div class="big bigrow"><span>${fmtT((left[0] || T.segs[0]).st)}–${fmtT(T.end)}</span>${vanChips(T)}</div>${left.length === T.segs.length ? `<div class="meta" style="margin-top:-4px">${T.hours} h rostered</div>` : ""}
         ${sodBtn}${(left.length ? left : T.segs).map(x => segRow(x, T.day, n, true, false)).join("")}
         ${S.locOn ? `<p class="hint">📍 Sharing your location with the depot until your EOD.</p>` : ""}</div>`;
     }
@@ -695,6 +701,9 @@ function wire() {
   $("#vchk-btn")?.addEventListener("click", vehicleCheckForm);
   $("#wash-btn")?.addEventListener("click", () => vanWashForm());
   $("#hz-new")?.addEventListener("click", () => hazardForm());
+  const tdOpen = e => { if (e.type === "keydown" && e.key !== "Enter" && e.key !== " ") return; if (e.target.closest("a, input, select") || (e.target.closest("button") && e.target.closest("button").id !== "today-mini")) return; e.preventDefault(); S.todayFull = true; render(); };
+  $("#today-mini")?.addEventListener("click", tdOpen); $("#today-mini")?.addEventListener("keydown", tdOpen);
+  $("#today-less")?.addEventListener("click", () => { S.todayFull = false; render(); });
   $("#hz-all")?.addEventListener("click", () => hazardList());
   $$("[data-hzack]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); hazardAck([b.dataset.hzack]); }));
   $("#hz-ackall")?.addEventListener("click", e => hazardAck(e.currentTarget.dataset.ids.split(",")));

@@ -154,3 +154,10 @@ hr.gl{display:none}
 .tkd b{font-size:13px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .tkd small{font-size:11px;color:var(--ok);font-weight:700;line-height:1.1}
 .tkd:disabled{cursor:default;opacity:1}
+/* Today, once started: two rows */
+.tdmini{cursor:pointer;gap:2px;padding-top:10px;padding-bottom:10px}
+.tdmini .tdr1{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;min-width:0}
+.tdmini .tdr1 .tag,.tdmini .tdr1 .vchip{font-size:13px;padding:2px 8px;min-height:0}.tdmini .tdr1>*:not(.fchev){flex:0 1 auto;min-width:0}
+.tdmini .tdr1 .big{font-size:20px;font-weight:800;margin:0}
+.tdmini .tdr1 .fchev{margin-left:auto;position:static}
+.tdmini .tdr2{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
