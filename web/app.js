@@ -1,5 +1,5 @@
 // Taieri Post · driver app
-import { DEMO, sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, longLabel, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, enablePush, pushState, nzToIso, settings as loadSettings, signOut } from "/shared/core.js";
+import { DEMO, sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, longLabel, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, enablePush, pushState, nzToIso, settings as loadSettings, signOut, errCtx, reportError } from "/shared/core.js";
 import { requireUser } from "/shared/auth.js";
 import { VAPID_PUBLIC } from "/shared/config.js";
 import { resetDemo, newRuns } from "/shared/demo.js";
@@ -15,16 +15,22 @@ S.open = {};   // which folded boxes are open this visit (not saved: everything 
   try { S.me = await requireUser(app); } catch { return; }
   // office staff who don't drive (e.g. fleet) have no driver portal: send them to the owner portal
   if (S.me.role !== "driver" && S.me.role !== "owner" && !S.me.can("scorecard")) { location.replace("/admin/"); return; }
-  await viewAs();
-  await loadAll();
+  errCtx({ app: "driver", person: S.me.id });
+  // first load: if the connection drops, say so and keep trying instead of sitting on "Loading…"
+  for (let i = 0; ; i++) {
+    try { await viewAs(); await loadAll(); break; }
+    catch (e) { reportError("boot", e);
+      app.innerHTML = `<div class="wrap"><div class="top"><div><div class="brand">Taieri Post · driver portal</div><h1>Can't connect</h1></div></div><div class="card"><p>The app can't reach Taieri Post right now. Check your signal. It will keep trying on its own.</p><button class="btn" id="boot-retry">Try again now</button></div></div>`;
+      await new Promise(r => { const t = setTimeout(r, Math.min(30000, 4000 * (i + 1))); const bt = $("#boot-retry"); if (bt) bt.onclick = () => { clearTimeout(t); bt.disabled = true; bt.textContent = "Trying…"; r(); }; }); }
+  }
   render();
-  window.addEventListener("hashchange", async () => { await viewAs(); await loadAll(); render(); });
-  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons", "breaks", "van_washes", "sod_requests"], debounce(async () => { await loadAll(); render(); }, 400), "drv");
-  setInterval(render, 60000);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadAll().then(render); } });
+  window.addEventListener("hashchange", async () => { try { await viewAs(); await loadAll(); render(); } catch (e) { reportError("viewas", e); toast("Couldn't load that just now. Try again.", "err"); } });
+  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons", "breaks", "van_washes", "sod_requests"], debounce(async () => { await loadAll(); render(true); }, 400), "drv");
+  setInterval(() => render(true), 60000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadAll().then(() => render(true)); } });
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => { });
   // pick up new versions without a manual refresh: compare app.js's ETag now and whenever the app comes back to the front
-  let tag = null; const ver = async () => { try { const r = await fetch("/app.js", { method: "HEAD", cache: "no-store" }); const t = r.headers.get("etag") || r.headers.get("last-modified"); if (!t) return; if (tag && t !== tag && !document.querySelector(".sheet-bg")) location.reload(); tag = tag || t; } catch { } };
+  let tag = null; const ver = async () => { try { const ts = await Promise.all(["/app.js", "/shared/core.js", "/shared/score.js"].map(async u => { const r = await fetch(u, { method: "HEAD", cache: "no-store" }); return r.ok ? (r.headers.get("etag") || r.headers.get("last-modified") || "") : null; })); if (ts.some(x => !x)) return; const t = ts.join("|"); const typing = document.activeElement?.matches?.("input:not([type=checkbox]):not([type=radio]),textarea,select"); if (tag && t !== tag && !document.querySelector(".sheet-bg") && !typing) location.reload(); tag = tag || t; } catch { } };
   // overdue alert: beep (and buzz) every 5 minutes while the app is open and something is still overdue
   let actx = null, lastBeep = 0; const unlock = () => { try { actx ||= new (window.AudioContext || window.webkitAudioContext)(); actx.resume?.(); } catch { } };
   ["click", "touchstart", "keydown"].forEach(ev => document.addEventListener(ev, unlock, { passive: true }));
@@ -33,7 +39,18 @@ S.open = {};   // which folded boxes are open this visit (not saved: everything 
   ver(); setInterval(ver, 300000); document.addEventListener("visibilitychange", () => { if (!document.hidden) ver(); });
 })();
 
-async function loadAll() {
+// One load at a time: a request that arrives while one is running makes it run once more, so nobody ends up with older data on top of newer.
+// If a load fails after the app is up, what's on screen stays, a "no connection" line shows, and it retries on its own (5 s, 10 s, 20 s … up to a minute).
+let _load = null, _again = false, _retryN = 0, _retryT = null;
+function loadAll() {
+  if (_load) { _again = true; return _load; }
+  _load = (async () => {
+    try { do { _again = false; await loadAllNow(); } while (_again); S.loadErr = null; S.loadedAt = Date.now(); _retryN = 0; clearTimeout(_retryT); }
+    catch (e) { S.loadErr = e; reportError("load", e); if (!S.loadedAt) throw e; clearTimeout(_retryT); _retryT = setTimeout(() => loadAll().then(() => render(true)), Math.min(60000, 5000 * 2 ** _retryN++)); }
+  })().finally(() => { _load = null; });
+  return _load;
+}
+async function loadAllNow() {
   const m = S.me.id; const t = today(); const from = addDays(monOf(t), -56), to = addDays(monOf(t), 13);
   const [set, runs, vans, addons, rules, people, shifts, changes, acks, msgs, leave, alerts, entries, marks, feed, vchk] = await Promise.all([
     loadSettings(), q(sb.from("runs").select("*")), q(sb.from("vans").select("*")), q(sb.from("addons").select("*")), q(sb.from("timing_rules").select("*").eq("active", true)),
@@ -117,7 +134,15 @@ function demoBar() {
 
 /* ================= render ================= */
 const pair = (a, b) => a && b ? `<div class="pair">${a}${b}</div>` : (a || b || "");   // two boxes across wherever both exist, on phones too
-function render() {
+// A part of the page that fails to draw shows a short note instead of taking the whole page down (and the error is logged).
+const part = (name, fn) => { try { return fn() ?? ""; } catch (e) { reportError("render:" + name, e); return `<div class="card"><h2>${name}</h2><p class="hint">This part couldn't be shown just now. The rest of the app still works, and Jeremy has been told.</p></div>`; } };
+// bg = a background refresh (the minute timer, a live update, the app coming back to the front): it waits while someone is typing on the page so nothing typed is lost
+function render(bg) {
+  if (bg === true) { const a = document.activeElement; if (a && app.contains(a) && a.matches("input:not([type=checkbox]):not([type=radio]),textarea,select")) { clearTimeout(render._t); render._t = setTimeout(() => render(true), 4000); return; } }
+  try { renderNow(); }
+  catch (e) { reportError("render", e); if (!app.querySelector(".card")) app.innerHTML = `<div class="wrap"><div class="top"><div><div class="brand">Taieri Post · driver portal</div><h1>Something went wrong</h1></div></div><div class="card"><p>The app hit a problem showing this page. Jeremy has been told.</p><button class="btn" onclick="location.reload()">Reload</button></div></div>`; }
+}
+function renderNow() {
   const n = nzNow(); const t = n.date; const name = first(S.me.name);
   const greet = n.min < 720 ? "Morning" : n.min < 1020 ? "Hi" : "Evening";
   const T = S.days[t];
@@ -125,27 +150,28 @@ function render() {
   app.innerHTML = `<div class="wrap">
     ${demoBar()}${viewBar()}
     <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
-    ${quickBar(T, n)}
-    ${todayCard(T, nextDay, n)}
-    ${addonsCard(T, nextDay, n)}
-    ${rosterChanges(n)}
-    ${alertsCard()}
-    ${messagesCard()}
-    ${scoresCard()}
-    ${pickupsCard(T)}
+    ${S.loadErr ? `<p class="hint" style="margin:0 0 8px;color:var(--crit)">No connection. Showing what loaded at ${fmtT(nzNow(new Date(S.loadedAt)).min)}. Trying again on its own.</p>` : ""}
+    ${part("SOD / EOD", () => quickBar(T, n))}
+    ${part("Today", () => todayCard(T, nextDay, n))}
+    ${part("Today's tasks", () => addonsCard(T, nextDay, n))}
+    ${part("Roster changes", () => rosterChanges(n))}
+    ${part("Alerts", () => alertsCard())}
+    ${part("Messages", () => messagesCard())}
+    ${part("My scores", () => scoresCard())}
+    ${part("Parcel pick-ups", () => pickupsCard(T))}
     <div class="folds">
-    ${nextShiftCard(nextDay, n)}
-    ${pair(vanCard(T, null), shiftsCard(t))}
-    ${pair(toFixCard(n), fromJeremy())}
-    ${pair(leaveCard(), detailsCard())}
-    ${calendarCard(t)}
-    ${moreCard()}
-    ${accessCard()}
+    ${part("Next shift", () => nextShiftCard(nextDay, n))}
+    ${pair(part("My van", () => vanCard(T, null)), part("My shifts", () => shiftsCard(t)))}
+    ${pair(part("To fix", () => toFixCard(n)), part("Notes from Jeremy", () => fromJeremy()))}
+    ${pair(part("Leave", () => leaveCard()), part("My details", () => detailsCard()))}
+    ${part("Calendar", () => calendarCard(t))}
+    ${part("More", () => moreCard())}
+    ${part("Passwords & logins", () => accessCard())}
     </div>
     <p class="foot">Shift or score looks wrong? Message Jeremy.<br>Signed in as ${esc((S.viewer || S.me).email || "")}</p>
   </div>`;
-  folds();
-  wire();
+  try { folds(); } catch (e) { reportError("folds", e); }
+  try { wire(); } catch (e) { reportError("wire", e); }
 }
 
 /* ---------- collapsible boxes: Next shift and everything below it (plus Parcel pick-ups) are one row until tapped ---------- */

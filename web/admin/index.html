@@ -66,6 +66,11 @@
 <body class="wide">
 <div id="app"><div class="wrap"><div class="top"><div><div class="brand">Taieri Ops</div><h1>Loading…</h1></div></div></div></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+// If the app hasn't started after 12 seconds (no signal, or a file didn't load), say so and offer a retry instead of sitting on "Loading…"
+setTimeout(function () { var h = document.querySelector("#app h1"); if (!h || h.textContent !== "Loading…") return; h.textContent = "Still loading…";
+  var p = document.createElement("div"); p.className = "card"; p.innerHTML = '<p>This is taking longer than normal. Check your signal, then try again.</p><button class="btn" onclick="location.reload()">Try again</button>'; (document.querySelector("#app .wrap") || document.body).appendChild(p); }, 12000);
+</script>
 <script type="module" src="/admin/admin.js"></script>
 </body>
 </html>

@@ -5,7 +5,32 @@ import { isDemo, demoClient } from "./demo.js";
 
 // Demo profile (made-up driver, data kept only in this browser) swaps in a pretend client; everything else talks to Supabase
 export const DEMO = isDemo();
-export const sb = DEMO ? demoClient() : createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" } });
+// Every request to Supabase goes through this, so the app knows when a save is still on its way (used by the double-tap guard below)
+let _writes = 0;
+const trackedFetch = (input, init) => { const m = String(init?.method || (typeof input === "object" && input?.method) || "GET").toUpperCase(); const url = typeof input === "string" ? input : input?.url || "";
+  if (m === "GET" || m === "HEAD" || url.includes("/auth/v1/")) return fetch(input, init);
+  _writes++; return fetch(input, init).finally(() => { _writes = Math.max(0, _writes - 1); }); };
+export const sb = DEMO ? demoClient() : createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" }, global: { fetch: trackedFetch } });
+
+/* ---------- Stability ---------- */
+// Error log: anything that goes wrong on someone's phone (a failed load, a part of the page that could not be drawn, an unexpected crash)
+// is written to client_errors so it can be seen and fixed. At most 12 a visit, each different error once.
+const _ctx = { app: "", person: null }; let _errN = 0; const _errSeen = new Set();
+export function errCtx(o) { Object.assign(_ctx, o); }
+export function reportError(kind, err, detail) {
+  try { const msg = String(err?.message || err || "").slice(0, 500); const key = kind + "|" + msg; if (!msg || _errSeen.has(key) || _errN >= 12) return; _errSeen.add(key); _errN++;
+    console.warn("[tp error]", kind, err);
+    if (DEMO) return;
+    sb.from("client_errors").insert({ person: _ctx.person, app: _ctx.app, kind: String(kind).slice(0, 60), message: msg, stack: String(err?.stack || "").slice(0, 2000), url: location.pathname + location.hash, ua: navigator.userAgent.slice(0, 200), detail: detail ?? null }).then(() => { }, () => { });
+  } catch { }
+}
+window.addEventListener("error", e => reportError("error", e.error || e.message, { src: String(e.filename || "").slice(-80), line: e.lineno }));
+window.addEventListener("unhandledrejection", e => reportError("promise", e.reason));
+// Double-tap guard: a form that is being saved, or a button whose save is still on its way, ignores more taps until the save has finished
+// (on a slow connection people tap Save again, which used to store the same entry several times).
+function lockWhileSaving(el, min) { el._tpLock = true; const t0 = Date.now(); const tick = () => { const dt = Date.now() - t0; if (dt >= 20000 || (dt >= min && _writes === 0) || !el.isConnected) { el._tpLock = false; return; } setTimeout(tick, 150); }; setTimeout(tick, min); }
+document.addEventListener("submit", e => { const f = e.target; if (!(f instanceof HTMLFormElement)) return; if (f._tpLock) { e.preventDefault(); e.stopImmediatePropagation(); return; } lockWhileSaving(f, 600); }, true);
+document.addEventListener("click", e => { const b = e.target?.closest?.("button"); if (!b || (b.type === "submit" && b.form)) return; if (b._tpLock && _writes > 0) { e.preventDefault(); e.stopImmediatePropagation(); return; } if (!b._tpLock) lockWhileSaving(b, 300); }, true);
 
 /* ---------- NZ time ---------- */
 const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
