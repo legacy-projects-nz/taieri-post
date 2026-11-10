@@ -81,14 +81,15 @@ async function loadAllNow() {
 }
 
 const TABS = [["live", "Live", "scorecard"], ["runboard", "Run Board", "roster"], ["classic", "Run Board (classic)", "roster"], ["scorecard", "Scorecard", "scorecard"], ["fix", "Fix posts", "scorecard"], ["routes", "Routes", "alerts"], ["allowances", "Allowances", "roster"], ["pickups", "Pick-ups", "roster"], ["alerts", "Alerts", "alerts"], ["messages", "Messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"], ["pay", "Penalties & pay", "people"]];
-/* collapsible boxes: on every tab, every box after the first starts collapsed; tap its heading to open. Open/closed is kept while the page is open. */
+/* collapsible boxes: on every tab, every box after the first starts collapsed; tap its heading to open. Open/closed is kept while the page is open.
+   "Right now" (id rightnow) can be collapsed too, wherever it sits, but starts open. */
 S.open ??= {};
 function folds() {
   const cards = $$("#view .card").filter(c => !c.parentElement.closest(".card"));
   cards.forEach((c, i) => {
-    if (i === 0) return; const h = c.querySelector(":scope > h2"); if (!h) return;
+    if (i === 0 && c.id !== "rightnow") return; const h = c.querySelector(":scope > h2"); if (!h) return;
     const key = S.tab + "|" + (c.id || [...h.childNodes].filter(x => x.nodeType === 3).map(x => x.textContent).join("").trim() || i);
-    if (!(key in S.open)) S.open[key] = false;
+    if (!(key in S.open)) S.open[key] = c.id === "rightnow";
     c.classList.add("fold"); c.classList.toggle("shut", !S.open[key]);
     h.setAttribute("role", "button"); h.tabIndex = 0; h.setAttribute("aria-expanded", String(!!S.open[key]));
     const ch = document.createElement("i"); ch.className = "fchev" + (h.querySelector(":scope > span") ? "" : " solo"); ch.setAttribute("aria-hidden", "true"); h.appendChild(ch);
