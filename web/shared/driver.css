@@ -131,3 +131,9 @@ hr.gl{display:none}
 .card.fold.shut>h2>span:has(button){display:none}
 .card.fold.shut>h2>span:has(button)+.fchev{margin-left:auto}
 @media (hover:hover){.card.fold.shut:hover{box-shadow:0 0 0 1px var(--line),var(--shadow)}}
+
+/* ⓘ info buttons on form labels (EOD): tap to show what goes in the box */
+.lbl{display:flex;align-items:center;gap:8px}
+.ib{flex:0 0 auto;width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:var(--soft);color:var(--accent);font:700 14px var(--fd);line-height:1;padding:0;cursor:pointer}
+.ihint{font:500 13px/1.35 var(--fd);color:var(--ink2);letter-spacing:0;text-transform:none}
+.ihint[hidden]{display:none}

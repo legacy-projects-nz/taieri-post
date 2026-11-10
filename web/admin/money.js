@@ -2,6 +2,7 @@
 //   Income – each run's base (a day, week or month figure, shared between the runs in its group whichever of them are on)
 //            For the runs with a total (PCB+RSB, TUA+Flyer, Lawrence, TGE, food bag) the base is half the total and the other half is
 //            parcels × a rate worked out from the 8-week average parcels (see groupRate). Parcels come from the EOD, the average until it's in.
+//            Outram, TUA and Flyer also earn a flat $5 for each rural TGE parcel delivered (typed into the EOD).
 //            Plus pick-ups: NZ Couriers + Post Haste at $5 small / $8 large, TGE at $6 small / $7.50 large (Rural → TUA; Lawrence, Owaka,
 //            Balclutha and South TGE → D>B, which earns nothing per parcel delivered). GST 15% on top.
 //   Staff  – each driver's cost for the day (the same hours × rate as Labour), split across their runs by rostered minutes.
@@ -43,7 +44,8 @@ const COSTS = [["fuel", "Fuel", 4251.46], ["ruc", "Road user charges", 590.78], 
   ["loan", "Loan fees & interest", 1078.66], ["soft", "Software", 897.35], ["staffx", "Staff training, uniforms, meetings", 1660.74], ["acct", "Accountancy", 496.57], ["office", "Office, phone, rent, marketing, bank", 597.8]];
 const COST_DAYS = 6;   // working days a week the monthly costs are spread over
 const PARCEL_RUNS = ["TUA", "FLY", "RAM", "PCB", "RSB", "LAW", "S", "T"];
-const DEF = { small: 5, large: 8, tgeSmall: 6, tgeLarge: 7.5, owakaMed: 10, telford: 5, balMin: 5, target: 70000, oncost: 11, parcel: { TUA: 0, FLY: 0, DB: 0, RAM: 1.8, PCB: 0, RSB: 0, LAW: 0, S: 0, T: 0 }, groups: Object.fromEntries(Object.entries(GROUPS).map(([k, g]) => [k, { per: g.per, amt: g.amt, days: g.days, basePct: BASE_PCT, base: g.base ?? null }])), costs: Object.fromEntries(COSTS.map(([k, , a]) => [k, a])) };
+const TGE_RURAL_RUNS = ["RAM", "TUA", "FLY"];   // these runs' EODs ask for the rural TGE parcels delivered, paid at tgeRural each
+const DEF = { small: 5, large: 8, tgeSmall: 6, tgeLarge: 7.5, tgeRural: 5, owakaMed: 10, telford: 5, balMin: 5, target: 70000, oncost: 11, parcel: { TUA: 0, FLY: 0, DB: 0, RAM: 1.8, PCB: 0, RSB: 0, LAW: 0, S: 0, T: 0 }, groups: Object.fromEntries(Object.entries(GROUPS).map(([k, g]) => [k, { per: g.per, amt: g.amt, days: g.days, basePct: BASE_PCT, base: g.base ?? null }])), costs: Object.fromEntries(COSTS.map(([k, , a]) => [k, a])) };
 const model = () => { const v = S.set?.money_model || {}; return { ...DEF, ...v, parcel: { ...DEF.parcel, ...(v.parcel || {}) }, groups: Object.fromEntries(Object.keys(GROUPS).map(k => [k, { ...DEF.groups[k], ...(v.groups?.[k] || {}) }])), costs: { ...DEF.costs, ...(v.costs || {}) } }; };
 const onc = () => 1 + (+model().oncost || 0) / 100;   // holiday pay 8% + KiwiSaver 3% on top of gross wages
 const costMonth = () => Object.values(model().costs).reduce((a, b) => a + (+b || 0), 0);
@@ -133,6 +135,8 @@ function breakdown(d) {
     const RT = rateFor(r.run, M); const rate = RT.rate; if (rate) { const n = parcelsOf(r.shift); const rt = `$${rate.toFixed(2)}`; const why = RT.how && RT.how !== "typed in" ? ` · rate = ${RT.how}` : "";
       const incl = ""; if (n != null) add(r, n * rate, `${n} parcels${incl} × ${rt}${why}`, false);
       else { const ev = evidenceFor(r.run, d); if (ev?.parcels != null) add(r, Math.round(ev.parcels) * rate, `${Math.round(ev.parcels)} parcels${incl} × ${rt} (average ${ev.scope === "weekday" ? "for this weekday" : "of recent days"} until the EOD is in)${why}`, true); else { r.feeEst = true; r.feeLines.push({ amt: 0, line: `parcels × ${rt} · no history yet`, est: true }); } } } }
+  // rural TGE parcels delivered on Outram / TUA / Flyer, from the EOD: a flat rate each
+  for (const r of rows) { if (r.sort || !TGE_RURAL_RUNS.includes(r.run)) continue; const n = +(S.eodBy?.[r.shift?.id]?.extra?.tge_rural || 0); if (n) add(r, n * M.tgeRural, `${n} rural TGE parcel${n === 1 ? "" : "s"} × $${(+M.tgeRural).toFixed(2)}`, false); }
   const feeRow = (area) => { for (const code of AREA_RUNS[area] || []) if (byRun[code]) return byRun[code];
     const k = "__" + area; if (!byRun[k]) { byRun[k] = { run: `${area} pick-ups`, driver: null, staff: 0, fees: 0, feeEst: false, feeLines: [], noRun: true }; rows.push(byRun[k]); } return byRun[k]; };
   const runOn = area => (AREA_RUNS[area] || []).map(c => byRun[c]).find(Boolean);
