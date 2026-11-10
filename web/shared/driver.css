@@ -148,3 +148,9 @@ hr.gl{display:none}
 .hzline{display:flex;gap:6px;align-items:stretch}.hzline .hzrow{flex:1;min-width:0}
 .hzack{flex:0 0 auto;align-self:center;white-space:nowrap}
 .hzok{flex:0 0 32px;display:flex;align-items:center;justify-content:center;color:var(--ok);font-weight:700}
+/* done tasks: half-height tiles, several across */
+.tkds{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px;margin-top:6px}
+.tkd{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:0;min-height:40px;padding:4px 8px;border-radius:10px;border:1px solid var(--ok);border-left:4px solid var(--ok);background:var(--ok-fill);color:var(--ink);font:inherit;text-align:left;cursor:pointer;min-width:0}
+.tkd b{font-size:13px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.tkd small{font-size:11px;color:var(--ok);font-weight:700;line-height:1.1}
+.tkd:disabled{cursor:default;opacity:1}

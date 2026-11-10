@@ -401,6 +401,13 @@ function nextTasksCard(N, n) {   // tasks for the next shift (tomorrow when rost
   if (!N) return `<div class="card nextc"><h2>Next tasks</h2><p class="hint">Your tasks show here once your next shift is on the roster.</p></div>`;
   return tasksCard(N, n, true);
 }
+/** short label for a done tile: the add-on's own short name, else the title cut down to a couple of words */
+function tkShort(key, title) {
+  const a = key && S.addons.find(o => o.id === key); const sh = a?.short || ""; const whole = sh && sh.length <= 12 && (title || "").startsWith(sh) && [undefined, " "].includes((title || "")[sh.length]);   // ignore short names cut off mid-word
+  let t = (whole ? sh : title || "").replace(/^D>B\s*-\s*/i, "").replace(/\bphoto\b/i, "📷").trim();
+  if (t.length > 12) { const w = t.split(/\s+/); t = w.length > 1 ? (w[0].length <= 9 ? w[0] + " " + w.slice(1).map(x => x[0].toUpperCase()).join("") : w.map(x => x[0].toUpperCase()).join("")) : t.slice(0, 11) + "."; }
+  return t;
+}
 function tasksCard(D, n, next, bare = false) {
   const isT = !next && D.day === n.date;
   const sat = dayName(D.day) === "Sat";
@@ -422,7 +429,12 @@ function tasksCard(D, n, next, bare = false) {
       const meet = t.meetEdit && !isDone && D.day >= n.date && (!S.viewAs || S.viewer?.isStaff) ? `<label class="meta" style="display:flex;flex-direction:column;gap:2px;flex:0 0 112px">Milton time<input class="in" type="time" step="300" style="min-height:40px" value="${esc(t.meetVal)}" data-meet="${x.shift.id}" aria-label="Milton drop-off time"></label>` : "";
       return `<div class="tk ${cls}"><div class="tkt"><div class="t">${esc(t.title)}</div><div class="d">${esc(t.desc || "")}</div><div class="w">${esc(t.time)}${st ? ` · ${st}` : ""}</div></div>${meet}${btn}</div>`; };
     return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${fmtT(x.st)} – ${fmtT(x.en)}${items.length && isT ? ` · ${nDone}/${items.length} done` : ""}</span></div>
-      ${items.length ? `<div class="tks">${items.map(row).join("")}</div>` : `<p class="meta" style="margin:4px 0 0">Nothing extra on this run.</p>`}
+      ${items.length ? (() => { const isDone = t => !!(t.doneAt || t.planned); const todo = items.filter(t => !isDone(t)), fin = items.filter(isDone);
+        // done ones shrink into half-height tiles with a short name; tap a tile to undo (pick-up tiles open the pick-up editor instead)
+        const tile = t => { const pu = puAreaOf(t.key); const can = isT && t.key && !t.planned && (!S.viewAs || S.viewer?.isStaff);
+          const puOk = pu && puAreaLines(pu, x.shift.day).length; const attrs = !can ? "" : pu ? (puOk ? `data-puarea="${esc(pu)}" data-puday="${x.shift.day}"` : "") : `data-done="${esc(t.key)}" data-undo="1" data-shift="${x.shift.id}"`;
+          return `<button type="button" class="tkd" ${attrs} ${attrs ? `title="${esc(t.title)} · tap to ${pu ? "edit" : "undo"}"` : `title="${esc(t.title)}" disabled`}><b>${esc(tkShort(t.key, t.title))}</b><small>✓ ${t.doneAt ? fmtTime(t.doneAt) : "plan in"}</small></button>`; };
+        return `${todo.length ? `<div class="tks">${todo.map(row).join("")}</div>` : ""}${fin.length ? `<div class="tkds">${fin.map(tile).join("")}</div>` : ""}`; })() : `<p class="meta" style="margin:4px 0 0">Nothing extra on this run.</p>`}
       <details class="abmore"><summary>Change what's on this run${opts.some(o => o.task && on.has(o.id)) ? " · planned times" : ""}</summary><div class="list" style="margin-top:6px">${opts.map(o => { const isOn = on.has(o.id); const rule = S.rules.find(r => r.addon === o.id);
         return `<div class="row" style="align-items:center"><label class="chk ${isOn ? "on" : ""}" style="flex:1 1 60%"><input type="checkbox" data-addon="${o.id}" data-shift="${x.shift.id}" ${isOn ? "checked" : ""}>${esc(o.name)}${rule ? `<span class="meta" style="margin-left:auto">${winTxt(rule)}</span>` : ""}</label>
           ${o.task && isOn ? `<input class="in" type="time" step="900" style="flex:0 0 120px;min-height:40px" value="${esc(plan[o.id] || "")}" data-plan="${o.id}" data-shift="${x.shift.id}" aria-label="Planned time for ${esc(o.name)}">` : ""}</div>`; }).join("")}</div>
