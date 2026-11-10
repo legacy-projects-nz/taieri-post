@@ -200,10 +200,10 @@ export function driverDay(drv, d) {
     return { d, drv, sick: sk, holiday: false, exp: hh, est: false, act: hh, actEst: hh, actIsEst: false, actHow: sk.paid ? `sick · paid ${hh.toFixed(2)} h${sk.hours != null ? "" : " (average day)"}` : "sick · unpaid", tracked: false, train: 0, spend: hh * rate, rate, runs: 0, done: 0, effRows: [], runSegs: [], eods: [], D: D0 }; }
   const D = dayShifts(S.shifts.filter(s => s.day === d && s.driver === drv.id), S.runsBy, drv.id)[d]; if (!D) return null;
   const runSegs = D.segs.filter(x => !x.sort); const sod = D.segs.map(x => S.sodBy[x.shift.id]).find(Boolean); const eods = runSegs.map(x => S.eodBy[x.shift.id]).filter(Boolean);
-  const sortRost = D.segs.filter(x => x.sort).reduce((a, x) => a + ((x.en ?? x.st) - x.st), 0);
+  const sortRost = D.segs.filter(x => x.sort).reduce((a, x) => a + x.min, 0);   // sort minutes not already covered by a run (no hour counted twice)
   let exp = 0, est = false, train = 0; const effRows = [];
   runSegs.forEach((x, i) => { const ov = S.ovs.find(o => o.shift_id === x.shift.id); const eod = S.eodBy[x.shift.id]; const c = effCalc(x, eod, ov, S.C, S.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? sodStart(sod, D.start, S.C) : null, brk: drv.pay_exclude ? ownerBreakHrs(S.breaks, x.shift.id) : 0 });
-    if (!c) { exp += ((x.en ?? x.st) - x.st) / 60; est = true; return; }                       // no formula for this run yet → rostered length, flagged as an estimate
+    if (!c) { exp += x.min / 60; est = true; return; }                       // no formula for this run yet → rostered length, flagged as an estimate
     effRows.push({ d, drv, x, eod, ov, c }); if (c.trainDay) { train += c.taken || 0; return; } exp += c.allowed / 60; if (!eod || c.est) est = true; if (ov?.train_min) train += ov.train_min / 60; });
   if (!runSegs.length) { exp = D.hours; est = !D.segs.some(x => S.eodBy[x.shift.id]); }     // sort-only day
   const complete = sod && (runSegs.length ? eods.length === runSegs.length : D.segs.some(x => S.eodBy[x.shift.id]));

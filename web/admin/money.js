@@ -119,7 +119,7 @@ function breakdown(d) {
     const r = driverDay(drv, d);
     if (r?.sick && !r.D) { if (r.spend && !drv.pay_exclude) rows.push({ run: `Sick pay · ${nm(drv.id)}`, driver: drv.id, staff: r.spend * onc(), staffHow: `${r.exp.toFixed(2)} h × $${(+r.rate).toFixed(2)}/h = ${money(r.spend)} + ${model().oncost}% holiday pay & KiwiSaver = ${money(r.spend * onc())} · ${r.actHow}`, unpaid: false, est: false, fees: 0, feeEst: false, feeLines: [], noRun: true }); continue; }   // off sick and no longer on the roster: the sick pay still counts
     if (!r || r.holiday || !r.D) continue;
-    const segs = r.D.segs; const mins = segs.map(x => Math.max(0, (x.en ?? x.st) - x.st)); const tot = mins.reduce((a, b) => a + b, 0);
+    const segs = r.D.segs; const mins = segs.map(x => Math.max(0, x.min ?? ((x.en ?? x.st) - x.st))); const tot = mins.reduce((a, b) => a + b, 0);
     const cost = drv.pay_exclude ? 0 : r.spend;
     segs.forEach((x, i) => { const share = tot ? mins[i] / tot : 1 / segs.length;
       const row = { run: x.shift.run, shift: x.shift, sort: !!x.sort, driver: drv.id, st: x.st, en: x.en, staff: cost * onc() * share, staffHow: drv.pay_exclude ? "unpaid (owner)" : `${(r.actEst ?? r.exp).toFixed(2)} h × $${(+r.rate).toFixed(2)}/h = ${money(r.spend)} + ${model().oncost}% holiday pay & KiwiSaver = ${money(r.spend * onc())}${segs.length > 1 ? ` · ${Math.round(share * 100)}% of the day (rostered time)` : ""} · ${r.actHow}`, unpaid: !!drv.pay_exclude, est: !drv.pay_exclude && r.actIsEst, fees: 0, feeEst: false, feeLines: [] };

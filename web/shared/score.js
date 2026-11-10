@@ -42,7 +42,13 @@ export function dayShifts(shifts, runsBy, driver) {
     // sort shifts without an end run until the next run starts (max 3 h)
     segs.forEach((x, i) => { if (x.sort && (x.en == null || x.en <= x.st)) { const nx = segs.slice(i + 1).find(y => !y.sort); x.en = nx ? Math.min(nx.st, x.st + 180) : x.st + 90; } });
     const start = Math.min(...segs.map(x => x.st)), end = Math.max(...segs.map(x => x.en ?? x.st));
-    out[day] = { day, segs, start, end, hours: Math.round(segs.reduce((a, x) => a + ((x.en ?? x.st) - x.st), 0) / 6) / 10 };
+    // No time is counted twice: where shifts overlap (e.g. a sort rostered to 12:30 with a run starting at 8:30) the overlap counts once.
+    // Runs keep their full time; a sort only counts the minutes no run covers; a later run only counts what an earlier run doesn't cover.
+    // x.min = the minutes that count for this shift, x.over = minutes dropped as overlap. The rostered times themselves (st / en) are left as they are.
+    const cov = []; for (const x of [...segs.filter(y => !y.sort), ...segs.filter(y => y.sort)]) { const a0 = x.st, b0 = x.en ?? x.st; const len = Math.max(0, b0 - a0);
+      const cut = cov.map(([c, d]) => [Math.max(a0, c), Math.min(b0, d)]).filter(([c, d]) => d > c).sort((p, q) => p[0] - q[0]); let ov = 0, at = a0; for (const [c, d] of cut) { if (d > at) { ov += d - Math.max(c, at); at = d; } }
+      x.min = len - ov; x.over = ov; if (len) cov.push([a0, b0]); }
+    out[day] = { day, segs, start, end, over: segs.reduce((a, x) => a + x.over, 0), hours: Math.round(segs.reduce((a, x) => a + x.min, 0) / 6) / 10 };
   }
   return out;
 }
@@ -196,7 +202,7 @@ function scoreForRaw(driver, from, to, D, C) {
     const manual = ents.find(e => e.kind === "eff" && e.day === d.day && e.eff_pct != null);
     if (manual) { effDays.push({ day: d.day, v: +manual.eff_pct, manual: true }); continue; }
     const runs = d.segs.filter(x => !x.sort); if (!runs.length) continue;
-    const sortRost = d.segs.filter(x => x.sort).reduce((a, x) => a + ((x.en ?? x.st) - x.st), 0);
+    const sortRost = d.segs.filter(x => x.sort).reduce((a, x) => a + x.min, 0);   // sort minutes not already covered by a run
     const sod = d.segs.map(x => D.sods.find(s => s.shift_id === x.shift.id)).find(Boolean);
     const rows = runs.map((x, i) => { const eod = D.eods.find(e => e.shift_id === x.shift.id), ov = D.ovs?.find(o => o.shift_id === x.shift.id); const c = effCalc(x, eod, ov, C, D.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? sodStart(sod, d.start, C) : null, brk: own ? ownerBreakHrs(D.breaks, x.shift.id) : 0 }); if (c) { c.shift = x.shift; c.eod = eod; c.ov = ov; } return c; }).filter(Boolean);
     const live = rows.filter(r => !r.trainDay);
