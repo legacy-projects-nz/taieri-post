@@ -2,7 +2,7 @@
 import { sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmt24, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, settings as loadSettings, signOut, hours, nzToIso, avg, errCtx, reportError } from "/shared/core.js";
 import { requireUser } from "/shared/auth.js";
 import { AREAS, AREA_LABEL } from "/shared/config.js";
-import { cfg, dayShifts, itemsFor, scoreFor, payBand, money, fortnight, itemNote, STATE_LABEL, addName, segTimes, setEvidence, meetRule, meetOn } from "/shared/score.js";
+import { cfg, dayShifts, itemsFor, scoreFor, payBand, money, fortnight, itemNote, STATE_LABEL, addName, segTimes, setEvidence, setAddonNames, meetRule, meetOn } from "/shared/score.js";
 import { runBoardTab, wireRunBoard } from "/admin/runboard.js";
 import { scorecardTab, wireScorecard } from "/admin/scorecard.js";
 import { fixTab, wireFix, fixCount } from "/admin/fix.js";
@@ -67,7 +67,7 @@ async function loadAllNow() {
     q(sb.from("locations").select("*").gte("at", new Date(Date.now() - 12 * 3600e3).toISOString()).order("at", { ascending: false }).limit(2000)),
     q(sb.from("run_skills").select("*")), q(sb.from("week_notes").select("*")), q(sb.from("vehicle_checks").select("*").gte("week_start", addDays(monOf(t), -42))),
   ]);
-  Object.assign(S, { set, runs, vans, addons, rules, people, shifts, items, acks, sent, msgs, recips, leave, alerts, entries, marks, feed, ovs, locs, skills, notes, vchk });
+  Object.assign(S, { set, runs, vans, addons, rules, people, shifts, items, acks, sent, msgs, recips, leave, alerts, entries, marks, feed, ovs, locs, skills, notes, vchk }); setAddonNames(addons);
   S.C = cfg(set); S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vansBy = Object.fromEntries(vans.map(v => [v.plate, v])); S.peopleBy = Object.fromEntries(people.map(p => [p.id, p]));
   const onRoster = new Set(shifts.map(s => s.driver)); // anyone who drives: drivers, Jeremy (owner, tracked separately), or whoever is on the roster
   S.drivers = people.filter(p => p.active && !p.cleared && (p.role === "driver" || p.role === "owner" || onRoster.has(p.id)));

@@ -166,7 +166,10 @@ export function meetRule(r, s) {
   const hm = String(s.milton_at).slice(0, 5); const t = fmtT(toMin(hm));
   return { ...r, closes: hm, meet: hm, note: (r.note || "").replace(/\b\d{1,2}:\d{2}(\s*[ap]m)?\b/gi, t) || `Meet at Milton at ${t}` };
 }
-export function addName(k) { return ({ outram: "Outram Depot", pgg: "PGG", airport: "Airport", milton: "Milton", balclutha: "Balclutha", owaka: "Owaka", rose: "Roseneath receiver", sb: "Sawyers Bay receiver", fish: "Harbour Fish pick-up", pc: "Port Chalmers receiver", digi: "Digi Art pick-up", fonterra: "Fonterra pick-up", waihola: "Waihola Store" })[k] || k; }
+/* add-on names: the add-ons table (loaded by each app via setAddonNames) wins; the fixed list below is only the fallback */
+let ADDON_NAMES = {};
+export function setAddonNames(list) { ADDON_NAMES = Object.fromEntries((list || []).filter(a => a?.id && a.name).map(a => [a.id, a.name])); }
+export function addName(k) { return ADDON_NAMES[k] || ({ outram: "Outram Depot", pgg: "PGG", airport: "Airport", milton: "Milton", balclutha: "Balclutha", owaka: "Owaka", rose: "Roseneath receiver", sb: "Sawyers Bay receiver", fish: "Harbour Fish pick-up", pc: "Port Chalmers receiver", digi: "Digi Art pick-up", fonterra: "Fonterra pick-up", waihola: "Waihola Store" })[k] || k; }
 
 /* ---- Scores for one driver over a date range ---- */
 // Same driver + dates + data snapshot → same answer, so keep it: a render asks for the same scores many times over (team averages,
