@@ -145,3 +145,6 @@ hr.gl{display:none}
 .hzsev.high{background:var(--crit)}.hzsev.medium{background:var(--warn)}
 .hznear{border:2px solid var(--crit);border-radius:12px;padding:8px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px}
 .hznear>b{color:var(--crit);font-size:13px;text-transform:uppercase;letter-spacing:.06em}
+.hzline{display:flex;gap:6px;align-items:stretch}.hzline .hzrow{flex:1;min-width:0}
+.hzack{flex:0 0 auto;align-self:center;white-space:nowrap}
+.hzok{flex:0 0 32px;display:flex;align-items:center;justify-content:center;color:var(--ok);font-weight:700}

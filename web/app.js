@@ -25,7 +25,7 @@ S.open = {};   // which folded boxes are open this visit (not saved: everything 
   }
   render();
   window.addEventListener("hashchange", async () => { try { await viewAs(); await loadAll(); render(); } catch (e) { reportError("viewas", e); toast("Couldn't load that just now. Try again.", "err"); } });
-  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons", "breaks", "van_washes", "sod_requests", "hazards"], debounce(async () => { await loadAll(); render(true); }, 400), "drv");
+  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons", "breaks", "van_washes", "sod_requests", "hazards", "hazard_acks"], debounce(async () => { await loadAll(); render(true); }, 400), "drv");
   setInterval(() => render(true), 60000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadAll().then(() => render(true)); } });
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => { });
@@ -72,7 +72,7 @@ async function loadAllNow() {
   const ids = S.shifts.map(s => s.id);
   // second round, all at once (was one after another): SOD/EOD/overrides, pick-ups, access info, van washes, breaks
   const soft = (p, d) => Promise.resolve(p).then(r => r?.error ? d : (r?.data ?? d), () => d);
-  const [sods, eods, ovs, pk, ai, vw, br, sr, hz] = await Promise.all([
+  const [sods, eods, ovs, pk, ai, vw, br, sr, hz, ha] = await Promise.all([
     ids.length ? q(sb.from("sod").select("*").in("shift_id", ids)) : [], ids.length ? q(sb.from("eod").select("*").in("shift_id", ids)) : [],
     !ids.length ? [] : S.viewer?.isStaff ? q(sb.from("eff_overrides").select("*").in("shift_id", ids)) : sb.rpc("my_eff_overrides").then(r => r.data || []),
     soft(sb.from("pickups").select("*").eq("driver", m).gte("day", t.slice(0, 7) + "-01").order("day", { ascending: false }).limit(40), []),
@@ -81,8 +81,9 @@ async function loadAllNow() {
     soft(sb.from("breaks").select("*").eq("driver", m).gte("started_at", new Date(Date.now() - 2 * 86400e3).toISOString()).order("started_at"), []),
     soft(sb.from("sod_requests").select("*").eq("driver", m).gte("day", from), []),
     soft(sb.from("hazards").select("*").is("resolved_at", null).order("created_at", { ascending: false }).limit(2000), []),
+    soft(sb.from("hazard_acks").select("*").eq("driver", m), []),
   ]);
-  S.sods = sods; S.eods = eods; S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || []; S.sodReqs = sr || []; S.hazards = hz || [];
+  S.sods = sods; S.eods = eods; S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || []; S.sodReqs = sr || []; S.hazards = hz || []; S.hzAcks = Object.fromEntries((ha || []).map(a => [a.hazard_id, a.acked_at]));
   setEvidence(S.shifts, S.eods);
   S.days = dayShifts(S.shifts, S.runsBy, m);
   for (const d of Object.values(S.days)) for (const x of d.segs) { x.sod = S.sods.find(s => s.shift_id === x.shift.id); x.eod = S.eods.find(e => e.shift_id === x.shift.id); x.ov = S.ovs.find(o => o.shift_id === x.shift.id); }
@@ -178,7 +179,7 @@ function renderNow() {
 
 /* ---------- collapsible boxes: Next shift and everything below it (plus Parcel pick-ups) are one row until tapped ---------- */
 function folds() {
-  app.querySelectorAll(".folds .card, #pickups").forEach(c => {
+  app.querySelectorAll(".folds .card, #pickups, #hazards").forEach(c => {
     const h = c.querySelector(":scope > h2"); if (!h) return;
     const key = c.id || [...h.childNodes].filter(x => x.nodeType === 3).map(x => x.textContent).join("").trim();
     if (!(key in S.open)) S.open[key] = c.dataset.foldOpen === "1";
@@ -634,7 +635,7 @@ function wire() {
     sheet(`<h3>View as</h3><p class="meta">White = not signed in · <span class="c-ok">light green</span> = signed in to the app · <b class="c-ok">dark green</b> = GPS in the last 20 min</p><div class="vagrid"><button class="vapick" data-va="">— me (${esc(first(S.viewer.name))}) —</button>${list.map(d => { const st = appState(d.id); return `<button class="vapick ${st} ${S.viewAs?.id === d.id ? "cur" : ""}" data-va="${d.id}"><b>${esc(d.name)}</b>${d.role !== "driver" ? ` <span class="meta">(${esc(d.role)})</span>` : ""}<span class="meta">${st === "gps" ? `GPS ${ago(S.gps[d.id])}` : esc(loginState(d.id).tag)}</span></button>`; }).join("")}</div>`,
       (bg, close) => bg.querySelectorAll("[data-va]").forEach(b => b.onclick = () => { close(); location.hash = b.dataset.va ? "as=" + b.dataset.va : ""; })); });
   $$("#va-prev,#va-next").forEach(b => b.onclick = () => { if (b.dataset.id) location.hash = "as=" + b.dataset.id; });
-  if (S.viewAs) { $$("#gotit,#gotit-again,[data-confirm],[data-addon],[data-plan],[data-meet],#leave-new,#push-btn,#vchk-btn,#wash-btn,#hz-new").forEach(el => { el.disabled = true; el.title = "Only " + first(S.viewAs.name) + " can do this"; el.style.opacity = ".5"; }); }
+  if (S.viewAs) { $$("#gotit,#gotit-again,[data-confirm],[data-addon],[data-plan],[data-meet],#leave-new,#push-btn,#vchk-btn,#wash-btn,#hz-new,[data-hzack],#hz-ackall").forEach(el => { el.disabled = true; el.title = "Only " + first(S.viewAs.name) + " can do this"; el.style.opacity = ".5"; }); }
   pushState().then(s => { const el = $("#push-state"); if (el) el.textContent = s === "on" ? "on" : s === "denied" ? "blocked in phone settings" : s === "unsupported" ? "add to Home Screen first" : "off, tap to turn on"; });
   $("#push-btn")?.addEventListener("click", async () => { const r = await enablePush(S.me.id, VAPID_PUBLIC); toast(r.ok ? "Notifications are on" : r.why, r.ok ? "ok" : "err"); render(); });
   $("#gotit")?.addEventListener("click", async e => { const ids = e.currentTarget.dataset.ids.split(","); for (const id of ids) S.gotit[id] = new Date().toISOString(); localStorage.setItem("tp-gotit", JSON.stringify(S.gotit)); render();
@@ -683,6 +684,8 @@ function wire() {
   $("#wash-btn")?.addEventListener("click", () => vanWashForm());
   $("#hz-new")?.addEventListener("click", () => hazardForm());
   $("#hz-all")?.addEventListener("click", () => hazardList());
+  $$("[data-hzack]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); hazardAck([b.dataset.hzack]); }));
+  $("#hz-ackall")?.addEventListener("click", e => hazardAck(e.currentTarget.dataset.ids.split(",")));
   $$("[data-hz]").forEach(b => b.addEventListener("click", () => hazardDetail(b.dataset.hz)));
   bindDetail(app);
 }
@@ -1032,14 +1035,28 @@ const hzDist = (h, p) => { if (h.lat == null || !p) return Infinity; const R = 6
   const d = Math.sin(r(h.lat - a) / 2) ** 2 + Math.cos(r(a)) * Math.cos(r(h.lat)) * Math.sin(r(h.lng - b) / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(d)); };
 const hzRow = h => `<button class="hzrow" data-hz="${h.id}" type="button"><span class="hzsev ${h.severity}"></span><span class="hzbody"><b>${esc(h.address)}</b>${h.area ? ` <span class="meta">${esc(h.area)}</span>` : ""}<br><span class="meta">${(h.kinds || []).map(hzLabel).join(" · ")}${h.rule && h.rule !== "INFO" ? ` · <b>${esc(h.rule)}</b>` : ""} · ${esc(h.note || "")}</span></span></button>`;
 const hzToday = T => { const codes = new Set(T ? T.segs.map(x => x.shift.run) : []); return (S.hazards || []).filter(h => (h.runs || []).some(c => codes.has(c))); };
+/** a confirmation counts for 30 days, and only if the hazard hasn't changed since */
+const HZ_ACK_DAYS = 30;
+const hzOk = h => { const a = S.hzAcks?.[h.id]; return !!a && a >= (h.updated_at || h.created_at) && Date.now() - new Date(a) < HZ_ACK_DAYS * 86400e3; };
+async function hazardAck(ids) {
+  const now = new Date().toISOString(); for (const id of ids) (S.hzAcks ||= {})[id] = now; render();
+  const { error } = await sb.from("hazard_acks").upsert(ids.map(id => ({ hazard_id: id, driver: S.me.id, acked_at: now })), { onConflict: "hazard_id,driver" });
+  if (error) { toast("Couldn't save. Try again.", "err"); await loadAll(); render(); } else toast(ids.length > 1 ? `${ids.length} hazards confirmed ✓` : "Confirmed ✓", "ok");
+}
 function hazardsCard(T) {
   const all = S.hazards || []; const today = hzToday(T).filter(h => h.severity !== "low");
   const near = lastPos ? all.filter(h => h.severity !== "low" && hzDist(h, lastPos) < 250).sort((a, b) => hzDist(a, lastPos) - hzDist(b, lastPos)) : [];
   const ord = { high: 0, medium: 1, low: 2 }; today.sort((a, b) => ord[a.severity] - ord[b.severity] || a.address.localeCompare(b.address));
-  const show = today.slice(0, S.hzMore ? 999 : 6);
-  return `<div class="card" id="hazards"><h2>⚠️ Hazards<span>${all.length} on the register</span></h2>
+  const todo = today.filter(h => !hzOk(h)), done = today.filter(hzOk);
+  const line = (h, ack) => `<div class="hzline">${hzRow(h)}${ack ? `<button class="btn sm hzack" data-hzack="${h.id}" type="button">✓ Read</button>` : `<span class="hzok" title="Confirmed">✓</span>`}</div>`;
+  const runs = T ? T.segs.length > 1 ? "today's runs" : "today's run" : "";
+  return `<div class="card" id="hazards" data-fold-open="${todo.length || near.length ? "1" : ""}"><h2>⚠️ Hazards<span>${todo.length ? `<b class="c-crit">${todo.length} to confirm</b>` : `${all.length} on the register`}</span></h2>
     ${near.length ? `<div class="hznear"><b>Near you now</b>${near.slice(0, 3).map(hzRow).join("")}</div>` : ""}
-    ${T ? (today.length ? `<p class="meta" style="margin:0 0 4px">On today's run${T.segs.length > 1 ? "s" : ""} (high and medium):</p><div class="hzlist">${show.map(hzRow).join("")}</div>${today.length > show.length ? `<button class="btn ghost sm" id="hz-more" type="button">Show all ${today.length}</button>` : ""}` : `<p class="meta">Nothing high or medium on today's run${T.segs.length > 1 ? "s" : ""}.</p>`) : ""}
+    ${T ? (todo.length ? `<p class="meta" style="margin:0 0 4px">Read these for ${runs} and tap ✓ Read. They come back each month and whenever one changes.</p><div class="hzlist">${todo.slice(0, S.hzMore ? 999 : 8).map(h => line(h, true)).join("")}</div>
+        ${todo.length > 8 && !S.hzMore ? `<button class="btn ghost sm" id="hz-more" type="button">Show all ${todo.length}</button>` : ""}
+        ${todo.length > 1 ? `<button class="btn full" id="hz-ackall" data-ids="${todo.map(h => h.id).join(",")}" type="button" style="margin-top:6px">✓ I've read all ${todo.length}</button>` : ""}`
+      : today.length ? `<p class="meta">All ${today.length} high and medium hazards on ${runs} confirmed ✓</p>` : `<p class="meta">Nothing high or medium on ${runs}.</p>`) : ""}
+    ${done.length ? `<details style="margin-top:6px"><summary class="meta">Confirmed (${done.length})</summary><div class="hzlist" style="margin-top:6px">${done.map(h => line(h, false)).join("")}</div></details>` : ""}
     <div class="row" style="margin-top:8px"><button class="btn warn" id="hz-new" type="button">⚠️ Report a hazard</button><button class="btn ghost" id="hz-all" type="button">🔎 Search all</button></div>
     <p class="hint" style="margin:6px 0 0">If it doesn't feel right, don't do it. Card it and report it.</p></div>`;
 }

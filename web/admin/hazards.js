@@ -42,7 +42,8 @@ export function hazardsTab() {
       <label class="chk ${st.resolved ? "on" : ""}" style="flex:0 0 auto"><input type="checkbox" id="hz-res" ${st.resolved ? "checked" : ""}>Resolved</label>
       <button class="btn sm" id="hz-add" style="flex:0 0 auto">+ Add hazard</button></div>
     <p class="hint" style="margin:6px 0 0">Driver reports show first. Drivers see high and medium hazards for the runs they're on today, and a heads-up near any hazard that has a GPS location.</p></div>
-    <div class="card"><h2>Hazards</h2><div class="list" id="hz-list">${list()}</div></div>`;
+    <div class="card"><h2>Hazards</h2><div class="list" id="hz-list">${list()}</div></div>
+    ${confirmCard()}`;
 }
 export function wireHazards() {
   const redraw = () => { const el = $("#hz-list"); if (el) { el.innerHTML = list(); bindRows(); } };
@@ -88,4 +89,25 @@ function edit(id) {
     g("#e-res")?.addEventListener("click", async () => { const { error } = await sb.from("hazards").update(h.resolved_at ? { resolved_at: null, resolved_by: null } : { resolved_at: new Date().toISOString(), resolved_by: S.me.id }).eq("id", id); if (error) return toast(error.message, "err"); done(h.resolved_at ? "Re-opened" : "Marked resolved"); });
     g("#e-del")?.addEventListener("click", async () => { if (!confirm("Delete this hazard for good? (Mark resolved keeps the record.)")) return; const { error } = await sb.from("hazards").delete().eq("id", id); if (error) return toast(error.message, "err"); done("Deleted"); });
   }, { wide: true });
+}
+
+/* Driver confirmations: each driver confirms the high + medium hazards on the runs they drive; a confirmation lasts 30 days
+   and lapses if the hazard is changed. "Their runs" = runs they're rostered on from 30 days back to 14 days ahead. */
+const ACK_DAYS = 30;
+function confirmCard() {
+  const t = new Date(); const iso = d => d.toISOString().slice(0, 10);
+  const from = iso(new Date(t - 30 * 86400e3)), to = iso(new Date(+t + 14 * 86400e3));
+  const ack = {}; for (const a of S.hzAcks || []) ack[a.hazard_id + "|" + a.driver] = a.acked_at;
+  const open = (S.hazards || []).filter(h => !h.resolved_at && h.severity !== "low");
+  const rows = (S.drivers || []).filter(d => d.role !== "owner").map(d => {
+    const runs = new Set(S.shifts.filter(s => s.driver === d.id && s.day >= from && s.day <= to).map(s => s.run));
+    const mine = open.filter(h => (h.runs || []).some(r => runs.has(r)));
+    const ok = mine.filter(h => { const a = ack[h.id + "|" + d.id]; return a && a >= (h.updated_at || h.created_at) && Date.now() - new Date(a) < ACK_DAYS * 86400e3; });
+    const last = (S.hzAcks || []).filter(a => a.driver === d.id).map(a => a.acked_at).sort().pop();
+    return { d, runs: [...runs], n: mine.length, ok: ok.length, last };
+  }).filter(r => r.n).sort((a, b) => (a.ok / a.n) - (b.ok / b.n));
+  return `<div class="card"><h2>Driver confirmations<span>last ${ACK_DAYS} days</span></h2>
+    ${rows.length ? `<div class="list">${rows.map(r => `<div class="item ${r.ok === r.n ? "ok" : r.ok ? "warn" : "crit"}"><div class="row" style="justify-content:space-between"><b>${esc(r.d.name)}</b><span>${pill(`${r.ok} of ${r.n} confirmed`, r.ok === r.n ? "ok" : r.ok ? "warn" : "crit")}</span></div>
+      <div class="meta">Runs: ${esc(r.runs.join(", "))}${r.last ? ` · last confirmed ${label(nzNow(new Date(r.last)).date)}` : " · never confirmed"}</div></div>`).join("")}</div>` : `<div class="empty">No rostered drivers have hazards on their runs.</div>`}
+    <p class="hint" style="margin:6px 0 0">Drivers confirm in the app (✓ Read). Hazards come back each month, when one is changed, and for anyone new to a run.</p></div>`;
 }

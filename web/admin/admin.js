@@ -31,7 +31,7 @@ export const fn = async (name, body) => { const { data, error } = await sb.funct
       await new Promise(r => { const t = setTimeout(r, Math.min(30000, 4000 * (i + 1))); const bt = $("#boot-retry"); if (bt) bt.onclick = () => { clearTimeout(t); bt.disabled = true; bt.textContent = "Trying…"; r(); }; }); }
   }
   render();
-  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "people", "settings", "timing_rules", "addons", "vehicle_checks", "eff_overrides", "run_skills", "week_notes", "roster_sent", "breaks", "van_washes", "sod_requests", "hazards"], debounce(async (t) => { await loadAll(); render(true); }, 500), "ops");
+  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "people", "settings", "timing_rules", "addons", "vehicle_checks", "eff_overrides", "run_skills", "week_notes", "roster_sent", "breaks", "van_washes", "sod_requests", "hazards", "hazard_acks"], debounce(async (t) => { await loadAll(); render(true); }, 500), "ops");
   // safety net if a live update is missed (or skipped while a sheet was open): reload every 30 s and whenever the window comes back into focus
   const refresh = async () => { if (document.visibilityState === "hidden") return; const at = S._loadedAt; try { await loadAll({ ifStale: true }); if (S._loadedAt !== at) render(true); } catch (e) { console.warn(e); } };
   setInterval(refresh, 60000); window.addEventListener("focus", refresh); document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
@@ -75,7 +75,7 @@ async function loadAllNow() {
   // second round, all at once (was one after another): SOD/EOD for the loaded shifts (by date range, not a 500-id list in the URL), washes, breaks, sign-in status
   const soft = (p, d) => p.then(r => r.error ? d : (r.data ?? d), () => d);
   const strip = rows => rows.map(({ shifts: _s, ...r }) => r);
-  const [sods, eods, washes, breaks, ls, sodReqs, hazards] = await Promise.all([
+  const [sods, eods, washes, breaks, ls, sodReqs, hazards, hzAcks] = await Promise.all([
     q(sb.from("sod").select("*, shifts!inner(day)").gte("shifts.day", from).lte("shifts.day", to)).then(strip),
     q(sb.from("eod").select("*, shifts!inner(day)").gte("shifts.day", from).lte("shifts.day", to)).then(strip),
     soft(sb.from("van_washes").select("*").gte("at", new Date(Date.now() - 120 * 86400e3).toISOString()).order("at", { ascending: false }).limit(1000), []),
@@ -83,8 +83,9 @@ async function loadAllNow() {
     soft(sb.rpc("login_status"), []),
     soft(sb.from("sod_requests").select("*").gte("day", from).order("created_at", { ascending: false }), []),
     soft(sb.from("hazards").select("*").order("created_at", { ascending: false }).limit(3000), []),
+    soft(sb.from("hazard_acks").select("*").limit(20000), []),
   ]);
-  S.sods = sods; S.eods = eods; S.washes = washes; S.breaks = breaks; S.sodReqs = sodReqs || []; S.hazards = hazards || [];
+  S.sods = sods; S.eods = eods; S.washes = washes; S.breaks = breaks; S.sodReqs = sodReqs || []; S.hazards = hazards || []; S.hzAcks = hzAcks || [];
   S.login = {}; for (const l of ls || []) S.login[l.person_id] = l;   // who is signed in to the app
   S.sodBy = Object.fromEntries(S.sods.map(s => [s.shift_id, s])); S.eodBy = Object.fromEntries(S.eods.map(e => [e.shift_id, e]));
   setEvidence(S.shifts, S.eods);   // average figures per run & weekday → the estimate used until each EOD is in
