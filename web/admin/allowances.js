@@ -48,12 +48,12 @@ export function allowancesTab() {
   const row = l => { const d = l.bu.day, o = l.out?.outcome; const needs = !o && d <= t && l.amt > 0;
     return `<div class="row" style="align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)">
       <div style="flex:1 1 210px"><b>${esc(nm(l.bu.driver))}</b><div class="meta">${label(d)} · ${esc(l.kind)}</div><div class="meta">${esc(l.why)}</div></div>
-      <div style="flex:0 0 70px;text-align:right"><b>${l.amt ? "$" + l.amt : "—"}</b>${o === "not_needed" && l.amt ? `<div class="meta c-ok">owed</div>` : ""}</div>
+      <div style="flex:0 0 70px;text-align:right"><b>${l.amt ? "$" + l.amt : "—"}</b>${o === "not_needed" && l.amt ? `<div class="meta c-ok">owed</div>` : ""}${l.out?.note === "auto" ? `<div class="meta">auto</div>` : ""}</div>
       <div class="row" style="flex:1 1 260px;gap:6px">${[["not_needed", "Not needed"], ["called_in", "Called in"], ["declined", "Declined"]].map(([k, t2]) => `<button class="btn sm ${o === k ? "" : "ghost"}" data-al="${k}" data-day="${d}" data-drv="${esc(l.bu.driver)}">${t2}</button>`).join("")}${o ? `<button class="btn ghost sm" data-al="" data-day="${d}" data-drv="${esc(l.bu.driver)}" title="Clear">✕</button>` : ""}</div>
       ${needs ? `<span class="meta c-warn" style="flex:0 0 auto">needs a decision</span>` : ""}</div>`; };
   return `${weekBar()}
   <div class="card"><h2>Allowances<span>back-up and on-call, owed this week: <b>$${grand}</b></span></h2>
-    <p class="hint">One line for every Back up slot on the Run Board. <b>Not needed</b> = the allowance is owed. <b>Called in</b> = paid for the hours worked (check the timesheet), no allowance on top. <b>Declined</b> = no allowance. Phone window $5, committed back-up $10 (up to 5 h) or $20 (over 5 up to 10 h). Non-compulsory back-up in the morning has no allowance.</p>
+    <p class="hint">One line for every Back up slot on the Run Board. <b>Not needed</b> = the allowance is owed. <b>Called in</b> = paid for the hours worked (check the timesheet), no allowance on top. <b>Declined</b> = no allowance. Phone window $5, committed back-up $10 (up to 5 h) or $20 (over 5 up to 10 h). Non-compulsory back-up in the morning has no allowance. Each line fills itself in once the back-up window is over: <b>Called in</b> if a run was moved onto them (change sent after 5pm the day before, or on the day), otherwise <b>Not needed</b>. Marked “auto” until you tap a different answer.</p>
     ${L.length ? L.map(row).join("") : `<div class="empty">No back-up or on-call slots on the Run Board this week.</div>`}
     ${Object.keys(tot).length ? `<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:10px"><div class="meta mono" style="margin-bottom:6px">OWED THIS WEEK, BY PERSON</div>${Object.entries(tot).map(([d, v]) => `<div class="row" style="justify-content:space-between"><span>${esc(nm(d))}</span><b>$${v}</b></div>`).join("")}</div>` : ""}
   </div>`;
@@ -63,9 +63,9 @@ export function wireAllowances() {
   wireWeek();
   $$("[data-al]").forEach(b => b.onclick = async () => {
     const day = b.dataset.day, driver = b.dataset.drv, k = b.dataset.al;
-    const r = k ? await sb.from("allowance_outcomes").upsert({ day, driver, outcome: k, decided_by: S.me?.id || null, decided_at: new Date().toISOString() }) : await sb.from("allowance_outcomes").delete().match({ day, driver });
+    const r = k ? await sb.from("allowance_outcomes").upsert({ day, driver, outcome: k, note: null, decided_by: S.me?.id || null, decided_at: new Date().toISOString() }) : await sb.from("allowance_outcomes").delete().match({ day, driver });
     if (r.error) return toast(r.error.message, "err");
-    if (k) st.outcomes[day + "|" + driver] = { day, driver, outcome: k }; else delete st.outcomes[day + "|" + driver];
+    if (k) st.outcomes[day + "|" + driver] = { day, driver, outcome: k, note: null }; else delete st.outcomes[day + "|" + driver];
     render(true);
   });
 }
