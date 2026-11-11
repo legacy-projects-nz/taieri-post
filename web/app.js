@@ -718,12 +718,14 @@ function wire() {
   $("#pu-log")?.addEventListener("click", () => logPickup());
   $$("[data-puarea]").forEach(b => b.onclick = e => { e.stopPropagation(); editPickupArea(b.dataset.puarea, b.dataset.puday); });
   $$("[data-puedit]").forEach(b => b.onclick = e => { e.stopPropagation(); const r = (S.pickups || []).find(x => x.id === b.dataset.puedit); if (!r) return; r.min_fee != null && !puAreaLines(r.area, r.day).some(x => x.min_fee == null) ? editPickup(r.id) : editPickupArea(r.area, r.day); });
-  $$("[data-rsphoto]").forEach(inp => inp.onchange = async () => { const f = inp.files?.[0]; if (!f) return; const sh = S.shifts.find(z => z.id === inp.dataset.rsphoto); const lab = inp.closest("label"); if (lab) lab.style.opacity = ".5";
-    const rk = inp.dataset.rskey || "tw_twrunsheet"; toast("Uploading photo…");
+  $$("[data-rsphoto]").forEach(inp => inp.onchange = async () => { const f = inp.files?.[0]; if (!f) return; const sh = S.shifts.find(z => z.id === inp.dataset.rsphoto); const lab = inp.closest("label");
+    const rk = inp.dataset.rskey || "tw_twrunsheet"; const ad = S.addons.find(a => a.id === rk);
+    let note = null; if (ad?.photo_note) { note = await photoNote(ad); if (note === undefined) { inp.value = ""; return; } }
+    if (lab) lab.style.opacity = ".5"; toast("Uploading photo…");
     const path = `${sh?.driver || S.me.id}/${sh?.day || today()}/${inp.dataset.rsphoto}-${rk}-${Date.now()}.${(f.name.split(".").pop() || "jpg").toLowerCase()}`;
     const { error } = await sb.storage.from("runsheets").upload(path, f, { upsert: true, contentType: f.type || "image/jpeg" });
     if (error) { if (lab) lab.style.opacity = ""; return toast(`Photo didn't upload: ${error.message}`, "err"); }
-    const { error: e2 } = await sb.rpc("task_photo_done", { p_shift: inp.dataset.rsphoto, p_addon: rk, p_path: path });
+    const { error: e2 } = await sb.rpc("task_photo_done", { p_shift: inp.dataset.rsphoto, p_addon: rk, p_path: path, p_note: note });
     if (e2) { if (lab) lab.style.opacity = ""; return toast(e2.message, "err"); }
     toast("Photo saved ✓", "ok"); await loadAll(); render(); });
   $$("[data-pumin]").forEach(b => b.onclick = async e => { e.stopPropagation(); b.disabled = true; if (!(await puMinFee(today(), b.dataset.shift, b.dataset.pumin))) b.disabled = false; });
@@ -770,6 +772,16 @@ function bindDetail(root) {
 }
 
 /* ================= sheets ================= */
+/** Photo task with notes: ask for the note before uploading. Resolves to the text, or undefined if cancelled. */
+function photoNote(ad) {
+  return new Promise(res => { let done = false; const fin = v => { if (!done) { done = true; res(v); } };
+    const { bg } = sheet(`<h3>${esc(ad.name)} · notes</h3><form class="frm" id="pn"><label class="f full">Notes<textarea class="in" id="pn-note" rows="4" required placeholder="What's in the bay, anything left behind or out of place"></textarea></label><button class="btn full" type="submit">Save photo + notes</button></form>`, (bg2, close) => {
+      bg2.querySelector("#pn-note").focus();
+      bg2.querySelector("#pn").onsubmit = e => { e.preventDefault(); const v = bg2.querySelector("#pn-note").value.trim(); if (!v) return toast("Add a note first", "err"); fin(v); close(); };
+    });
+    new MutationObserver((_, o) => { if (!bg.isConnected) { o.disconnect(); fin(undefined); } }).observe(document.body, { childList: true });
+  });
+}
 function sheet(html, onOpen, opts = {}) {
   const bg = h(`<div class="sheet-bg"><div class="sheet ${opts.wide ? "wide" : ""}" role="dialog" aria-modal="true" style="position:relative"><button class="x" aria-label="Close">×</button>${html}</div></div>`);
   const close = () => bg.remove(); bg.querySelector(".x").onclick = close; bg.addEventListener("click", e => { if (e.target === bg) close(); }); bg._close = close;
