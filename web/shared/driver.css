@@ -161,3 +161,8 @@ hr.gl{display:none}
 .tdmini .tdr1 .big{font-size:20px;font-weight:800;margin:0}
 .tdmini .tdr1 .fchev{margin-left:auto;position:static}
 .tdmini .tdr2{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* tighter run rows on Today / Next shift */
+.card.today .seg,.card.nextc .seg{padding:6px 0!important;align-items:baseline}
+.card .seg .tm{min-width:118px!important;font-size:13px!important;color:var(--ink2)!important}
+.ablk details.abmore>summary{gap:6px}

@@ -319,7 +319,7 @@ const VAN_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="tr
 const vanChips = D => [...new Set(D.segs.map(x => x.shift.van).filter(Boolean))].map(p => `<span class="tag van">${VAN_SVG}${esc(p)}</span>`).join("");
 function segRow(x, day, n, isToday, tasks = true) {
   const code = x.shift.run; const r = S.runsBy[code];
-  if (!tasks) { const act = isToday ? segActions(x, day, n) : ""; return `<div class="seg clk" data-dayv="${day}" title="Tap for the full day"><div class="rn">${x.sort ? `Sort: ${esc(r?.name || r?.label || "Sort")}` : `${esc(code)}: ${esc(runName(code))}`}${x.shift.trainee ? ` <span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : ""}${act}</div></div>`; }
+  if (!tasks) { const act = isToday ? segActions(x, day, n) : ""; return `<div class="seg clk" data-dayv="${day}" title="Tap for the full day"><div class="tm">${fmtT(x.st)}–${fmtT(x.en)}</div><div class="rn">${x.sort ? `Sort: ${esc(r?.name || r?.label || "Sort")}` : `${esc(code)}: ${esc(runName(code))}`}${x.shift.trainee ? ` <span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : ""}${act}</div></div>`; }
   const tags = [x.shift.van ? `<span class="tag van"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 6.5A1.5 1.5 0 0 1 4.5 5H14l4.2 4.2H20a1 1 0 0 1 1 1V16a1 1 0 0 1-1 1h-1.3a2.5 2.5 0 0 1-4.9 0H9.7a2.5 2.5 0 0 1-4.9 0H4a1 1 0 0 1-1-1V6.5Zm10.6.5H5v4h12.2L13.6 7ZM7.25 18a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Zm9.5 0a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Z"/></svg>${esc(x.shift.van)}</span>` : "", x.shift.trainee ? `<span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : "", ...(tasks ? (x.shift.addons || []).map(a => `<span class="tag">+ ${esc(addName(a))}</span>`) : [])].join("");
   const tw = x.sort || !tasks ? "" : timingRows(x, day, isToday ? n.min : null);
   const act = isToday ? segActions(x, day, n) : "";
@@ -365,7 +365,7 @@ function todayCard(T, N, n) {
     const left = T.segs.filter(x => n.min < (x.en ?? x.st));
     const sodSeg = T.segs.find(x => x.sod); const allEod = T.segs.filter(x => !x.sort).length ? T.segs.filter(x => !x.sort).every(x => x.eod) : T.segs.some(x => x.eod);
     if (left.length || (!allEod && sodSeg)) {
-      const sodBtn = !sodSeg ? `<p class="hint">No SOD yet — tap <b>SOD</b> at the top when you start.</p>`
+      const sodBtn = !sodSeg ? ""
         : `<div class="row"><div class="meta c-ok">✓ SOD ${fmtTime(sodSeg.sod.sent_at)}${sodSeg.sod.van ? ` · ${esc(sodSeg.sod.van)}` : ""}${sodSeg.sod.edited_at ? " (edited)" : ""}</div>${allEod ? "" : `<button class="btn ghost sm" id="sod-edit" data-shift="${sodSeg.shift.id}">Edit SOD</button>`}</div>${sodReqLine(T)}`;
       const sortOnly = !T.segs.some(x => !x.sort) && sodSeg && !allEod;
       // once the day has started (SOD in), Today shrinks to two rows; tap to see the full day again
@@ -471,7 +471,7 @@ function tasksCard(D, n, next, bare = false) {
       const pu = puAreaOf(t.key); const btn = isT && !isDone && t.key && (!S.viewAs || S.viewer?.isStaff) ? (isPhotoTask(t.key) ? rsBtn(x.shift.id, t.key) : pu ? `<div class="row" style="flex:0 0 auto;gap:6px">${puBtn(t.key, x.shift.id)}${noneBtn(t.key, x.shift.id)}</div>` : `<button class="btn sm accent" data-done="${esc(t.key)}" data-shift="${x.shift.id}">Done</button>`) : isT && isDone && pu && !S.viewAs ? puEditBtn(t.key, x.shift.day) : "";
       const meet = t.meetEdit && !isDone && D.day >= n.date && (!S.viewAs || S.viewer?.isStaff) ? `<label class="meta" style="display:flex;flex-direction:column;gap:2px;flex:0 0 112px">Milton time<input class="in" type="time" step="300" style="min-height:40px" value="${esc(t.meetVal)}" data-meet="${x.shift.id}" aria-label="Milton drop-off time"></label>` : "";
       const when = cls === "over" ? `✗ ${fmtT(t.closes)}` : cls === "soon" ? `${t.closes - n.min} min` : t.time === "any time" ? "" : t.time;
-      return `<div class="tk tk1 ${cls}"><div class="w">${esc(when)}</div><div class="tkt"><span class="t">${esc(t.short || tkShort(t.key, t.title))}</span>${t.code ? `<span class="tw-code">🔑 ${esc(t.code)}</span>` : ""}</div>${meet}${btn}</div>`; };
+      return `<div class="tk tk1 ${cls}"><div class="tkt"><span class="t">${esc(t.short || tkShort(t.key, t.title))}</span>${when ? `<span class="tkw">${esc(when)}</span>` : ""}${t.code ? `<span class="tkc">🔑 ${esc(t.code)}</span>` : ""}</div>${meet}${btn}</div>`; };
     return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${fmtT(x.st)} – ${fmtT(x.en)}${items.length && isT ? ` · ${nDone}/${items.length} done` : ""}</span></div>
       ${items.length ? (() => { const isDone = t => !!(t.doneAt || t.planned); const todo = items.filter(t => !isDone(t)), fin = items.filter(isDone);
         // done ones shrink into half-height tiles with a short name; tap a tile to undo (pick-up tiles open the pick-up editor instead)
