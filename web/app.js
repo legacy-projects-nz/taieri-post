@@ -230,11 +230,16 @@ function runBar(T, sod, runs, va, offB) {
   const lab = x => x.sort ? "sort" : esc(x.shift.run);
   const eorB = !cur || cur.x.sort || segs.length < 2 ? "" : va ? offB(`■ EOR ${lab(cur.x)}`, "run going") : `<button class="btn qb ghost" data-runmark="eor" data-shift="${cur.x.shift.id}"><b>■ EOR ${lab(cur.x)}</b><small>end of run</small></button>`;
   const sorB = !nxt ? "" : va ? offB(`▶ Start ${lab(nxt.x)}`, "not started") : `<button class="btn qb" data-runmark="sor" data-shift="${nxt.x.shift.id}"><b>▶ Start ${lab(nxt.x)}</b><small>${cur ? (cur.x.sort ? "sorting done · load and go" : `ends ${lab(cur.x)}`) : "start next run"}</small></button>`;
+  // load-and-go run (no sorting on it): SOD starts the loading, then one tap when the run itself starts
+  const loadGo = !!cur && !cur.x.sort && NO_SORT.includes(cur.x.shift.run) && !cur.x.eod && !cur.x.shift.deliver_at && !segs[cur.i - 1]?.sort;
+  const goB = !loadGo ? "" : va ? offB(`▶ Start ${lab(cur.x)}`, "loading") : `<button class="btn qb" data-runmark="dlv" data-shift="${cur.x.shift.id}"><b>▶ Start ${lab(cur.x)}</b><small>loaded · start of run</small></button>`;
+  // until that tap, the buttons for ending this run / starting the next one stay hidden (they come back 30 min before the next one is due, so nobody gets stuck)
+  const hold = loadGo && !(nxt && nxt.x.st != null && nzNow().min >= nxt.x.st - 30);
   const dlvB = !cur || cur.x.sort || NO_SORT.includes(cur.x.shift.run) || cur.x.eod || cur.x.shift.deliver_at || segs[cur.i - 1]?.sort ? "" : va ? offB("▶ Delivering", "still sorting") : `<button class="btn qb ghost" data-runmark="dlv" data-shift="${cur.x.shift.id}"><b>▶ Delivering</b><small>sorting done · ${lab(cur.x)}</small></button>`;
   const tm = ms => fmtTime(new Date(ms).toISOString());
   const line = segs.length < 2 && !segs[0].shift.deliver_at ? "" : all.map(({ x, i }) => { const s0 = stMs(T, i); if (s0 == null) return ""; const e = x.shift.eor_at ? Date.parse(x.shift.eor_at) : (segs.slice(i + 1).map((_, k) => stMs(T, i + 1 + k)).find(v => v != null) ?? null);
-    return `<b>${x.sort ? "Sort" : esc(x.shift.run)}</b> ${tm(s0)}${x.shift.deliver_at ? ` (delivering ${tm(Date.parse(x.shift.deliver_at))})` : ""}${e ? `–${tm(e)}` : x.eod ? " ✓" : " – now"}`; }).filter(Boolean).join(" · ");
-  const btns = [dlvB, eorB, sorB].filter(Boolean).join("");
+    return `<b>${x.sort ? "Sort" : esc(x.shift.run)}</b> ${tm(s0)}${x.shift.deliver_at ? ` (${NO_SORT.includes(x.shift.run) ? "on the road" : "delivering"} ${tm(Date.parse(x.shift.deliver_at))})` : ""}${e ? `–${tm(e)}` : x.eod ? " ✓" : " – now"}`; }).filter(Boolean).join(" · ");
+  const btns = (hold ? [goB] : [goB, dlvB, eorB, sorB]).filter(Boolean).join("");
   return `${btns ? `<div class="qbar">${btns}</div>` : ""}${line ? `<p class="meta" style="margin:2px 0 6px;text-align:center">${line}</p>` : ""}`;
 }
 /* Break: one button between SOD and the last EOD. Tap to start, tap again to end. */
@@ -257,8 +262,8 @@ async function endBreak() { const { error } = await sb.rpc("break_end"); if (err
 /* ---------- Roster changes ---------- */
 function linePast(item, n) {
   if (item.day < n.date) return true; if (item.day > n.date) return false;
-  const st = toMin(item.after?.start_at) ?? toMin(item.before?.start_at) ?? (() => { const w = S.runsBy[item.run]?.windows?.[dayName(item.day)]; return w ? toMin(w[0][0]) : null; })();
-  return st != null ? n.min >= st : false;
+  const en = toMin(item.after?.end_at) ?? toMin(item.before?.end_at) ?? (() => { const w = S.runsBy[item.run]?.windows?.[dayName(item.day)]; return w ? toMin(w[0][1]) : null; })();
+  return en != null ? n.min >= en : false;   // today's change stays until the shift is over, so one sent after the run started can still be confirmed
 }
 function rosterChanges(n) {
   const ackBy = Object.fromEntries(S.acks.map(a => [a.item_id, a]));
@@ -726,7 +731,7 @@ function wire() {
   $$("[data-runmark]").forEach(b => b.onclick = async () => { b.disabled = true; const k = b.dataset.runmark;
     const { error } = await sb.rpc("run_mark", { p_shift: b.dataset.shift, p_kind: k });
     if (error) { b.disabled = false; return toast(error.message, "err"); }
-    toast(k === "sor" ? "Started ▶ (the one before is ended)" : k === "dlv" ? "Delivering ▶ · sorting time recorded" : "Run ended ■ · send its EOD when you can", "ok"); await loadAll(); render(); });
+    toast(k === "sor" ? "Started ▶ (the one before is ended)" : k === "dlv" ? (NO_SORT.includes(S.shifts.find(z => z.id === b.dataset.shift)?.run) ? "Run started ▶" : "Delivering ▶ · sorting time recorded") : "Run ended ■ · send its EOD when you can", "ok"); await loadAll(); render(); });
   $$("[data-done]").forEach(b => b.onclick = async () => { const undo = !!b.dataset.undo; b.disabled = true; const { error } = await sb.rpc(undo ? "task_undo" : "task_done", { p_shift: b.dataset.shift, p_addon: b.dataset.done }); if (error) { b.disabled = false; toast(error.message, "err"); } else { toast(undo ? "Done undone" : "Marked done ✓ · tap again to undo", "ok"); await loadAll(); render(); } });
   $$("[data-sc]").forEach(b => b.onclick = () => { S.scSel = S.scSel === b.dataset.sc ? null : b.dataset.sc; render(); setTimeout(() => $("#scores")?.scrollIntoView({ block: "nearest" }), 0); });
   $("#leave-new")?.addEventListener("click", leaveForm);
