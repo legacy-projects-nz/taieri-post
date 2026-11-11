@@ -6,7 +6,7 @@ import { driverDay } from "/admin/live.js";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export const chip = it => `<button class="chip ${it.st} ${it.mark?.status ? "man" : ""}" data-item="${esc(it.key)}" title="${STATE_LABEL[it.st]}">${esc(it.label)} <span style="font-weight:500">${itemNote(it).replace(/^posted /, "")}</span></button>`;
-const tile = (l, v, s = "", cls = null, attrs = "") => `<button class="tile" ${attrs}><div class="l">${l}</div><div class="v ${cls || "c-" + col(v)}">${typeof v === "number" || v == null ? pct(v) : v}</div>${s ? `<div class="s">${s}</div>` : ""}</button>`;
+const tile = (l, v, s = "", cls = null, attrs = "") => `<button class="tile" ${attrs}><div class="l">${l}</div><div class="v ${cls || (typeof v === "number" || v == null ? "c-" + col(v) : "")}">${typeof v === "number" || v == null ? pct(v) : v}</div>${s ? `<div class="s">${s}</div>` : ""}</button>`;
 const hrs = v => v == null ? "—" : `${(+v).toFixed(1)} h`;
 const trkCls = v => v == null ? "grey" : v <= 0 ? "ok" : v <= 10 ? "warn" : "crit";
 const trkTxt = v => v == null ? "—" : (v > 0 ? "+" : "") + Math.round(v) + "%";
