@@ -119,13 +119,20 @@ export const late = m => m >= 60 ? `${Math.floor(m / 60)}h${String(m % 60).padSt
 
 /* ---- Evidence: average EOD figures per run and weekday from recent EODs — the estimate used until a run's EOD is in ---- */
 let EVID = null; const EV_KEYS = ["parcels", "stops", "trays", "sort_min", "pickups", "pickup_parcels"];
+// a figure that's plainly a slip isn't used in the averages: 0 parcels or 0 stops, or stops under a fifth of the parcels on a 20+ parcel day
+const evOk = (e, k) => { const v = e[k]; if (v == null || v === "" || isNaN(+v)) return false; if ((k === "parcels" || k === "stops") && +v <= 0) return false;
+  if (k === "stops" && +e.parcels >= 20 && +v < +e.parcels / 5) return false; return true; };
 export function setEvidence(shifts, eods, weeks = 8) {
   const byShift = Object.fromEntries(shifts.map(s => [s.id, s])); const since = addDays(today(), -7 * weeks); const acc = {};
-  for (const e of eods) { const s = byShift[e.shift_id]; if (!s || s.day < since || isSort(s.run) || !e.finish_time && e.parcels == null) continue; for (const scope of [dow(s.day), "all"]) { const o = (acc[s.run] ??= {})[scope] ??= { n: 0 }; o.n++; for (const k of EV_KEYS) if (e[k] != null) (o[k] ??= []).push(+e[k]); } }
-  EVID = {}; for (const [code, scopes] of Object.entries(acc)) { EVID[code] = {}; for (const [scope, o] of Object.entries(scopes)) { const out = { n: o.n }; for (const k of EV_KEYS) if (o[k]?.length) out[k] = Math.round(o[k].reduce((a, b) => a + b, 0) / o[k].length * 10) / 10; EVID[code][scope] = out; } }
+  for (const e of eods) { const s = byShift[e.shift_id]; if (!s || s.day < since || isSort(s.run) || !e.finish_time && e.parcels == null) continue; for (const scope of [dow(s.day), "all"]) { const o = (acc[s.run] ??= {})[scope] ??= { n: 0 }; o.n++; for (const k of EV_KEYS) if (evOk(e, k)) (o[k] ??= []).push(+e[k]); } }
+  EVID = {}; for (const [code, scopes] of Object.entries(acc)) { EVID[code] = {}; for (const [scope, o] of Object.entries(scopes)) { const out = { n: o.n }; for (const k of EV_KEYS) if (o[k]?.length) { out[k] = Math.round(o[k].reduce((a, b) => a + b, 0) / o[k].length * 10) / 10; out[k + "_n"] = o[k].length; } EVID[code][scope] = out; } }
   return EVID;
 }
-export function evidenceFor(code, day) { if (!EVID?.[code]) return null; const d = EVID[code][dow(day)], a = EVID[code].all; return d && d.n >= 2 ? { ...d, scope: "weekday" } : a ? { ...a, scope: "all" } : null; }
+// each figure: that weekday's average when it has 2+ good values, otherwise the average over all days
+export function evidenceFor(code, day) { if (!EVID?.[code]) return null; const d = EVID[code][dow(day)], a = EVID[code].all; if (!d && !a) return null;
+  const out = { n: (d?.n >= 2 ? d.n : a?.n) || 0, scope: d?.n >= 2 ? "weekday" : "all" };
+  for (const k of EV_KEYS) { const w = d && d[k + "_n"] >= 2 ? d[k] : null; const v = w ?? a?.[k]; if (v != null) out[k] = v; }
+  return out; }
 export const evidence = () => EVID;
 
 /* ---- Efficiency ---- */
