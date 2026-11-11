@@ -10,7 +10,7 @@ export async function requireUser(root, { staff = false } = {}) {
   let person = await me();
   if (!person) { root.innerHTML = notOnList(s.user.email); wireOut(root); throw new Error("not on list"); }
   if (!person.active) { root.innerHTML = `<div class="wrap"><div class="card"><h2>Account paused</h2><p>Your Taieri Post account is paused. Talk to Jeremy if that's a surprise.</p>${outBtn()}</div></div>`; wireOut(root); throw new Error("inactive"); }
-  if (person.isStaff) {
+  if (person.isStaff && !person.isOwner) {   // two-step sign-in for admins; the owner is exempt (see migration 064)
     const a = await aal();
     if (a && a.currentLevel !== "aal2") { await mfaScreen(root, a, person); }   // a is empty only with no signal; the server still refuses staff data without the second step
   }
