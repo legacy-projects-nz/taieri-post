@@ -50,6 +50,7 @@ export function dayShifts(shifts, runsBy, driver) {
     const cov = []; for (const x of [...segs.filter(y => !y.sort), ...segs.filter(y => y.sort)]) { const a0 = x.st, b0 = x.en ?? x.st; const len = Math.max(0, b0 - a0);
       const cut = cov.map(([c, d]) => [Math.max(a0, c), Math.min(b0, d)]).filter(([c, d]) => d > c).sort((p, q) => p[0] - q[0]); let ov = 0, at = a0; for (const [c, d] of cut) { if (d > at) { ov += d - Math.max(c, at); at = d; } }
       x.min = len - ov; x.over = ov; if (len) cov.push([a0, b0]); }
+    segs.forEach((x, i) => { if (!x.sort && segs[i - 1]?.sort) x.preSort = segs[i - 1]; });   // team sort just before this run: paid, not scored
     out[day] = { day, segs, start, end, over: segs.reduce((a, x) => a + x.over, 0), hours: Math.round(segs.reduce((a, x) => a + x.min, 0) / 6) / 10 };
   }
   return out;
@@ -155,12 +156,13 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   if (model.pickup) add("Pick-up stops", `${pickups.v} × ${model.pickup}`, pickups.v * model.pickup);
   if (model.puparcel) add("Pick-up parcels", `${pup.v} × ${model.puparcel}`, pup.v * model.puparcel);
   // sorting
-  const sortMin = ov?.sort_min ?? eod?.sort_min;
+  const sortMin = ov?.sort_min ?? eod?.sort_min; const pre = seg.preSort;
   if (net === "tge") { const sm = sortMin ?? (g.push("sort_min"), ev?.sort_min ?? (C.rules.tgeSort || 75)); add("Sorting", `${sm} min`, sm); }
   else {
+    // Sorting done on a sort shift (SUP…) is team work: paid, but out of efficiency both ways — the run is timed from when the sort ends
+    // and gets no sorting allowance. Without a sort shift before it, sorting the driver says they did on the run is allowed by the formula.
     const sp = ov?.sorted_parcels ?? eod?.sorted_parcels, smail = ov?.sorted_mail ?? eod?.sorted_mail;
-    if (sp == null && smail == null && ctx.sortRost) add("Sorting (rostered)", `${ctx.sortRost} min`, ctx.sortRost);
-    else {
+    if (!pre) {
       if (sp) add("Sorting parcels", `${C.sortF.pBase} + (${parcels.v} − ${C.sortF.pIncl}) × ${C.sortF.pRate}`, C.sortF.pBase + Math.max(0, parcels.v - C.sortF.pIncl) * C.sortF.pRate);
       if (smail) add("Sorting mail", `${trays.v} × ${C.sortF.mailTray}`, trays.v * C.sortF.mailTray);
     }
@@ -175,13 +177,17 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   // taken
   // SOR / EOR taps (drivers on more than one run that day) give each run its own real start and finish
   const sorM = seg.shift.sor_at ? nzNow(new Date(seg.shift.sor_at)).min : null, eorM = seg.shift.eor_at ? nzNow(new Date(seg.shift.eor_at)).min : null;
-  const start = ov?.start_at ? toMin(ov.start_at) : ctx.sodMin ?? sorM ?? seg.st; const endT = ov?.end_at ? toMin(ov.end_at) : eorM ?? (eod?.finish_time ? toMin(eod.finish_time) : (eod ? nzNow(new Date(eod.sent_at)).min : null));
+  // after a team sort shift the run starts when the sort ends: the ▶ Start tap, else the sort's end tap, else its start (SOD / tap / roster) + its rostered length
+  const preSt = pre ? (ctx.sodMin ?? (pre.shift.sor_at ? nzNow(new Date(pre.shift.sor_at)).min : pre.st)) : null;
+  const start = ov?.start_at ? toMin(ov.start_at) : pre ? (sorM ?? (pre.shift.eor_at ? nzNow(new Date(pre.shift.eor_at)).min : preSt + (pre.min ?? Math.max(0, (pre.en ?? pre.st) - pre.st)))) : ctx.sodMin ?? sorM ?? seg.st;
+  const sortTaken = pre && start != null && preSt != null ? Math.max(0, start - preSt) : 0;   // minutes on the team sort (paid, not scored)
+  const endT = ov?.end_at ? toMin(ov.end_at) : eorM ?? (eod?.finish_time ? toMin(eod.finish_time) : (eod ? nzNow(new Date(eod.sent_at)).min : null));
   const taken = (start != null && endT != null && endT > start) ? (endT - start) / 60 : null;
   let takenTrk = taken; if (ov?.train_day) takenTrk = 0; else if (ov?.train_min && taken) takenTrk = Math.max(0.01, taken - ov.train_min / 60);
   const brkH = ctx.brk || 0; if (brkH && takenTrk) takenTrk = Math.max(0.01, takenTrk - brkH);   // owner's unpaid breaks
   const need = []; if (!eod) need.push("EOD"); else { if (start != null && endT != null && endT <= start) need.push("Times (SOD is after the EOD finish)"); for (const k of ["parcels", "stops"]) if ((model[k === "parcels" ? "parcel" : "stop"] || 0) > 0 && eod[k] == null && ov?.[k] == null) need.push(k === "parcels" ? (net === "tge" ? "Delivery total" : "Total parcels") : (net === "tge" ? "Jobs" : "Stops")); if (net === "tge" && sortMin == null) need.push("Sorting time"); if (!eod.finish_time) need.push("Finish time"); }
   let perf = null; if (taken && takenTrk !== 0) perf = C.rules.effMethod === "tdt" ? (2 - takenTrk / (allowed / 60)) * 100 : (allowed / 60) / takenTrk * 100; if (perf != null) perf = Math.max(0, Math.min(150, perf));
-  return { code, net, allowed, parts, taken, takenTrk, brk: brkH, perf, need, est: g.length > 0, guess: g, trainDay: !!ov?.train_day, start, end: endT, model, evid: ev ? ev.scope : null, evN: ev?.n || 0, noEod: !eod, figs: { parcels, stops, trays, pickups, pup } };
+  return { code, net, allowed, parts, sortTaken, sortFrom: pre ? preSt : null, sortRun: pre?.shift.run || null, taken, takenTrk, brk: brkH, perf, need, est: g.length > 0, guess: g, trainDay: !!ov?.train_day, start, end: endT, model, evid: ev ? ev.scope : null, evN: ev?.n || 0, noEod: !eod, figs: { parcels, stops, trays, pickups, pup } };
 }
 /* Milton meet: the D>B driver sets the drop-off time each day (shifts.milton_at, copied onto that day's LAW shift).
    It replaces the timing rule's usual 10:30 for both runs, and puts the meet on the LAW driver's list even if not ticked. */
