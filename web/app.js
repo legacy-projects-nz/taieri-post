@@ -227,7 +227,7 @@ function runBar(T, sod, runs, va, offB) {
   const nxt = all.find(({ i }) => !started(i));
   const lab = x => x.sort ? "sort" : esc(x.shift.run);
   const eorB = !cur || cur.x.sort || segs.length < 2 ? "" : va ? offB(`■ EOR ${lab(cur.x)}`, "run going") : `<button class="btn qb ghost" data-runmark="eor" data-shift="${cur.x.shift.id}"><b>■ EOR ${lab(cur.x)}</b><small>end of run</small></button>`;
-  const sorB = !nxt ? "" : va ? offB(`▶ Start ${lab(nxt.x)}`, "not started") : `<button class="btn qb" data-runmark="sor" data-shift="${nxt.x.shift.id}"><b>▶ Start ${lab(nxt.x)}</b><small>${cur ? (cur.x.sort ? "sorting done" : `ends ${lab(cur.x)}`) : "start next run"}</small></button>`;
+  const sorB = !nxt ? "" : va ? offB(`▶ Start ${lab(nxt.x)}`, "not started") : `<button class="btn qb" data-runmark="sor" data-shift="${nxt.x.shift.id}"><b>▶ Start ${lab(nxt.x)}</b><small>${cur ? (cur.x.sort ? "sorting done · load and go" : `ends ${lab(cur.x)}`) : "start next run"}</small></button>`;
   const dlvB = !cur || cur.x.sort || NO_SORT.includes(cur.x.shift.run) || cur.x.eod || cur.x.shift.deliver_at || segs[cur.i - 1]?.sort ? "" : va ? offB("▶ Delivering", "still sorting") : `<button class="btn qb ghost" data-runmark="dlv" data-shift="${cur.x.shift.id}"><b>▶ Delivering</b><small>sorting done · ${lab(cur.x)}</small></button>`;
   const tm = ms => fmtTime(new Date(ms).toISOString());
   const line = segs.length < 2 && !segs[0].shift.deliver_at ? "" : all.map(({ x, i }) => { const s0 = stMs(T, i); if (s0 == null) return ""; const e = x.shift.eor_at ? Date.parse(x.shift.eor_at) : (segs.slice(i + 1).map((_, k) => stMs(T, i + 1 + k)).find(v => v != null) ?? null);

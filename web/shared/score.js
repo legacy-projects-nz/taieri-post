@@ -163,13 +163,17 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   const preSt = pre ? (ctx.sodMin ?? (pre.shift.sor_at ? nzNow(new Date(pre.shift.sor_at)).min : pre.st)) : null;
   const start = ov?.start_at ? toMin(ov.start_at) : pre ? (sorM ?? (pre.shift.eor_at ? nzNow(new Date(pre.shift.eor_at)).min : preSt + (pre.min ?? Math.max(0, (pre.en ?? pre.st) - pre.st)))) : ctx.sodMin ?? sorM ?? seg.st;
   const sortTaken = pre && start != null && preSt != null ? Math.max(0, start - preSt) : 0;   // minutes on the team sort (paid, not scored)
-  if (net === "tge") { const sm = sortMin ?? (g.push("sort_min"), ev?.sort_min ?? (C.rules.tgeSort || 75));
-    if (pre) add("Sorting beyond the team sort", `${sm} min sorting − ${Math.round(sortTaken)} min on ${pre.shift.run}`, Math.max(0, sm - sortTaken)); else add("Sorting", `${sm} min`, sm); }
+  // Load and go: after a team sort (or on a run that comes pre-loaded, like RAM) the run gets a set time to load the van and go.
+  // TUA is already loaded (0), Flyer / RAM / NZ Post runs 15 min, TGE 30 min. Change in settings → rules.loadGo { CODE: min, default: min }.
+  const LG = { TUA: 0, S: 30, T: 30, default: 15, ...(C.rules.loadGo || {}) }; const preLoaded = (C.rules.noSortRuns || ["RAM"]).includes(code);
+  const lgMin = LG[code] ?? (net === "tge" ? 30 : LG.default);
+  if (pre || preLoaded) { if (lgMin) add("Load and go", `${lgMin} min${pre ? ` (sorting done on ${pre.shift.run})` : " (comes written up and scanned)"}`, lgMin); }
+  if (net === "tge") { if (!pre) { const sm = sortMin ?? (g.push("sort_min"), ev?.sort_min ?? (C.rules.tgeSort || 75)); add("Sorting", `${sm} min`, sm); } }
   else {
     // Sorting done on a sort shift (SUP…) is team work: paid, but out of efficiency both ways — the run is timed from when the sort ends
     // and gets no sorting allowance. Without a sort shift before it, sorting the driver says they did on the run is allowed by the formula.
     const sp = ov?.sorted_parcels ?? eod?.sorted_parcels, smail = ov?.sorted_mail ?? eod?.sorted_mail;
-    if (!pre) {
+    if (!pre && !preLoaded) {
       if (sp) add("Sorting parcels", `${C.sortF.pBase} + (${parcels.v} − ${C.sortF.pIncl}) × ${C.sortF.pRate}`, C.sortF.pBase + Math.max(0, parcels.v - C.sortF.pIncl) * C.sortF.pRate);
       if (smail) add("Sorting mail", `${trays.v} × ${C.sortF.mailTray}`, trays.v * C.sortF.mailTray);
     }
@@ -179,15 +183,17 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   if (model.addon != null && !(ov?.legs)) add("Add-ons (estimate)", `${model.addon} min`, model.addon);
   else { const legs = ov?.legs || [...new Set([...(seg.shift.addons || []), ...((eod?.legs) || [])])]; for (const l of legs) if (C.addMin[l]) add(addName(l), `${C.addMin[l]} min`, C.addMin[l]); }
   const newsMin = C.news.byRun?.[code] ?? C.news.min; if (model.news && (ov?.news_min || eod?.newspapers)) add("Newspapers", `${newsMin} min`, ov?.news_min || newsMin);
-  const floor = model.floor ? Math.max(0, model.floor - (pre ? sortTaken : 0)) : 0;   // the run minimum includes sorting, so the team sort comes off it
-  if (floor && min < floor) add("Minimum top-up", `run minimum ${model.floor} min (sorting + delivery)${pre ? ` − ${Math.round(sortTaken)} min team sort` : ""}`, floor - min);
+  // the run minimum includes sorting; only a run whose van is already loaded (TUA) has the team sort taken off it
+  const cutFloor = pre && (C.rules.floorCutRuns || ["TUA"]).includes(code);
+  const floor = model.floor ? Math.max(0, model.floor - (cutFloor ? sortTaken : 0)) : 0;
+  if (floor && min < floor) add("Minimum top-up", `run minimum ${model.floor} min (sorting + delivery)${cutFloor ? ` − ${Math.round(sortTaken)} min team sort` : ""}`, floor - min);
   const allowed = min;
   // taken
   const endT = ov?.end_at ? toMin(ov.end_at) : eorM ?? (eod?.finish_time ? toMin(eod.finish_time) : (eod ? nzNow(new Date(eod.sent_at)).min : null));
   const taken = (start != null && endT != null && endT > start) ? (endT - start) / 60 : null;
   let takenTrk = taken; if (ov?.train_day) takenTrk = 0; else if (ov?.train_min && taken) takenTrk = Math.max(0.01, taken - ov.train_min / 60);
   const brkH = ctx.brk || 0; if (brkH && takenTrk) takenTrk = Math.max(0.01, takenTrk - brkH);   // owner's unpaid breaks
-  const need = []; if (!eod) need.push("EOD"); else { if (start != null && endT != null && endT <= start) need.push("Times (SOD is after the EOD finish)"); for (const k of ["parcels", "stops"]) if ((model[k === "parcels" ? "parcel" : "stop"] || 0) > 0 && eod[k] == null && ov?.[k] == null) need.push(k === "parcels" ? (net === "tge" ? "Delivery total" : "Total parcels") : (net === "tge" ? "Jobs" : "Stops")); if (net === "tge" && sortMin == null) need.push("Sorting time"); if (!eod.finish_time) need.push("Finish time"); }
+  const need = []; if (!eod) need.push("EOD"); else { if (start != null && endT != null && endT <= start) need.push("Times (SOD is after the EOD finish)"); for (const k of ["parcels", "stops"]) if ((model[k === "parcels" ? "parcel" : "stop"] || 0) > 0 && eod[k] == null && ov?.[k] == null) need.push(k === "parcels" ? (net === "tge" ? "Delivery total" : "Total parcels") : (net === "tge" ? "Jobs" : "Stops")); if (net === "tge" && !pre && sortMin == null) need.push("Sorting time"); if (!eod.finish_time) need.push("Finish time"); }
   let perf = null; if (taken && takenTrk !== 0) perf = C.rules.effMethod === "tdt" ? (2 - takenTrk / (allowed / 60)) * 100 : (allowed / 60) / takenTrk * 100; if (perf != null) perf = Math.max(0, Math.min(150, perf));
   return { code, net, allowed, parts, sortTaken, sortFrom: pre ? preSt : null, sortRun: pre?.shift.run || null, taken, takenTrk, brk: brkH, perf, need, est: g.length > 0, guess: g, trainDay: !!ov?.train_day, start, end: endT, model, evid: ev ? ev.scope : null, evN: ev?.n || 0, noEod: !eod, figs: { parcels, stops, trays, pickups, pup } };
 }
