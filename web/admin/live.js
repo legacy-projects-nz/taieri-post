@@ -207,7 +207,7 @@ export function driverDay(drv, d) {
     if (!c) { exp += x.min / 60; est = true; return; }                       // no formula for this run yet → rostered length, flagged as an estimate
     effRows.push({ d, drv, x, eod, ov, c }); if (c.trainDay) { train += c.taken || 0; return; } exp += c.allowed / 60; if (!eod || c.est) est = true; if (ov?.train_min) train += ov.train_min / 60; });
   // team sort shifts (SUP…) count at the time they took (from the taps, else the roster), so they're paid and neutral in the hours tracking
-  if (runSegs.length) for (const x of D.segs.filter(y => y.sort)) { const r = effRows.find(e => e.x.preSort === x); exp += (r && !r.c.trainDay && r.c.start != null ? r.c.sortTaken : x.min) / 60; }
+  if (runSegs.length) for (const x of D.segs.filter(y => y.sort)) { const r = effRows.find(e => e.x.preSort === x); if (r?.c.sortIn != null) continue; exp += (r && !r.c.trainDay && r.c.start != null ? r.c.sortTaken : x.min) / 60; }
   if (!runSegs.length) { exp = D.hours; est = !D.segs.some(x => S.eodBy[x.shift.id]); }     // sort-only day
   const complete = sod && (runSegs.length ? eods.length === runSegs.length : D.segs.some(x => S.eodBy[x.shift.id]));
   const anyE = runSegs.length ? eods : D.segs.map(x => S.eodBy[x.shift.id]).filter(Boolean); const lastE = anyE[anyE.length - 1];

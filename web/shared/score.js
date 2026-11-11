@@ -198,15 +198,20 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   const cutFloor = pre && (C.rules.floorCutRuns || ["TUA"]).includes(code);
   const floor = model.floor ? Math.max(0, model.floor - (cutFloor ? sortTaken : 0)) : 0;
   if (floor && min < floor) add("Minimum top-up", `run minimum ${model.floor} min (sorting + delivery)${cutFloor ? ` − ${Math.round(sortTaken)} min team sort` : ""}`, floor - min);
+  // team sort counted into this driver's efficiency (settings → rules.sortInEff { driverId: min }): the sort gets a set allowance
+  // and the time taken runs from the start of the sort instead of from when it ends
+  const sortIn = pre ? (C.rules.sortInEff || {})[seg.shift.driver] ?? null : null;
+  if (sortIn != null) add("Team sort", `${sortIn} min allowed (sorting on ${pre.shift.run} counted in)`, sortIn);
   const allowed = min;
   // taken
   const endT = ov?.end_at ? toMin(ov.end_at) : eorM ?? (eod?.finish_time ? toMin(eod.finish_time) : (eod ? nzNow(new Date(eod.sent_at)).min : null));
-  const taken = (start != null && endT != null && endT > start) ? (endT - start) / 60 : null;
+  const tSt = sortIn != null && preSt != null ? preSt : start;
+  const taken = (tSt != null && endT != null && endT > tSt) ? (endT - tSt) / 60 : null;
   let takenTrk = taken; if (ov?.train_day) takenTrk = 0; else if (ov?.train_min && taken) takenTrk = Math.max(0.01, taken - ov.train_min / 60);
   const brkH = ctx.brk || 0; if (brkH && takenTrk) takenTrk = Math.max(0.01, takenTrk - brkH);   // owner's unpaid breaks
   const need = []; if (!eod) need.push("EOD"); else { if (start != null && endT != null && endT <= start) need.push("Times (SOD is after the EOD finish)"); for (const k of ["parcels", "stops"]) if ((model[k === "parcels" ? "parcel" : "stop"] || 0) > 0 && eod[k] == null && ov?.[k] == null) need.push(k === "parcels" ? (net === "tge" ? "Delivery total" : "Total parcels") : (net === "tge" ? "Jobs" : "Stops")); if (net === "tge" && !pre && sortMin == null) need.push("Sorting time"); if (!eod.finish_time) need.push("Finish time"); }
   let perf = null; if (taken && takenTrk !== 0) perf = C.rules.effMethod === "tdt" ? (2 - takenTrk / (allowed / 60)) * 100 : (allowed / 60) / takenTrk * 100; if (perf != null) perf = Math.max(0, Math.min(150, perf));
-  return { code, net, allowed, parts, sortTaken, sortFrom: pre ? preSt : null, sortRun: pre?.shift.run || null, taken, takenTrk, brk: brkH, perf, need, est: g.length > 0, guess: g, trainDay: !!ov?.train_day, start, end: endT, model, evid: ev ? ev.scope : null, evN: ev?.n || 0, noEod: !eod, figs: { parcels, stops, trays, pickups, pup } };
+  return { code, net, allowed, parts, sortTaken, sortIn, sortFrom: pre ? preSt : null, sortRun: pre?.shift.run || null, taken, takenTrk, brk: brkH, perf, need, est: g.length > 0, guess: g, trainDay: !!ov?.train_day, start, end: endT, model, evid: ev ? ev.scope : null, evN: ev?.n || 0, noEod: !eod, figs: { parcels, stops, trays, pickups, pup } };
 }
 /* Milton meet: the D>B driver sets the drop-off time each day (shifts.milton_at, copied onto that day's LAW shift).
    It replaces the timing rule's usual 10:30 for both runs, and puts the meet on the LAW driver's list even if not ticked. */
