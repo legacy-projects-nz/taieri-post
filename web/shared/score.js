@@ -165,7 +165,8 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   const sortTaken = pre && start != null && preSt != null ? Math.max(0, start - preSt) : 0;   // minutes on the team sort (paid, not scored)
   // Load and go: after a team sort (or on a run that comes pre-loaded, like RAM) the run gets a set time to load the van and go.
   // TUA is already loaded (0), Flyer / RAM / NZ Post runs 15 min, TGE 30 min. Change in settings → rules.loadGo { CODE: min, default: min }.
-  const LG = { TUA: 0, PCB: 0, RSB: 0, FLY: 30, S: 30, T: 30, default: 15, ...(C.rules.loadGo || {}) };   // PCB is loaded inside the West Harbour sort; RSB has its own sort-and-load time below const preLoaded = (C.rules.noSortRuns || ["RAM"]).includes(code);
+  // PCB is loaded inside the West Harbour sort; RSB has its own sort-and-load time below
+  const LG = { TUA: 0, PCB: 0, RSB: 0, FLY: 30, S: 30, T: 30, default: 15, ...(C.rules.loadGo || {}) }; const preLoaded = (C.rules.noSortRuns || ["RAM"]).includes(code);
   const lgMin = LG[code] ?? (net === "tge" ? 30 : LG.default);
   if (pre || preLoaded) { if (lgMin) add("Load and go", `${lgMin} min${pre ? ` (sorting done on ${pre.shift.run})` : " (comes written up and scanned)"}`, lgMin); }
   // RSB: its own sort and load, by day (45 min Mon/Wed/Fri, 60 Sat, 75 Tue/Thu). On the driver's sort shift when there is one (team time);
