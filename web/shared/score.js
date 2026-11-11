@@ -157,7 +157,14 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   if (model.puparcel) add("Pick-up parcels", `${pup.v} × ${model.puparcel}`, pup.v * model.puparcel);
   // sorting
   const sortMin = ov?.sort_min ?? eod?.sort_min; const pre = seg.preSort;
-  if (net === "tge") { const sm = sortMin ?? (g.push("sort_min"), ev?.sort_min ?? (C.rules.tgeSort || 75)); add("Sorting", `${sm} min`, sm); }
+  // SOR / EOR taps (drivers on more than one run that day) give each run its own real start and finish
+  const sorM = seg.shift.sor_at ? nzNow(new Date(seg.shift.sor_at)).min : null, eorM = seg.shift.eor_at ? nzNow(new Date(seg.shift.eor_at)).min : null;
+  // after a team sort shift the run starts when the sort ends: the ▶ Start tap, else the sort's end tap, else its start (SOD / tap / roster) + its rostered length
+  const preSt = pre ? (ctx.sodMin ?? (pre.shift.sor_at ? nzNow(new Date(pre.shift.sor_at)).min : pre.st)) : null;
+  const start = ov?.start_at ? toMin(ov.start_at) : pre ? (sorM ?? (pre.shift.eor_at ? nzNow(new Date(pre.shift.eor_at)).min : preSt + (pre.min ?? Math.max(0, (pre.en ?? pre.st) - pre.st)))) : ctx.sodMin ?? sorM ?? seg.st;
+  const sortTaken = pre && start != null && preSt != null ? Math.max(0, start - preSt) : 0;   // minutes on the team sort (paid, not scored)
+  if (net === "tge") { const sm = sortMin ?? (g.push("sort_min"), ev?.sort_min ?? (C.rules.tgeSort || 75));
+    if (pre) add("Sorting beyond the team sort", `${sm} min sorting − ${Math.round(sortTaken)} min on ${pre.shift.run}`, Math.max(0, sm - sortTaken)); else add("Sorting", `${sm} min`, sm); }
   else {
     // Sorting done on a sort shift (SUP…) is team work: paid, but out of efficiency both ways — the run is timed from when the sort ends
     // and gets no sorting allowance. Without a sort shift before it, sorting the driver says they did on the run is allowed by the formula.
@@ -172,15 +179,10 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   if (model.addon != null && !(ov?.legs)) add("Add-ons (estimate)", `${model.addon} min`, model.addon);
   else { const legs = ov?.legs || [...new Set([...(seg.shift.addons || []), ...((eod?.legs) || [])])]; for (const l of legs) if (C.addMin[l]) add(addName(l), `${C.addMin[l]} min`, C.addMin[l]); }
   const newsMin = C.news.byRun?.[code] ?? C.news.min; if (model.news && (ov?.news_min || eod?.newspapers)) add("Newspapers", `${newsMin} min`, ov?.news_min || newsMin);
-  if (model.floor && min < model.floor) add("Minimum top-up", `run minimum ${model.floor} min (sorting + delivery)`, model.floor - min);
+  const floor = model.floor ? Math.max(0, model.floor - (pre ? sortTaken : 0)) : 0;   // the run minimum includes sorting, so the team sort comes off it
+  if (floor && min < floor) add("Minimum top-up", `run minimum ${model.floor} min (sorting + delivery)${pre ? ` − ${Math.round(sortTaken)} min team sort` : ""}`, floor - min);
   const allowed = min;
   // taken
-  // SOR / EOR taps (drivers on more than one run that day) give each run its own real start and finish
-  const sorM = seg.shift.sor_at ? nzNow(new Date(seg.shift.sor_at)).min : null, eorM = seg.shift.eor_at ? nzNow(new Date(seg.shift.eor_at)).min : null;
-  // after a team sort shift the run starts when the sort ends: the ▶ Start tap, else the sort's end tap, else its start (SOD / tap / roster) + its rostered length
-  const preSt = pre ? (ctx.sodMin ?? (pre.shift.sor_at ? nzNow(new Date(pre.shift.sor_at)).min : pre.st)) : null;
-  const start = ov?.start_at ? toMin(ov.start_at) : pre ? (sorM ?? (pre.shift.eor_at ? nzNow(new Date(pre.shift.eor_at)).min : preSt + (pre.min ?? Math.max(0, (pre.en ?? pre.st) - pre.st)))) : ctx.sodMin ?? sorM ?? seg.st;
-  const sortTaken = pre && start != null && preSt != null ? Math.max(0, start - preSt) : 0;   // minutes on the team sort (paid, not scored)
   const endT = ov?.end_at ? toMin(ov.end_at) : eorM ?? (eod?.finish_time ? toMin(eod.finish_time) : (eod ? nzNow(new Date(eod.sent_at)).min : null));
   const taken = (start != null && endT != null && endT > start) ? (endT - start) / 60 : null;
   let takenTrk = taken; if (ov?.train_day) takenTrk = 0; else if (ov?.train_min && taken) takenTrk = Math.max(0.01, taken - ov.train_min / 60);
