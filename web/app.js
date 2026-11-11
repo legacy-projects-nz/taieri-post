@@ -228,7 +228,8 @@ function runBar(T, sod, runs, va, offB) {
   const cur = all.filter(({ x, i }) => started(i) && !ended(x, i)).pop();
   const nxt = all.find(({ i }) => !started(i));
   const lab = x => x.sort ? "sort" : esc(x.shift.run);
-  const eorB = !cur || cur.x.sort || segs.length < 2 ? "" : va ? offB(`■ EOR ${lab(cur.x)}`, "run going") : `<button class="btn qb ghost" data-runmark="eor" data-shift="${cur.x.shift.id}"><b>■ EOR ${lab(cur.x)}</b><small>end of run</small></button>`;
+  const eorB = !cur || cur.x.sort || runs.length < 2 ? ""   // one run in the day: the EOD ends it, no EOR
+  : va ? offB(`■ EOR ${lab(cur.x)}`, "run going") : `<button class="btn qb ghost" data-runmark="eor" data-shift="${cur.x.shift.id}"><b>■ EOR ${lab(cur.x)}</b><small>end of run</small></button>`;
   const sorB = !nxt ? "" : va ? offB(`▶ Start ${lab(nxt.x)}`, "not started") : `<button class="btn qb" data-runmark="sor" data-shift="${nxt.x.shift.id}"><b>▶ Start ${lab(nxt.x)}</b><small>${cur ? (cur.x.sort ? "sorting done · load and go" : `ends ${lab(cur.x)}`) : "start next run"}</small></button>`;
   // load-and-go run (no sorting on it): SOD starts the loading, then one tap when the run itself starts
   const loadGo = !!cur && !cur.x.sort && NO_SORT.includes(cur.x.shift.run) && !cur.x.eod && !cur.x.shift.deliver_at && !segs[cur.i - 1]?.sort;
