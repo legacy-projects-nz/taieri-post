@@ -165,15 +165,19 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   const sortTaken = pre && start != null && preSt != null ? Math.max(0, start - preSt) : 0;   // minutes on the team sort (paid, not scored)
   // Load and go: after a team sort (or on a run that comes pre-loaded, like RAM) the run gets a set time to load the van and go.
   // TUA is already loaded (0), Flyer / RAM / NZ Post runs 15 min, TGE 30 min. Change in settings → rules.loadGo { CODE: min, default: min }.
-  const LG = { TUA: 0, S: 30, T: 30, default: 15, ...(C.rules.loadGo || {}) }; const preLoaded = (C.rules.noSortRuns || ["RAM"]).includes(code);
+  const LG = { TUA: 0, PCB: 0, RSB: 0, S: 30, T: 30, default: 15, ...(C.rules.loadGo || {}) };   // PCB is loaded inside the West Harbour sort; RSB has its own sort-and-load time below const preLoaded = (C.rules.noSortRuns || ["RAM"]).includes(code);
   const lgMin = LG[code] ?? (net === "tge" ? 30 : LG.default);
   if (pre || preLoaded) { if (lgMin) add("Load and go", `${lgMin} min${pre ? ` (sorting done on ${pre.shift.run})` : " (comes written up and scanned)"}`, lgMin); }
+  // RSB: its own sort and load, by day (45 min Mon/Wed/Fri, 60 Sat, 75 Tue/Thu). On the driver's sort shift when there is one (team time);
+  // otherwise (RSB straight after another run) it is allowed on the run in place of the sorting formula. Change in settings → rules.rsbSort.
+  const fixedSort = code === "RSB" ? ({ Mon: 45, Tue: 75, Wed: 45, Thu: 75, Fri: 45, Sat: 60, ...(C.rules.rsbSort || {}) })[["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date(seg.shift.day + "T00:00:00Z").getUTCDay()]] : null;
+  if (fixedSort && !pre) add("Sort and load", `${fixedSort} min (RSB, set by day)`, fixedSort);
   if (net === "tge") { if (!pre) { const sm = sortMin ?? (g.push("sort_min"), ev?.sort_min ?? (C.rules.tgeSort || 75)); add("Sorting", `${sm} min`, sm); } }
   else {
     // Sorting done on a sort shift (SUP…) is team work: paid, but out of efficiency both ways — the run is timed from when the sort ends
     // and gets no sorting allowance. Without a sort shift before it, sorting the driver says they did on the run is allowed by the formula.
     const sp = ov?.sorted_parcels ?? eod?.sorted_parcels, smail = ov?.sorted_mail ?? eod?.sorted_mail;
-    if (!pre && !preLoaded) {
+    if (!pre && !preLoaded && !fixedSort) {
       if (sp) add("Sorting parcels", `${C.sortF.pBase} + (${parcels.v} − ${C.sortF.pIncl}) × ${C.sortF.pRate}`, C.sortF.pBase + Math.max(0, parcels.v - C.sortF.pIncl) * C.sortF.pRate);
       if (smail) add("Sorting mail", `${trays.v} × ${C.sortF.mailTray}`, trays.v * C.sortF.mailTray);
     }
