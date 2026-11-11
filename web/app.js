@@ -3,7 +3,7 @@ import { DEMO, sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, lon
 import { requireUser } from "/shared/auth.js";
 import { VAPID_PUBLIC } from "/shared/config.js";
 import { resetDemo, newRuns } from "/shared/demo.js";
-import { cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, NET, PICKUP_RUNS, LEG_RUNS, effCalc, setEvidence, setAddonNames, meetRule, meetOn, needsFix } from "/shared/score.js";
+import { cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, NET, PICKUP_RUNS, LEG_RUNS, effCalc, setEvidence, setAddonNames, meetRule, meetOn, needsFix, sortExp } from "/shared/score.js";
 
 const app = $("#app");
 const S = { me: null, set: {}, C: null, runs: [], runsBy: {}, vans: {}, addons: [], rules: [], people: {}, shifts: [], sods: [], eods: [], marks: [], entries: [], feed: [], changes: [], acks: [], msgs: [], leave: [], alerts: [], loc: null, gotit: {}, login: {} };
@@ -213,9 +213,18 @@ function quickBar(T, n) {
    ▶ Delivering marks the end of a sort done inside the run (no sort shift before it). */
 const stMs = (T, i) => { const x = T.segs[i]; if (i === 0) { const sod = T.segs.find(y => y.sod)?.sod; return sod ? Date.parse(sod.sent_at) : null; } return x.shift.sor_at ? Date.parse(x.shift.sor_at) : null; };
 // sort minutes for a run from the taps: the sort shift just before it (its start → this run's start) + any sort inside the run (start → ▶ Delivering)
-const NO_SORT = ["RAM"];   // written up and scanned before the driver gets it: load and go, no sorting on the run
+// "go" runs (RAM, TUA, Flyer): already sorted / loaded for the driver, so the run starts with the SOD or the Sort done tap
+const isGo = code => S.C?.sortMin?.[code] === 0;
+const NO_SORT = { includes: isGo };
+// the sort the driver is on now, if any: a sort shift, or the sorting part of a run that has its own sort time
+function sortNow(T, cur) {
+  if (!cur) return null; const { x, i } = cur; const st = stMs(T, i); if (st == null) return null;
+  if (x.sort) { const en = x.rostEn ?? x.en; const exp = en != null && x.st != null && en > x.st ? en - x.st : null; return { st, exp }; }
+  if (isGo(x.shift.run) || x.shift.deliver_at || x.eod || T.segs[i - 1]?.sort) return null;
+  return { st, exp: sortExp(S.C, x.shift.run, T.day || today()) };
+}
 function sortTap(T, x, runStartMs) {
-  if (NO_SORT.includes(x.shift.run)) return null;
+  if (isGo(x.shift.run)) return null;
   const i = T.segs.indexOf(x); if (i < 0) return null; const st = runStartMs ?? stMs(T, i); let m = null;
   const pre = T.segs[i - 1]; if (pre?.sort) { const ps = stMs(T, i - 1); if (ps != null && st != null && st > ps) m = (m || 0) + (st - ps) / 60000; }
   if (x.shift.deliver_at && st != null) { const d = Date.parse(x.shift.deliver_at); if (d > st) m = (m || 0) + (d - st) / 60000; }
@@ -230,17 +239,18 @@ function runBar(T, sod, runs, va, offB) {
   const lab = x => x.sort ? "sort" : esc(x.shift.run);
   const eorB = !cur || cur.x.sort || runs.length < 2 ? ""   // one run in the day: the EOD ends it, no EOR
   : va ? offB(`■ EOR ${lab(cur.x)}`, "run going") : `<button class="btn qb ghost" data-runmark="eor" data-shift="${cur.x.shift.id}"><b>■ EOR ${lab(cur.x)}</b><small>end of run</small></button>`;
-  const sorB = !nxt ? "" : va ? offB(`▶ Start ${lab(nxt.x)}`, "not started") : `<button class="btn qb" data-runmark="sor" data-shift="${nxt.x.shift.id}"><b>▶ Start ${lab(nxt.x)}</b><small>${cur ? (cur.x.sort ? "sorting done · load and go" : `ends ${lab(cur.x)}`) : "start next run"}</small></button>`;
-  // load-and-go run (no sorting on it): SOD starts the loading, then one tap when the run itself starts
-  const loadGo = !!cur && !cur.x.sort && NO_SORT.includes(cur.x.shift.run) && !cur.x.eod && !cur.x.shift.deliver_at && !segs[cur.i - 1]?.sort;
-  const goB = !loadGo ? "" : va ? offB(`▶ Start ${lab(cur.x)}`, "loading") : `<button class="btn qb" data-runmark="dlv" data-shift="${cur.x.shift.id}"><b>▶ Start ${lab(cur.x)}</b><small>loaded · start of run</small></button>`;
-  // until that tap, the buttons for ending this run / starting the next one stay hidden (they come back 30 min before the next one is due, so nobody gets stuck)
-  const hold = loadGo && !(nxt && nxt.x.st != null && nzNow().min >= nxt.x.st - 30);
-  const dlvB = !cur || cur.x.sort || NO_SORT.includes(cur.x.shift.run) || cur.x.eod || cur.x.shift.deliver_at || segs[cur.i - 1]?.sort ? "" : va ? offB("▶ Delivering", "still sorting") : `<button class="btn qb ghost" data-runmark="dlv" data-shift="${cur.x.shift.id}"><b>▶ Delivering</b><small>sorting done · ${lab(cur.x)}</small></button>`;
+  // sorting: one "Sort done" button with a timer; it turns amber once the sort is past its expected time.
+  // On a sort shift it ends the sort and starts the next run; on a run with its own sort it starts delivering.
+  const so = sortNow(T, cur); const el = so ? Math.max(0, Math.round((Date.now() - so.st) / 60000)) : 0; const over = !!so && so.exp != null && el > so.exp;
+  const tmr = so ? `sorting ${el}${so.exp != null ? ` of ${so.exp}` : ""} min${over ? " · over" : ""}` : "";
+  const sortB = (kind, id, then) => va ? offB("■ Sort done", tmr) : `<button class="btn qb ${over ? "warn" : ""}" data-runmark="${kind}" data-shift="${id}"><b>■ Sort done</b><small>${tmr} · ${then}</small></button>`;
+  const sorB = !nxt ? "" : cur?.x.sort ? sortB("sor", nxt.x.shift.id, `starts ${lab(nxt.x)}`)
+    : va ? offB(`▶ Start ${lab(nxt.x)}`, "not started") : `<button class="btn qb" data-runmark="sor" data-shift="${nxt.x.shift.id}"><b>▶ Start ${lab(nxt.x)}</b><small>${cur ? `ends ${lab(cur.x)}` : "start next run"}</small></button>`;
+  const dlvB = !so || cur.x.sort ? "" : sortB("dlv", cur.x.shift.id, `starts ${lab(cur.x)}`);
   const tm = ms => fmtTime(new Date(ms).toISOString());
   const line = segs.length < 2 && !segs[0].shift.deliver_at ? "" : all.map(({ x, i }) => { const s0 = stMs(T, i); if (s0 == null) return ""; const e = x.shift.eor_at ? Date.parse(x.shift.eor_at) : (segs.slice(i + 1).map((_, k) => stMs(T, i + 1 + k)).find(v => v != null) ?? null);
     return `<b>${x.sort ? "Sort" : esc(x.shift.run)}</b> ${tm(s0)}${x.shift.deliver_at ? ` (${NO_SORT.includes(x.shift.run) ? "on the road" : "delivering"} ${tm(Date.parse(x.shift.deliver_at))})` : ""}${e ? `–${tm(e)}` : x.eod ? " ✓" : " – now"}`; }).filter(Boolean).join(" · ");
-  const btns = (hold ? [goB] : [goB, dlvB, eorB, sorB]).filter(Boolean).join("");
+  const btns = (so ? (cur.x.sort ? [sorB] : [dlvB]) : [eorB, sorB]).filter(Boolean).join("");
   return `${btns ? `<div class="qbar">${btns}</div>` : ""}${line ? `<p class="meta" style="margin:2px 0 6px;text-align:center">${line}</p>` : ""}`;
 }
 /* Break: one button between SOD and the last EOD. Tap to start, tap again to end. */
@@ -742,7 +752,7 @@ function wire() {
   $$("[data-runmark]").forEach(b => b.onclick = async () => { b.disabled = true; const k = b.dataset.runmark;
     const { error } = await sb.rpc("run_mark", { p_shift: b.dataset.shift, p_kind: k });
     if (error) { b.disabled = false; return toast(error.message, "err"); }
-    toast(k === "sor" ? "Started ▶ (the one before is ended)" : k === "dlv" ? (NO_SORT.includes(S.shifts.find(z => z.id === b.dataset.shift)?.run) ? "Run started ▶" : "Delivering ▶ · sorting time recorded") : "Run ended ■ · send its EOD when you can", "ok"); await loadAll(); render(); });
+    toast(k === "sor" ? (b.textContent.includes("Sort done") ? "Sort done ✓ · run started ▶" : "Started ▶ (the one before is ended)") : k === "dlv" ? "Sort done ✓ · run started ▶" : "Run ended ■ · send its EOD when you can", "ok"); await loadAll(); render(); });
   $$("[data-done]").forEach(b => b.onclick = async () => { const undo = !!b.dataset.undo; b.disabled = true; const { error } = await sb.rpc(undo ? "task_undo" : "task_done", { p_shift: b.dataset.shift, p_addon: b.dataset.done }); if (error) { b.disabled = false; toast(error.message, "err"); } else { toast(undo ? "Done undone" : "Marked done ✓ · tap again to undo", "ok"); await loadAll(); render(); } });
   $$("[data-sc]").forEach(b => b.onclick = () => { S.scSel = S.scSel === b.dataset.sc ? null : b.dataset.sc; render(); setTimeout(() => $("#scores")?.scrollIntoView({ block: "nearest" }), 0); });
   $("#leave-new")?.addEventListener("click", leaveForm);
@@ -881,6 +891,8 @@ function eodForm(shiftId, sortOnly, edit = false) {
   const isRun = !sortOnly && !isSort(code); const askStart = isRun && !ex && segI > 0 && !shift.sor_at;
   const prevEnd = segI > 0 && TD.segs[segI - 1].shift.eor_at ? fmt24s(nzNow(new Date(TD.segs[segI - 1].shift.eor_at)).min) : "";
   const tap0 = isRun && seg ? sortTap(TD, seg) : null;
+  // no Sort done tap: the run's expected sort time goes in (the rest of the time is the run)
+  const exp0 = tap0 == null && !ex && isRun && seg && !isGo(code) && !TD.segs[segI - 1]?.sort ? (sortExp(S.C, code, shift.day) || null) : null;
   let fields = askStart ? `<label class="f full">When did you start ${esc(code)}?${TD.segs[segI - 1].sort ? " (when sorting finished)" : ""}<input class="in" type="time" id="run_st" value="${prevEnd}" required></label><p class="hint full" style="margin:0">Next time tap ▶ Start ${esc(code)} when you start it — this fills in by itself.</p>` : "";
   fields += `<label class="f full">Finish time<input class="in" type="time" id="finish" value="${ex?.finish_time ? ex.finish_time.slice(0, 5) : shift.eor_at ? fmt24s(nzNow(new Date(shift.eor_at)).min) : fmt24s(n.min)}" required></label>`;   // EOR tap time, if they tapped it
   if (!sortOnly && !isSort(code)) {
@@ -893,6 +905,7 @@ function eodForm(shiftId, sortOnly, edit = false) {
     if (puTot && !(ex && ex[puKey] != null)) fields += `<p class="hint full" style="margin:0">${net === "tge" ? "Pick-up parcels" : "Total parcels"} filled in from your pick-up totals today (${puTot}). Change it if that's not right.</p>`;
   } else fields += `<label class="f full">Sorting time (min)<input class="in" id="sort_min" inputmode="numeric" placeholder="e.g. 100" value="${v("sort_min")}"></label>`;
   if (tap0 != null && !ex) fields += `<p class="hint full" style="margin:0" id="sorthint">Sorting time filled in from your taps (${tap0} min). Change it if that's not right.</p>`;
+  else if (exp0 != null) fields += `<p class="hint full" style="margin:0" id="sorthint">No Sort done tap today, so the usual sort time is filled in (${exp0} min). Change it if that's not right.</p>`;
   // NZ Post runs: the runsheet photo is a standing task that has to be done before the EOD, so the form won't send until it's ticked (and ticking it marks the task done)
   const needRs = !ex && !sortOnly && !isSort(code) && !shift.done?.tw_twrunsheet && rulesFor({ shift }, shift.day).some(r => r.addon === "tw_twrunsheet");
   if (needRs) fields += `<label class="chk full"><input type="checkbox" id="runsheet" required>Runsheet photo taken (NZ Post needs it before every EOD)</label>`;
@@ -901,7 +914,7 @@ function eodForm(shiftId, sortOnly, edit = false) {
     bg.querySelectorAll(".chk input").forEach(i => i.onchange = () => i.parentElement.classList.toggle("on", i.checked));
     // sorting minutes from the taps: prefilled, and kept in step with a typed start time until the driver changes the box themselves
     const smIn = bg.querySelector("#sort_min"); let smTouched = false; const tapNow = () => { const r = bg.querySelector("#run_st"); return seg ? sortTap(TD, seg, r?.value ? Date.parse(nzToIso(shift.day, r.value)) : undefined) : null; };
-    if (smIn && !ex) { if (tap0 != null && smIn.value === "") smIn.value = tap0; smIn.oninput = () => { smTouched = true; }; }
+    if (smIn && !ex) { if ((tap0 ?? exp0) != null && smIn.value === "") smIn.value = tap0 ?? exp0; smIn.oninput = () => { smTouched = true; }; }
     bg.querySelector("#run_st")?.addEventListener("change", () => { const t = tapNow(); if (smIn && !smTouched && t != null) smIn.value = t; const h = bg.querySelector("#sorthint"); if (h && t != null) h.textContent = `Sorting time filled in from your times (${t} min). Change it if that's not right.`; });
     bg.querySelectorAll("[data-ib]").forEach(b => b.onclick = e => { e.preventDefault(); const h = bg.querySelector(`[data-ih="${b.dataset.ib}"]`); if (h) h.hidden = !h.hidden; });
     bg.querySelector("#ef").onsubmit = async e => { e.preventDefault(); const g = id => bg.querySelector("#" + id); const num = id => g(id) && g(id).value !== "" ? +g(id).value : null; const bool = id => g(id) && g(id).value !== "" ? g(id).value === "true" : null;

@@ -68,6 +68,18 @@ Deno.serve(async (req) => {
         if (!done && now.min >= closes && now.min < closes + 240) raise({ kind: "timing_missed", driver: drv, shift_id: x.s.id, rule_id: r.id, title: `${name}: ${r.name} not done by ${fmtT(closes)}`, body: `${x.s.run}`, dedupe_key: km, _push: { to: [drv], title: `${r.name} was due by ${fmtT(closes)}`, body: "If it's done, tap Done in the app. Otherwise let Jeremy know." }, _email: "timing", _rule: r });
       }
     }
+    // sort running over its usual time: nudge the driver to tap Sort done (driver push only — staff aren't pinged)
+    if (sod) { const SM: any = { S: 90, T: 90, DB: 60, RSB: { d: 45, Tue: 75, Thu: 75, Sat: 60 }, PCB: { d: 90, Tue: 120, Thu: 120 }, RAM: 0, TUA: 0, FLY: 0, ...(set.sortMin || {}) };
+      const expOf = (c: string) => { const v = SM[c]; if (v == null) return null; if (typeof v === "number") return v; return v[["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][dow(t)]] ?? v.d ?? null; };
+      const stOf = (i: number) => i === 0 ? Date.parse(sod.sent_at) : (segs[i].s.sor_at ? Date.parse(segs[i].s.sor_at) : null);
+      segs.forEach((x, i) => { const st = stOf(i); const k = `sort_over|${t}|${drv}|${x.s.id}`; let e: number | null = null, open = false;
+        if (st != null) { const ended = !!x.s.eor_at || !!eodBy[x.s.id] || segs.some((_, j) => j > i && stOf(j) != null);
+          if (x.sort) { e = x.en != null && x.en > x.st! ? x.en - x.st! : null; open = !ended; }
+          else if (SM[x.s.run] !== 0 && !segs[i - 1]?.sort) { e = expOf(x.s.run); open = !ended && !x.s.deliver_at; } }
+        const el = st != null ? (Date.now() - st) / 60000 : 0;
+        if (open && e && el > e && el < e + 240) raise({ kind: "other", driver: drv, shift_id: x.s.id, title: `${name}: sort past ${e} min`, body: `${x.sort ? (runsBy[x.s.run]?.label || "Sort") : x.s.run} · Sort done not tapped yet`, dedupe_key: k, _quiet: true, _push: { to: [drv], title: "Sort done?", body: `You're past the usual ${e} min sort. Tap Sort done in the app to start your run.` } });
+        if (!open) for (const a of alertsOpen) if (a.dedupe_key === k) resolve.push(a.id); });
+    }
   }
   // roster changes not confirmed, run starting within the hour
   for (const i of items || []) { const st = toMin(i.after?.start_at) ?? (() => { const w = runsBy[i.run]?.windows?.[["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][dow(i.day)]]; return w ? toMin(w[0][0]) : null; })(); if (st == null) continue;
@@ -93,11 +105,11 @@ Deno.serve(async (req) => {
 
   // write alerts, push, email
   const staffAlerts = await staffWith(sb, "alerts"); const staffIds = staffAlerts.map(p => p.id);
-  for (const a of newAlerts) { const { _push, _email, _rule, _staffOnly, _area, _msg, ...row } = a; const { data: ins, error } = await sb.from("alerts").upsert(row, { onConflict: "dedupe_key", ignoreDuplicates: true }).select().maybeSingle(); if (error) { console.error(error); continue; } if (!ins) continue; out.push(row.dedupe_key);
+  for (const a of newAlerts) { const { _push, _email, _rule, _staffOnly, _area, _msg, _quiet, ...row } = a; const { data: ins, error } = await sb.from("alerts").upsert(row, { onConflict: "dedupe_key", ignoreDuplicates: true }).select().maybeSingle(); if (error) { console.error(error); continue; } if (!ins) continue; out.push(row.dedupe_key);
     // fleet-only staff (alerts but no roster/scorecard, e.g. Stu) only hear about vehicle alerts
     const fleetAlert = String(row.dedupe_key || "").startsWith("vchk|");
     const staff = _area ? (await staffWith(sb, _area)).map(p => p.id) : staffAlerts.filter(p => fleetAlert || p.role === "owner" || (p.perms || []).some((x: string) => x === "roster" || x === "scorecard")).map(p => p.id);
-    await push(sb, sec, set, [...new Set(staff)], { title: row.title, body: row.body, url: fleetAlert ? "/admin/#alerts" : "/admin/#live", tag: row.dedupe_key });
+    if (!_quiet) await push(sb, sec, set, [...new Set(staff)], { title: row.title, body: row.body, url: fleetAlert ? "/admin/#alerts" : "/admin/#live", tag: row.dedupe_key });
     if (_push && !_staffOnly) await push(sb, sec, set, _push.to, { title: _push.title, body: _push.body, url: "/", tag: row.dedupe_key });
     // also drop it in the driver's Messages, so it's there even without push notifications switched on
     if (_msg && row.driver) { const owner = Object.values(ppl).find((p: any) => p.role === "owner") as any; if (owner) { const { data: m } = await sb.from("messages").insert({ sender: owner.id, body: _msg, needs_confirm: false }).select("id").single(); if (m) await sb.from("message_recipients").insert({ message_id: m.id, person: row.driver }); } }

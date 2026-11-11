@@ -2,7 +2,7 @@
 import { toMin, fmtT, dow, addDays, label, today, nzNow, isSort } from "./core.js";
 
 const DEF = {
-  rules: { sodGrace: 15, eodHours: 2, perEvent: 2, partEvent: 1, mistakePct: 10, adminFloor: 80, holidayCap: 8, stopRatio: 0.8, hourRate: 28, startDate: "2026-10-26", adminStart: "2026-10-28", effStart: "2026-10-28", effMethod: "sheet", tgeSort: 75, vchkDay: 4, vchkTime: "17:00" },
+  rules: { sodGrace: 15, eodHours: 2, perEvent: 2, partEvent: 1, mistakePct: 10, adminFloor: 80, holidayCap: 8, stopRatio: 0.8, hourRate: 28, startDate: "2026-10-26", adminStart: "2026-10-28", effStart: "2026-10-28", effMethod: "sheet", tgeSort: 90, vchkDay: 4, vchkTime: "17:00" },
   weights: { admin: 25, eff: 30, acc: 25, safe: 20 },
   sortF: { pBase: 45, pIncl: 80, pRate: 0.35, mailTray: 20, nzcph: 30 },
   addMin: { outram: 10, pgg: 10, airport: 30, milton: 90, balclutha: 90, owaka: 90 },
@@ -10,7 +10,13 @@ const DEF = {
   typical: { TUA: 40, FLY: 55, RAM: 85, LAW: 95, DB: 40, PCB: 55, RSB: 50, WH: 105, S: 110, T: 110 },
   effSimple: {},
   estFig: {},
+  // expected sorting minutes on the run itself (no sort shift before it). 0 = a "go" run: it starts with the SOD / Sort done tap.
+  // A number, or { d: default, Mon…Sat: that day } for runs that vary by day.
+  sortMin: { S: 90, T: 90, DB: 60, RSB: { d: 45, Tue: 75, Thu: 75, Sat: 60 }, PCB: { d: 90, Tue: 120, Thu: 120 }, RAM: 0, TUA: 0, FLY: 0 },
 };
+// expected sort minutes for a run on a day (null = no norm set)
+export function sortExp(C, code, day) { const v = C?.sortMin?.[code]; if (v == null) return null; if (typeof v === "number") return v;
+  const k = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][dow(day)]; return v[k] ?? v.d ?? null; }
 export const NET = c => /^(S|T)$/.test(c) ? "tge" : /^(FB|MFB)/.test(c) ? "fb" : "nzp";
 export const PICKUP_RUNS = ["TUA", "FLY", "DB"];
 export const LEGS = ["airport", "milton", "balclutha", "owaka"];
