@@ -11,8 +11,8 @@
 //            average (excl GST), spread over the 6 working days a week and charged on any day a run is rostered. Always an estimate (grey).
 //   Anything not in yet is estimated from the past 8 weeks (same weekday where there's enough) and shown grey; real figures show green.
 //   Tap a run (or a total) for the full detail. The "month at this pace" tile adds up the whole week and scales it to a month.
-import { sb, q, esc, $, $$, toast, fmtT, today, addDays, dow, monOf, label } from "/shared/core.js";
-import { evidenceFor, evidence } from "/shared/score.js";
+import { sb, q, esc, $, $$, toast, fmtT, today, addDays, dow, monOf, label, nzNow, toMin } from "/shared/core.js";
+import { evidenceFor, evidence, sodStart } from "/shared/score.js";
 import { S, nm, render, sheet } from "/admin/admin.js";
 import { driverDay } from "/admin/live.js";
 
@@ -49,7 +49,7 @@ const DEF = { small: 5, large: 8, tgeSmall: 6, tgeLarge: 7.5, tgeRural: 5, owaka
 const model = () => { const v = S.set?.money_model || {}; return { ...DEF, ...v, parcel: { ...DEF.parcel, ...(v.parcel || {}) }, groups: Object.fromEntries(Object.keys(GROUPS).map(k => [k, { ...DEF.groups[k], ...(v.groups?.[k] || {}) }])), costs: { ...DEF.costs, ...(v.costs || {}) } }; };
 const onc = () => 1 + (+model().oncost || 0) / 100;   // holiday pay 8% + KiwiSaver 3% on top of gross wages
 const costMonth = () => Object.values(model().costs).reduce((a, b) => a + (+b || 0), 0);
-const costDay = rows => rows.some(r => !r.noRun) ? costMonth() / WK_PER_MONTH / COST_DAYS : 0;   // charged on any day a run is rostered
+const costDay = (rows, d) => (d == null || dow(d) < COST_DAYS) && rows.some(r => !r.noRun) ? costMonth() / WK_PER_MONTH / COST_DAYS : 0;   // charged Mon–Sat on a day a run is rostered (spread over 6 days, so Sunday food bag adds none)
 const perDay = g => !g.amt ? 0 : g.per === "month" ? g.amt / WK_PER_MONTH / (g.days || 5) : g.per === "week" ? g.amt / (g.days || 5) : g.amt;
 const perTxt = g => g.per === "month" ? `$${(+g.amt).toLocaleString()}/month ÷ ${(+(WK_PER_MONTH)).toFixed(2)} wk ÷ ${g.days} days` : g.per === "week" ? `$${(+g.amt).toLocaleString()}/week ÷ ${g.days} days` : `$${(+g.amt).toLocaleString()}/day`;
 // a group's per-parcel rate from its total: (total × parcel share) ÷ average parcels in the same period
@@ -113,16 +113,32 @@ async function loadDay(d) {
 // average of per-day values, same weekday first (needs 2+ days), otherwise every day
 function avgDays(byDay, d) { const all = Object.entries(byDay); const wd = all.filter(([k]) => dow(k) === dow(d)); const use = wd.length >= 2 ? wd : all; return use.length ? use.reduce((a, [, v]) => a + v, 0) / use.length : null; }
 
+// minutes actually spent on each of a driver's shifts that day, once the SOD and every EOD are in: SOR/EOR taps first,
+// then the SOD (first shift), the EOD finish time (runs), and the next shift's start / the rostered end for anything not tapped.
+// null = not enough in yet (the split stays on rostered time).
+function actualMins(r) {
+  if (r.act == null) return null; const segs = r.D.segs; const at = ts => ts ? nzNow(new Date(ts)).min : null;
+  const st = segs.map((x, i) => at(x.shift.sor_at) ?? (i === 0 && r.sod ? sodStart(r.sod, r.D.start, S.C) : null));
+  const en = segs.map(x => at(x.shift.eor_at) ?? (!x.sort ? toMin(S.eodBy?.[x.shift.id]?.finish_time) : null));
+  for (let i = 0; i < segs.length; i++) { if (st[i] == null) st[i] = i ? en[i - 1] : segs[i].st; if (en[i] == null) en[i] = i < segs.length - 1 ? (st[i + 1] ?? Math.min(segs[i].en ?? segs[i].st, segs[i + 1].st)) : (segs[i].en ?? segs[i].st);
+    if (i < segs.length - 1 && st[i + 1] == null) st[i + 1] = en[i]; }
+  const m = segs.map((_, i) => Math.max(0, en[i] - st[i])); return m.reduce((a, b) => a + b, 0) ? { m, st, en } : null;
+}
 function breakdown(d) {
   const M = model(); const rows = []; const byRun = {};
   for (const drv of S.drivers) {
     const r = driverDay(drv, d);
     if (r?.sick && !r.D) { if (r.spend && !drv.pay_exclude) rows.push({ run: `Sick pay · ${nm(drv.id)}`, driver: drv.id, staff: r.spend * onc(), staffHow: `${r.exp.toFixed(2)} h × $${(+r.rate).toFixed(2)}/h = ${money(r.spend)} + ${model().oncost}% holiday pay & KiwiSaver = ${money(r.spend * onc())} · ${r.actHow}`, unpaid: false, est: false, fees: 0, feeEst: false, feeLines: [], noRun: true }); continue; }   // off sick and no longer on the roster: the sick pay still counts
-    if (!r || r.holiday || !r.D) continue;
-    const segs = r.D.segs; const mins = segs.map(x => Math.max(0, x.min ?? ((x.en ?? x.st) - x.st))); const tot = mins.reduce((a, b) => a + b, 0);
-    const cost = drv.pay_exclude ? 0 : r.spend;
+    if (r?.holiday) { if (r.spend && !drv.pay_exclude) rows.push({ run: `Public holiday pay · ${nm(drv.id)}`, driver: drv.id, staff: r.spend * onc(), staffHow: `${r.exp.toFixed(2)} h × $${(+r.rate).toFixed(2)}/h = ${money(r.spend)} + ${model().oncost}% holiday pay & KiwiSaver = ${money(r.spend * onc())} · ${r.actHow}`, unpaid: false, est: false, fees: 0, feeEst: false, feeLines: [], noRun: true }); continue; }   // no runs, staff still paid
+    if (!r || !r.D) continue;
+    const segs = r.D.segs; const A = segs.length > 1 ? actualMins(r) : null;
+    const mins = A ? A.m : segs.map(x => Math.max(0, x.min ?? ((x.en ?? x.st) - x.st))); const tot = mins.reduce((a, b) => a + b, 0);
+    const cost = drv.pay_exclude ? 0 : r.spend; const hm = n => `${Math.floor(n / 60)}h ${String(Math.round(n % 60)).padStart(2, "0")}m`;
     segs.forEach((x, i) => { const share = tot ? mins[i] / tot : 1 / segs.length;
-      const row = { run: x.shift.run, shift: x.shift, sort: !!x.sort, driver: drv.id, st: x.st, en: x.en, staff: cost * onc() * share, staffHow: drv.pay_exclude ? "unpaid (owner)" : `${(r.actEst ?? r.exp).toFixed(2)} h × $${(+r.rate).toFixed(2)}/h = ${money(r.spend)} + ${model().oncost}% holiday pay & KiwiSaver = ${money(r.spend * onc())}${segs.length > 1 ? ` · ${Math.round(share * 100)}% of the day (rostered time)` : ""} · ${r.actHow}`, unpaid: !!drv.pay_exclude, est: !drv.pay_exclude && r.actIsEst, fees: 0, feeEst: false, feeLines: [] };
+      const others = segs.filter((_, j) => j !== i).map((y, j) => y.shift.run).join(" + ");
+      const how = drv.pay_exclude ? "unpaid (owner)" : `Whole day: ${hm((r.actEst ?? r.exp) * 60)} (${(r.actEst ?? r.exp).toFixed(2)} h, ${r.actHow}) × $${(+r.rate).toFixed(2)}/h = ${money(r.spend)} + ${model().oncost}% holiday pay & KiwiSaver = ${money(r.spend * onc())}`
+        + (segs.length > 1 ? ` · ${x.shift.run} share: ${A ? `${hm(mins[i])} actual (${fmtT(A.st[i])}–${fmtT(A.en[i])})` : `${hm(mins[i])} rostered`} of ${hm(tot)} = ${Math.round(share * 100)}% → ${money(cost * onc() * share)} · the other ${100 - Math.round(share * 100)}% is on ${others}${A ? "" : " · split on rostered time until the SOD and EODs are in"}` : "");
+      const row = { run: x.shift.run, shift: x.shift, sort: !!x.sort, driver: drv.id, st: x.st, en: x.en, staff: cost * onc() * share, staffHow: how, unpaid: !!drv.pay_exclude, est: !drv.pay_exclude && r.actIsEst, fees: 0, feeEst: false, feeLines: [] };
       rows.push(row); if (!x.sort) (byRun[row.run] ??= row); });
   }
   // a run's figures are final once its EOD is in (or the day has gone), otherwise estimated
@@ -171,7 +187,7 @@ export function moneyCard(d) {
   if (!S.me?.isOwner) return "";
   const wk = monOf(d); for (let i = 0; i < 7; i++) if (!cache[addDays(wk, i)]) loadDay(addDays(wk, i));
   const M = model(); const rows = breakdown(d); const T = totals(rows); cur = { d, rows };
-  const C = costDay(rows); const wkRows = Array.from({ length: 7 }, (_, i) => breakdown(addDays(wk, i))); const week = wkRows.map(totals); const wkFees = week.reduce((a, t) => a + t.fees, 0), wkStaff = week.reduce((a, t) => a + t.staff, 0), wkCost = wkRows.reduce((a, r) => a + costDay(r), 0); const wkEst = week.some(t => t.fe || t.se);
+  const C = costDay(rows, d); const wkRows = Array.from({ length: 7 }, (_, i) => breakdown(addDays(wk, i))); const week = wkRows.map(totals); const wkFees = week.reduce((a, t) => a + t.fees, 0), wkStaff = week.reduce((a, t) => a + t.staff, 0), wkCost = wkRows.reduce((a, r, i) => a + costDay(r, addDays(wk, i)), 0); const wkEst = week.some(t => t.fe || t.se);
   const Y = yearAhead(wk, week); const month = Y.fees / 12; const monthProfit = Y.left / 12;
   const yHow = `Next 12 months from ${label(wk)}: ${Y.n.wd} weekdays, ${Y.n.sat} Saturdays, ${Y.n.sun} Sundays (food bag), ${Y.n.hol} public holidays (no income, staff still paid). Staff include the ${M.oncost}% holiday pay & KiwiSaver. Each day uses that weekday's figures from the week of ${label(wk)}.`;
   const tr = (r, i) => { const net = r.fees - r.staff; const fe = r.feeEst && r.fees > 0, se = r.est && r.staff > 0;
@@ -209,7 +225,7 @@ function rowDetail(r, d) {
     <p class="hint">≈ grey = estimate until the EOD (or SOD/EOD for staff) is in · green = final.</p>`);
 }
 function allDetail(d, rows) {
-  const T = totals(rows); const M = model(); const C = costDay(rows); const by = {}; for (const r of rows) { const k = r.run; const o = (by[k] ??= { fees: 0, staff: 0, fe: false, se: false, n: 0 }); o.fees += r.fees; o.staff += r.staff; o.fe ||= r.feeEst && r.fees > 0; o.se ||= r.est && r.staff > 0; o.n++; }
+  const T = totals(rows); const M = model(); const C = costDay(rows, cur.d); const by = {}; for (const r of rows) { const k = r.run; const o = (by[k] ??= { fees: 0, staff: 0, fe: false, se: false, n: 0 }); o.fees += r.fees; o.staff += r.staff; o.fe ||= r.feeEst && r.fees > 0; o.se ||= r.est && r.staff > 0; o.n++; }
   sheet(`${STYLE}<h3>Every run · ${label(d, true)}</h3><table class="dt" style="width:100%"><tr><th>Run</th><th align="right">Income</th><th align="right">Staff</th><th align="right">Income − staff</th></tr>
     ${Object.entries(by).map(([k, o]) => `<tr class="mn-row" data-mnrun="${esc(k)}"><td><b>${esc(k)}</b>${o.n > 1 ? ` <span class="meta">× ${o.n}</span>` : ""}</td><td align="right">${amt(o.fees, o.fe)}</td><td align="right">${amt(o.staff, o.se)}</td><td align="right">${amt(o.fees - o.staff, o.fe || o.se)}</td></tr>`).join("")}
     <tr><td><b>Total</b></td><td align="right"><b>${amt(T.fees, T.fe)}</b></td><td align="right"><b>${amt(T.staff, T.se)}</b></td><td align="right"><b>${amt(T.fees - T.staff, T.fe || T.se)}</b></td></tr></table>
@@ -219,7 +235,7 @@ function allDetail(d, rows) {
     bg.querySelectorAll("[data-mnrun]").forEach(t => t.onclick = () => { const r = rows.find(x => x.run === t.dataset.mnrun); if (r) { close(); rowDetail(r, d); } }); });
 }
 function weekDetail(wk) {
-  const days = Array.from({ length: 7 }, (_, i) => addDays(wk, i)).map(d => ({ d, rows: breakdown(d) })).map(x => ({ ...x, T: totals(x.rows), C: costDay(x.rows) }));
+  const days = Array.from({ length: 7 }, (_, i) => addDays(wk, i)).map(d => ({ d, rows: breakdown(d) })).map(x => ({ ...x, T: totals(x.rows), C: costDay(x.rows, x.d) }));
   const W = days.reduce((a, x) => ({ fees: a.fees + x.T.fees, staff: a.staff + x.T.staff, cost: a.cost + x.C, est: a.est || x.T.fe || x.T.se }), { fees: 0, staff: 0, cost: 0, est: false }); const M = model();
   const byRun = {}; for (const x of days) for (const r of x.rows) { const o = (byRun[r.run] ??= { fees: 0, staff: 0, est: false }); o.fees += r.fees; o.staff += r.staff; o.est ||= (r.feeEst && r.fees > 0) || (r.est && r.staff > 0); }
   sheet(`${STYLE}<h3>Week of ${label(wk, true)}</h3>
