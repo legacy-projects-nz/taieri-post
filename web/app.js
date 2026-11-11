@@ -206,19 +206,34 @@ function quickBar(T, n) {
           : va ? offB(`■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}`, late ? "overdue" : "not posted yet") : `<button class="btn qb ${late ? "warn" : "accent"}" data-eod="${x.shift.id}" ${sod ? "" : "disabled"}><b>■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${!sod ? "after your SOD" : late ? "overdue" : "end of run"}</small></button>`; }).join("");
   return `<div class="qbar">${sodBtn}${eodBtns}${breakBtn(T, sod)}</div>${runBar(T, sod, runs, va, offB)}`;
 }
-/* SOR / EOR: only for drivers on more than one run today. The first run starts with the SOD; ▶ SOR starts the next run
-   and ends the one before it; ■ EOR ends the run you're on (e.g. a gap before the next one). */
+/* Stages: a driver's day is its shifts in order, sorts included. The first starts with the SOD; ▶ Start [run] starts the next one
+   and ends the one before (so a sort before a run is timed by the tap); ■ EOR ends the run you're on (e.g. a gap before the next one);
+   ▶ Delivering marks the end of a sort done inside the run (no sort shift before it). */
+const stMs = (T, i) => { const x = T.segs[i]; if (i === 0) { const sod = T.segs.find(y => y.sod)?.sod; return sod ? Date.parse(sod.sent_at) : null; } return x.shift.sor_at ? Date.parse(x.shift.sor_at) : null; };
+// sort minutes for a run from the taps: the sort shift just before it (its start → this run's start) + any sort inside the run (start → ▶ Delivering)
+const NO_SORT = ["RAM"];   // written up and scanned before the driver gets it: load and go, no sorting on the run
+function sortTap(T, x, runStartMs) {
+  if (NO_SORT.includes(x.shift.run)) return null;
+  const i = T.segs.indexOf(x); if (i < 0) return null; const st = runStartMs ?? stMs(T, i); let m = null;
+  const pre = T.segs[i - 1]; if (pre?.sort) { const ps = stMs(T, i - 1); if (ps != null && st != null && st > ps) m = (m || 0) + (st - ps) / 60000; }
+  if (x.shift.deliver_at && st != null) { const d = Date.parse(x.shift.deliver_at); if (d > st) m = (m || 0) + (d - st) / 60000; }
+  return m == null ? null : Math.round(m);
+}
 function runBar(T, sod, runs, va, offB) {
-  if (runs.length < 2 || !sod) return "";
-  const started = (x, i) => i === 0 ? true : !!x.shift.sor_at, ended = x => !!x.shift.eor_at || !!x.eod;
-  const st = (x, i) => i === 0 ? (Date.parse(sod.sent_at) || null) : x.shift.sor_at;
-  const cur = runs.map((x, i) => ({ x, i })).filter(({ x, i }) => started(x, i) && !ended(x)).pop();
-  const nxt = runs.map((x, i) => ({ x, i })).find(({ x, i }) => !started(x, i));
-  const lab = x => esc(x.shift.run);
-  const eorB = !cur ? "" : va ? offB(`■ EOR ${lab(cur.x)}`, "run going") : `<button class="btn qb ghost" data-runmark="eor" data-shift="${cur.x.shift.id}"><b>■ EOR ${lab(cur.x)}</b><small>end of run</small></button>`;
-  const sorB = !nxt ? "" : va ? offB(`▶ SOR ${lab(nxt.x)}`, "not started") : `<button class="btn qb" data-runmark="sor" data-shift="${nxt.x.shift.id}"><b>▶ SOR ${lab(nxt.x)}</b><small>start next run${cur ? ` · ends ${lab(cur.x)}` : ""}</small></button>`;
-  const line = runs.map((x, i) => { const s = st(x, i), e = x.shift.eor_at; return s ? `<b>${lab(x)}</b> ${fmtTime(typeof s === "number" ? new Date(s).toISOString() : s)}${e ? `–${fmtTime(e)}` : ended(x) ? " ✓" : " – now"}` : ""; }).filter(Boolean).join(" · ");
-  return `${eorB || sorB ? `<div class="qbar">${eorB}${sorB}</div>` : ""}${line ? `<p class="meta" style="margin:2px 0 6px;text-align:center">${line}</p>` : ""}`;
+  if (!runs.length || !sod) return "";
+  const segs = T.segs; const all = segs.map((x, i) => ({ x, i }));
+  const started = i => stMs(T, i) != null; const ended = (x, i) => !!x.shift.eor_at || !!x.eod || segs.some((y, j) => j > i && started(j));
+  const cur = all.filter(({ x, i }) => started(i) && !ended(x, i)).pop();
+  const nxt = all.find(({ i }) => !started(i));
+  const lab = x => x.sort ? "sort" : esc(x.shift.run);
+  const eorB = !cur || cur.x.sort || segs.length < 2 ? "" : va ? offB(`■ EOR ${lab(cur.x)}`, "run going") : `<button class="btn qb ghost" data-runmark="eor" data-shift="${cur.x.shift.id}"><b>■ EOR ${lab(cur.x)}</b><small>end of run</small></button>`;
+  const sorB = !nxt ? "" : va ? offB(`▶ Start ${lab(nxt.x)}`, "not started") : `<button class="btn qb" data-runmark="sor" data-shift="${nxt.x.shift.id}"><b>▶ Start ${lab(nxt.x)}</b><small>${cur ? (cur.x.sort ? "sorting done" : `ends ${lab(cur.x)}`) : "start next run"}</small></button>`;
+  const dlvB = !cur || cur.x.sort || NO_SORT.includes(cur.x.shift.run) || cur.x.eod || cur.x.shift.deliver_at || segs[cur.i - 1]?.sort ? "" : va ? offB("▶ Delivering", "still sorting") : `<button class="btn qb ghost" data-runmark="dlv" data-shift="${cur.x.shift.id}"><b>▶ Delivering</b><small>sorting done · ${lab(cur.x)}</small></button>`;
+  const tm = ms => fmtTime(new Date(ms).toISOString());
+  const line = segs.length < 2 && !segs[0].shift.deliver_at ? "" : all.map(({ x, i }) => { const s0 = stMs(T, i); if (s0 == null) return ""; const e = x.shift.eor_at ? Date.parse(x.shift.eor_at) : (segs.slice(i + 1).map((_, k) => stMs(T, i + 1 + k)).find(v => v != null) ?? null);
+    return `<b>${x.sort ? "Sort" : esc(x.shift.run)}</b> ${tm(s0)}${x.shift.deliver_at ? ` (delivering ${tm(Date.parse(x.shift.deliver_at))})` : ""}${e ? `–${tm(e)}` : x.eod ? " ✓" : " – now"}`; }).filter(Boolean).join(" · ");
+  const btns = [dlvB, eorB, sorB].filter(Boolean).join("");
+  return `${btns ? `<div class="qbar">${btns}</div>` : ""}${line ? `<p class="meta" style="margin:2px 0 6px;text-align:center">${line}</p>` : ""}`;
 }
 /* Break: one button between SOD and the last EOD. Tap to start, tap again to end. */
 function breakBtn(T, sod) {
@@ -709,7 +724,7 @@ function wire() {
   $$("[data-runmark]").forEach(b => b.onclick = async () => { b.disabled = true; const k = b.dataset.runmark;
     const { error } = await sb.rpc("run_mark", { p_shift: b.dataset.shift, p_kind: k });
     if (error) { b.disabled = false; return toast(error.message, "err"); }
-    toast(k === "sor" ? "Run started ▶ (previous run ended)" : "Run ended ■ · send its EOD when you can", "ok"); await loadAll(); render(); });
+    toast(k === "sor" ? "Started ▶ (the one before is ended)" : k === "dlv" ? "Delivering ▶ · sorting time recorded" : "Run ended ■ · send its EOD when you can", "ok"); await loadAll(); render(); });
   $$("[data-done]").forEach(b => b.onclick = async () => { const undo = !!b.dataset.undo; b.disabled = true; const { error } = await sb.rpc(undo ? "task_undo" : "task_done", { p_shift: b.dataset.shift, p_addon: b.dataset.done }); if (error) { b.disabled = false; toast(error.message, "err"); } else { toast(undo ? "Done undone" : "Marked done ✓ · tap again to undo", "ok"); await loadAll(); render(); } });
   $$("[data-sc]").forEach(b => b.onclick = () => { S.scSel = S.scSel === b.dataset.sc ? null : b.dataset.sc; render(); setTimeout(() => $("#scores")?.scrollIntoView({ block: "nearest" }), 0); });
   $("#leave-new")?.addEventListener("click", leaveForm);
@@ -833,27 +848,41 @@ function eodForm(shiftId, sortOnly, edit = false) {
   // ⓘ beside the boxes drivers most often get wrong: tap it to show what goes in the box
   const lb = (text, k) => `<span class="lbl">${text}<button type="button" class="ib" data-ib="${k}" aria-label="What goes in ${text}?">i</button></span>`;
   const ih = k => `<span class="ihint" data-ih="${k}" hidden>${EOD_INFO[k]}</span>`;
-  let fields = `<label class="f full">Finish time<input class="in" type="time" id="finish" value="${ex?.finish_time ? ex.finish_time.slice(0, 5) : shift.eor_at ? fmt24s(nzNow(new Date(shift.eor_at)).min) : fmt24s(n.min)}" required></label>`;   // EOR tap time, if they tapped it
+  // stages: a run that isn't the first shift of the day needs its start (▶ Start tap); if it wasn't tapped, ask for it here.
+  const TD = S.days[shift.day]; const seg = TD?.segs.find(x => x.shift.id === shiftId); const segI = seg ? TD.segs.indexOf(seg) : -1;
+  const isRun = !sortOnly && !isSort(code); const askStart = isRun && !ex && segI > 0 && !shift.sor_at;
+  const prevEnd = segI > 0 && TD.segs[segI - 1].shift.eor_at ? fmt24s(nzNow(new Date(TD.segs[segI - 1].shift.eor_at)).min) : "";
+  const tap0 = isRun && seg ? sortTap(TD, seg) : null;
+  let fields = askStart ? `<label class="f full">When did you start ${esc(code)}?${TD.segs[segI - 1].sort ? " (when sorting finished)" : ""}<input class="in" type="time" id="run_st" value="${prevEnd}" required></label><p class="hint full" style="margin:0">Next time tap ▶ Start ${esc(code)} when you start it — this fills in by itself.</p>` : "";
+  fields += `<label class="f full">Finish time<input class="in" type="time" id="finish" value="${ex?.finish_time ? ex.finish_time.slice(0, 5) : shift.eor_at ? fmt24s(nzNow(new Date(shift.eor_at)).min) : fmt24s(n.min)}" required></label>`;   // EOR tap time, if they tapped it
   if (!sortOnly && !isSort(code)) {
     if (isDB) fields += `<label class="f">TGE total<input class="in" id="db_tge" inputmode="numeric" required placeholder="0" value="${tgeV}"></label><label class="f">Everything else total<input class="in" id="db_other" inputmode="numeric" required placeholder="0" value="${othV}"></label><label class="f full">${lb("Stops total", "stops")}<input class="in" id="stops" inputmode="numeric" required value="${v("stops")}">${ih("stops")}</label>${ex ? "" : `<p class="hint full" style="margin:0">TGE total is filled in from today's TGE South pick-ups (depot + customer); change it if it's not right. Type in the total for everything else.</p>`}`;
     else if (net === "tge") fields += `<label class="f">Sorting time (min)<input class="in" id="sort_min" inputmode="numeric" placeholder="e.g. 90" value="${v("sort_min")}"></label><label class="f">${lb("Delivery total", "tgeParcels")}<input class="in" id="parcels" inputmode="numeric" required value="${v("parcels")}">${ih("tgeParcels")}</label><label class="f">${lb("Jobs (stops)", "stops")}<input class="in" id="stops" inputmode="numeric" required value="${v("stops")}">${ih("stops")}</label><label class="f">Pick-up stops<input class="in" id="pickups" inputmode="numeric" value="${v("pickups")}"></label><label class="f">Pick-up parcels<input class="in" id="pickup_parcels" inputmode="numeric" value="${v("pickup_parcels")}"></label><label class="f">Next cycled<input class="in" id="cycled" inputmode="numeric" value="${v("cycled")}"></label>`;
     else if (net === "fb") fields += `<label class="f">${lb("Total parcels", "parcels")}<input class="in" id="parcels" inputmode="numeric" required value="${v("parcels")}">${ih("parcels")}</label><label class="f">${lb("Stops", "stops")}<input class="in" id="stops" inputmode="numeric" required value="${v("stops")}">${ih("stops")}</label>`;
-    else fields += `<label class="f">Sorting time (min)<input class="in" id="sort_min" inputmode="numeric" placeholder="e.g. 90" value="${v("sort_min")}"></label><label class="f">${lb("Total parcels", "parcels")}<input class="in" id="parcels" inputmode="numeric" required value="${v("parcels")}">${ih("parcels")}</label><label class="f">${lb("Stops", "stops")}<input class="in" id="stops" inputmode="numeric" required value="${v("stops")}">${ih("stops")}</label>${TGE_RURAL_RUNS.includes(code) ? `<label class="f">${lb("Rural TGE parcels", "tgeRural")}<input class="in" id="tge_rural" inputmode="numeric" required placeholder="0" value="${ex?.extra?.tge_rural != null ? String(ex.extra.tge_rural) : ""}">${ih("tgeRural")}</label>` : ""}<label class="f">Mail trays<input class="in" id="trays" inputmode="decimal" placeholder="e.g. 1 or 0.5" value="${v("trays")}"></label><label class="f">Sorted parcels?${yn("sorted_parcels")}</label><label class="f">Sorted mail?${yn("sorted_mail")}</label>${PICKUP_RUNS.includes(code) ? `<label class="f">NZC / PH pick-up?${yn("nzc_ph")}</label>` : ""}<label class="f">Next cycled<input class="in" id="cycled" inputmode="numeric" value="${v("cycled")}"></label>`;
+    else fields += `${NO_SORT.includes(code) ? "" : `<label class="f">Sorting time (min)<input class="in" id="sort_min" inputmode="numeric" placeholder="e.g. 90" value="${v("sort_min")}"></label>`}<label class="f">${lb("Total parcels", "parcels")}<input class="in" id="parcels" inputmode="numeric" required value="${v("parcels")}">${ih("parcels")}</label><label class="f">${lb("Stops", "stops")}<input class="in" id="stops" inputmode="numeric" required value="${v("stops")}">${ih("stops")}</label>${TGE_RURAL_RUNS.includes(code) ? `<label class="f">${lb("Rural TGE parcels", "tgeRural")}<input class="in" id="tge_rural" inputmode="numeric" required placeholder="0" value="${ex?.extra?.tge_rural != null ? String(ex.extra.tge_rural) : ""}">${ih("tgeRural")}</label>` : ""}<label class="f">Mail trays<input class="in" id="trays" inputmode="decimal" placeholder="e.g. 1 or 0.5" value="${v("trays")}"></label>${NO_SORT.includes(code) ? "" : `<label class="f">Sorted parcels?${yn("sorted_parcels")}</label><label class="f">Sorted mail?${yn("sorted_mail")}</label>`}${PICKUP_RUNS.includes(code) ? `<label class="f">NZC / PH pick-up?${yn("nzc_ph")}</label>` : ""}<label class="f">Next cycled<input class="in" id="cycled" inputmode="numeric" value="${v("cycled")}"></label>`;
     if (legs.length) fields += `<div class="full"><div class="meta mono" style="margin-bottom:6px">ADD-ON LEGS YOU DID</div><div class="row">${legs.map(l => `<label class="chk ${legOn(l) ? "on" : ""}"><input type="checkbox" name="leg" value="${l}" ${legOn(l) ? "checked" : ""}>${esc(addName(l))}</label>`).join("")}</div></div>`;
     if (newsRun) fields += `<label class="chk full ${ex?.newspapers ? "on" : ""}"><input type="checkbox" id="news" ${ex?.newspapers ? "checked" : ""}>Newspapers done today (once a week, ${S.C.news.byRun?.[code] ?? S.C.news.min} min allowed)</label>`;
     if (puTot && !(ex && ex[puKey] != null)) fields += `<p class="hint full" style="margin:0">${net === "tge" ? "Pick-up parcels" : "Total parcels"} filled in from your pick-up totals today (${puTot}). Change it if that's not right.</p>`;
   } else fields += `<label class="f full">Sorting time (min)<input class="in" id="sort_min" inputmode="numeric" placeholder="e.g. 100" value="${v("sort_min")}"></label>`;
+  if (tap0 != null && !ex) fields += `<p class="hint full" style="margin:0" id="sorthint">Sorting time filled in from your taps (${tap0} min). Change it if that's not right.</p>`;
   // NZ Post runs: the runsheet photo is a standing task that has to be done before the EOD, so the form won't send until it's ticked (and ticking it marks the task done)
   const needRs = !ex && !sortOnly && !isSort(code) && !shift.done?.tw_twrunsheet && rulesFor({ shift }, shift.day).some(r => r.addon === "tw_twrunsheet");
   if (needRs) fields += `<label class="chk full"><input type="checkbox" id="runsheet" required>Runsheet photo taken (NZ Post needs it before every EOD)</label>`;
   fields += `<label class="f full">Note (optional)<input class="in" id="note" placeholder="anything Jeremy should know" value="${esc(ex?.note || "")}"></label>`;
   sheet(`<h3>${ex ? "Edit EOD" : "EOD"} · ${esc(sortOnly || isSort(code) ? (S.runsBy[code]?.label || "Sort") : code)}</h3><p class="hint">${label(shift.day)}${shift.van ? ` · ${esc(shift.van)}` : ""}. ${ex ? `Sent ${fmtTime(ex.sent_at)}${ex.edited_at ? `, last edited ${fmtTime(ex.edited_at)}` : ""}. Change what's wrong and save — Jeremy sees it was edited.` : "Fill in every box that applies."}</p><form class="frm" id="ef">${fields}<button class="btn full" type="submit">${ex ? "Save changes" : "Send EOD"}</button></form>`, (bg, close) => {
     bg.querySelectorAll(".chk input").forEach(i => i.onchange = () => i.parentElement.classList.toggle("on", i.checked));
+    // sorting minutes from the taps: prefilled, and kept in step with a typed start time until the driver changes the box themselves
+    const smIn = bg.querySelector("#sort_min"); let smTouched = false; const tapNow = () => { const r = bg.querySelector("#run_st"); return seg ? sortTap(TD, seg, r?.value ? Date.parse(nzToIso(shift.day, r.value)) : undefined) : null; };
+    if (smIn && !ex) { if (tap0 != null && smIn.value === "") smIn.value = tap0; smIn.oninput = () => { smTouched = true; }; }
+    bg.querySelector("#run_st")?.addEventListener("change", () => { const t = tapNow(); if (smIn && !smTouched && t != null) smIn.value = t; const h = bg.querySelector("#sorthint"); if (h && t != null) h.textContent = `Sorting time filled in from your times (${t} min). Change it if that's not right.`; });
     bg.querySelectorAll("[data-ib]").forEach(b => b.onclick = e => { e.preventDefault(); const h = bg.querySelector(`[data-ih="${b.dataset.ib}"]`); if (h) h.hidden = !h.hidden; });
     bg.querySelector("#ef").onsubmit = async e => { e.preventDefault(); const g = id => bg.querySelector("#" + id); const num = id => g(id) && g(id).value !== "" ? +g(id).value : null; const bool = id => g(id) && g(id).value !== "" ? g(id).value === "true" : null;
       const row = { finish_time: g("finish").value, sort_min: num("sort_min"), parcels: num("parcels"), stops: num("stops"), trays: num("trays"), pickups: num("pickups"), pickup_parcels: num("pickup_parcels"), cycled: num("cycled"), sorted_parcels: bool("sorted_parcels"), sorted_mail: bool("sorted_mail"), nzc_ph: bool("nzc_ph"), legs: [...bg.querySelectorAll("input[name=leg]:checked")].map(i => i.value), newspapers: !!g("news")?.checked, note: g("note").value || null, run_id: S.C.runCodes[code] || null };
       if (g("tge_rural")) row.extra = { ...(ex?.extra || {}), tge_rural: num("tge_rural") ?? 0 };
-      if (isDB) { const t = num("db_tge") ?? 0, o = num("db_other") ?? 0; row.parcels = t + o; row.extra = { ...(ex?.extra || {}), tge_total: t, other_total: o }; }
+      const tapM = !ex ? tapNow() : null; if (tapM != null) row.extra = { ...(row.extra || ex?.extra || {}), sort_tap: tapM };
+      if (g("run_st")?.value) { const at = nzToIso(shift.day, g("run_st").value); if (toMin(g("run_st").value) >= toMin(g("finish").value)) return toast("The start has to be before the finish time", "err");
+        const { error: eS } = await sb.rpc("run_mark", { p_shift: shiftId, p_kind: "sor", p_at: at }); if (eS) return toast(eS.message, "err"); }
+      if (isDB) { const t = num("db_tge") ?? 0, o = num("db_other") ?? 0; row.parcels = t + o; row.extra = { ...(row.extra || ex?.extra || {}), tge_total: t, other_total: o }; }
       if (ex) { const { error } = await sb.from("eod").update(row).eq("shift_id", shiftId); if (error) return toast(error.message.includes("row-level") ? "Too late to edit this one — ask Jeremy" : error.message, "err"); close(); toast("EOD updated ✓", "ok"); await loadAll(); render(); return; }
       Object.assign(row, { shift_id: shiftId, driver: S.me.id }); if (shift.day !== n.date) row.sent_at = nzToIso(shift.day, g("finish").value);
       const { error } = await sb.from("eod").insert(row); if (error) return toast(error.message, "err");
