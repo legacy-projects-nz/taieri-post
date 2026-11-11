@@ -775,7 +775,7 @@ function bindDetail(root) {
 /** Photo task with notes: ask for the note before uploading. Resolves to the text, or undefined if cancelled. */
 function photoNote(ad) {
   return new Promise(res => { let done = false; const fin = v => { if (!done) { done = true; res(v); } };
-    const { bg } = sheet(`<h3>${esc(ad.name)} · notes</h3><form class="frm" id="pn"><label class="f full">Notes<textarea class="in" id="pn-note" rows="4" required placeholder="What's in the bay, anything left behind or out of place"></textarea></label><button class="btn full" type="submit">Save photo + notes</button></form>`, (bg2, close) => {
+    const { bg } = sheet(`<h3>${esc(ad.name)} · notes</h3><form class="frm" id="pn"><label class="f full">Notes<textarea class="in" id="pn-note" rows="4" required placeholder="What's in the bay / for next, anything left behind or out of place"></textarea></label><button class="btn full" type="submit">Save photo + notes</button></form>`, (bg2, close) => {
       bg2.querySelector("#pn-note").focus();
       bg2.querySelector("#pn").onsubmit = e => { e.preventDefault(); const v = bg2.querySelector("#pn-note").value.trim(); if (!v) return toast("Add a note first", "err"); fin(v); close(); };
     });

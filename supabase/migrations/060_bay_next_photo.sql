@@ -3,12 +3,12 @@
 alter table public.addons add column if not exists photo_note boolean not null default false;
 alter table public.shifts add column if not exists task_notes jsonb not null default '{}';
 
--- Lawrence: daily bay photo with notes, Mon–Fri, standing task on the LAW run
+-- Bay / next photo with notes: standing task on every NZ Post run, every day the run is on
 insert into public.addons (id, name, short, runs, no_saturday, minutes, task, always, photo, photo_note) values
-  ('tw_lawbay', 'Bay photo', 'Bay', array['LAW'], true, 0, true, true, true, true)
-on conflict (id) do update set name = excluded.name, short = excluded.short, runs = excluded.runs, task = true, always = true, photo = true, photo_note = true;
+  ('tw_baynext', 'Bay / next photo', 'Bay/next', array['TUA','DB','FLY','LAW','RAM','PCB','RSB','WH'], false, 0, true, true, true, true)
+on conflict (id) do update set name = excluded.name, short = excluded.short, runs = excluded.runs, no_saturday = false, task = true, always = true, photo = true, photo_note = true;
 insert into public.timing_rules (id, name, opens, closes, runs, addon, days, note, active) values
-  ('lawbay', 'Bay photo', null, null, array['LAW'], 'tw_lawbay', array[1,2,3,4,5], 'Tap Take photo, photograph the bay and add your notes. That ticks it off.', true)
+  ('baynext', 'Bay / next photo', null, null, array['TUA','DB','FLY','LAW','RAM','PCB','RSB','WH'], 'tw_baynext', array[1,2,3,4,5,6], 'Tap Take photo, photograph your bay and the next run''s items, and add your notes. That ticks it off.', true)
 on conflict (id) do update set name = excluded.name, runs = excluded.runs, addon = excluded.addon, days = excluded.days, note = excluded.note, active = true;
 
 drop function if exists public.task_photo_done(uuid, text, text);
