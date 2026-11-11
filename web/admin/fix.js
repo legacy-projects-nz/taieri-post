@@ -27,7 +27,7 @@ export function fixTab() {
   return `${weekBar(`<label class="chk ${both ? "on" : ""}"><input type="checkbox" id="fx-both" ${both ? "checked" : ""}>include last week</label>`)}
     <div class="card"><h2>Fix posts<span>${L.length ? `${miss} missing · ${part} incomplete · ${late} late` : "all clear"}</span></h2>
     <p class="hint">Every SOD or EOD that is missing, incomplete or late (an EOD up to ${Math.round((S.C.rules.eodFixGrace ?? 90) / 6) / 10} h late is left off: it still counts as late, but needs no fix). <b>Fix</b> opens an editor: add a missing SOD or EOD for the driver, correct the start or finish time, or fill in missing figures. Once you save a fix, choose whether it is excused (no deduction) or recorded as an admin error, and it drops off the list. <b>Excuse</b> removes the deduction, <b>OK</b> accepts a late post as it is.</p>
-    ${Object.entries(by).map(([day, items]) => `<h4 style="margin:12px 0 4px">${label(day, true)}</h4><div class="list">${items.map(it => `<div class="item ${it.st === "miss" || it.st === "over" ? "crit" : "warn"}"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(nm(it.driver))}</b> · ${chip(it)}<span class="meta"> ${esc(STATE_LABEL[it.st])}${it.st === "part" || it.st === "miss" ? "" : ""}</span></span><span class="row" style="flex:0;gap:4px"><button class="btn sm" data-fx="fix" data-key="${esc(it.key)}">Fix</button><button class="btn sm ghost" data-fx="exc" data-key="${esc(it.key)}" data-drv="${it.driver}">Excuse</button>${it.st === "late" || it.st === "part" ? `<button class="btn sm ghost" data-fx="ok" data-key="${esc(it.key)}" data-drv="${it.driver}">OK</button>` : ""}</span></div></div>`).join("")}</div>`).join("") || `<p class="empty">✓ Nothing to fix.</p>`}</div>`;
+    ${Object.entries(by).map(([day, items]) => `<h4 style="margin:12px 0 4px">${label(day, true)}</h4><div class="list">${items.map(it => `<div class="item ${it.st === "miss" || it.st === "over" ? "crit" : "warn"}"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(nm(it.driver))}</b> · ${chip(it)}<span class="meta"> ${esc(STATE_LABEL[it.st])}${it.st === "part" || it.st === "miss" ? "" : ""}</span></span><span class="row" style="flex:0;gap:4px"><button class="btn sm" data-fx="fix" data-key="${esc(it.key)}">Fix</button><button class="btn sm ghost" data-fxshift="${it.driver}|${it.day}" title="Edit or delete this driver's shifts that day">Shifts</button><button class="btn sm ghost" data-fx="exc" data-key="${esc(it.key)}" data-drv="${it.driver}">Excuse</button>${it.st === "late" || it.st === "part" ? `<button class="btn sm ghost" data-fx="ok" data-key="${esc(it.key)}" data-drv="${it.driver}">OK</button>` : ""}</span></div></div>`).join("")}</div>`).join("") || `<p class="empty">✓ Nothing to fix.</p>`}</div>`;
 }
 
 function findItem(key) {
@@ -37,6 +37,7 @@ function findItem(key) {
 export function wireFix() {
   wireWeek();
   $("#fx-both")?.addEventListener("change", e => { both = e.target.checked; render(); });
+  $$("[data-fxshift]").forEach(b => b.onclick = () => { const [drv, day] = b.dataset.fxshift.split("|"); shiftSheet(drv, day); });
   $$("[data-fx]").forEach(b => b.onclick = async () => {
     const key = b.dataset.key; const act = b.dataset.fx;
     if (act === "fix") { const it = findItem(key); if (it) it.kind === "SOD" ? sodSheet(it) : eodFix(it); return; }
@@ -85,5 +86,32 @@ function eodFix(it) {
     bg.querySelector("#ef2").onsubmit = async e => { e.preventDefault(); const g = x => bg.querySelector("#" + x).value; const t = g("tm");
       const { error } = await sb.from("eod").insert({ shift_id: sh.id, driver: it.driver, sent_at: nzToIso(it.day, t), finish_time: t, parcels: g("p") ? +g("p") : null, stops: g("s") ? +g("s") : null, note: g("nt") || `Entered by ${first(S.me.name)}` });
       if (error) return toast(error.message, "err"); const oc = g("oc"); close(); toast("EOD saved", "ok"); await loadAll(); await settle(it, oc, "EOD"); await loadAll(); render(); };
+  });
+}
+
+/** Shifts: edit the run, driver and times of a driver's shifts on a day, or delete one (its SOD, EOD and breaks go with it) */
+const hm = t => t ? String(t).slice(0, 5) : "";
+function shiftSheet(drv, day) {
+  const list = S.shifts.filter(x => x.day === day && x.driver === drv && x.run !== "BU").sort((a, b) => hm(a.start_at).localeCompare(hm(b.start_at)));
+  const runs = S.runs.filter(r => r.code !== "BU" && r.active !== false); const ppl = S.drivers;
+  const posts = x => [S.sodBy?.[x.id] || S.sods?.find(o => o.shift_id === x.id) ? "SOD" : "", S.eodBy?.[x.id] ? "EOD" : ""].filter(Boolean).join(" + ");
+  const row = x => `<div class="item" data-sh="${x.id}"><div class="row" style="gap:6px;align-items:flex-end;flex-wrap:wrap">
+    <label class="f" style="flex:1 1 110px">Run<select class="in" data-k="run">${runs.map(r => `<option value="${esc(r.code)}" ${r.code === x.run ? "selected" : ""}>${esc(r.code)}${r.label ? " · " + esc(r.label) : ""}</option>`).join("")}</select></label>
+    <label class="f" style="flex:1 1 120px">Driver<select class="in" data-k="driver">${ppl.map(p => `<option value="${esc(p.id)}" ${p.id === x.driver ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>
+    <label class="f" style="flex:1 1 90px">Start<input class="in" type="time" data-k="start_at" value="${hm(x.start_at)}"></label>
+    <label class="f" style="flex:1 1 90px">Finish<input class="in" type="time" data-k="end_at" value="${hm(x.end_at)}"></label></div>
+    <div class="row" style="justify-content:space-between;align-items:center;margin-top:6px"><span class="meta">${posts(x) ? `has ${posts(x)}` : "no posts"}</span>
+    <span class="row" style="flex:0;gap:4px"><button class="btn sm" type="button" data-shsave="${x.id}">Save</button><button class="btn sm ghost" type="button" data-shdel="${x.id}">Delete</button></span></div></div>`;
+  sheet(`<h3>Shifts · ${esc(nm(drv))}</h3><p class="hint">${label(day, true)} · change the run, driver or times, or delete a shift. Deleting a shift also deletes its SOD, EOD and breaks.</p>
+    <div class="list">${list.length ? list.map(row).join("") : `<p class="empty">No shifts that day.</p>`}</div>`, (bg, close) => {
+    bg.querySelectorAll("[data-shsave]").forEach(b => b.onclick = async () => { const box = b.closest("[data-sh]"); const v = k => box.querySelector(`[data-k="${k}"]`).value;
+      const upd = { run: v("run"), driver: v("driver"), start_at: v("start_at") || null, end_at: v("end_at") || null };
+      if (upd.start_at && upd.end_at && upd.end_at <= upd.start_at) return toast("Finish has to be after the start", "err");
+      b.disabled = true; const { error } = await sb.from("shifts").update(upd).eq("id", b.dataset.shsave); b.disabled = false;
+      if (error) return toast(error.message, "err"); toast("Shift saved", "ok"); close(); await loadAll(); render(); });
+    bg.querySelectorAll("[data-shdel]").forEach(b => b.onclick = async () => {
+      if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "Tap again to delete"; b.classList.add("warn"); setTimeout(() => { if (b.isConnected) { b.dataset.sure = ""; b.textContent = "Delete"; b.classList.remove("warn"); } }, 4000); return; }
+      b.disabled = true; const { error } = await sb.rpc("shift_delete", { p_id: b.dataset.shdel });
+      if (error) { b.disabled = false; return toast(error.message, "err"); } toast("Shift deleted", "ok"); close(); await loadAll(); render(); });
   });
 }
