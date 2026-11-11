@@ -337,7 +337,8 @@ function rulesFor(x, day) {
     else if (!all && r.runs.length > 1) continue;
     out.push(meetRule(r, x.shift));
   }
-  return out.sort((a, b) => (toMin(a.closes) ?? toMin(a.opens) ?? 0) - (toMin(b.closes) ?? toMin(b.opens) ?? 0));
+  const LAST = ["tw_baynext"];   // Bay/NC photo always sits at the end of the list
+  return out.sort((a, b) => LAST.includes(a.addon) - LAST.includes(b.addon) || (toMin(a.closes) ?? toMin(a.opens) ?? 0) - (toMin(b.closes) ?? toMin(b.opens) ?? 0));
 }
 function winTxt(r) { const f = toMin(r.opens), t = toMin(r.closes); return f != null && t != null ? `${fmtT(f)} – ${fmtT(t)}` : t != null ? `by ${fmtT(t)}` : f != null ? `from ${fmtT(f)}` : "any time"; }
 /** Every timed task on a run, each with its own Done button on the day (what Jeremy's Alerts and "Timings today" read). */
