@@ -78,17 +78,25 @@ export const col = v => v == null ? "grey" : v >= 95 ? "ok" : v >= 85 ? "accent"
 export const pct = v => v == null ? "—" : Math.round(v) + "%";
 
 /* ---------- Auth ---------- */
-export async function session() { const { data } = await sb.auth.getSession(); return data.session; }
+export async function session() {
+  const { data, error } = await sb.auth.getSession(); if (data?.session || DEMO) return data?.session ?? null;
+  // no signal and the sign-in token has run out: the phone can't renew it right now, but it still knows who is signed in, so the app can open offline
+  if (error && (!navigator.onLine || isNetErr(error))) { try { const raw = localStorage.getItem(`sb-${new URL(SUPABASE_URL).hostname.split(".")[0]}-auth-token`); const st = raw && JSON.parse(raw); if (st?.user?.id) return st; } catch { } }
+  return null;
+}
 export async function sendCode(email) {
   const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname } });
   if (error) throw error;
 }
 export async function verifyCode(email, token) { const { data, error } = await sb.auth.verifyOtp({ email, token, type: "email" }); if (error) throw error; return data.session; }
-export async function signOut() { await sb.auth.signOut(); location.reload(); }
+export async function signOut() { try { localStorage.removeItem("tp-me"); indexedDB.deleteDatabase("tp-offline"); } catch { } await sb.auth.signOut(); location.reload(); }
 export async function me() {
   const s = await session(); if (!s) return null;
-  const { data, error } = await sb.rpc("whoami").maybeSingle();   // security-definer lookup, works before two-factor
-  if (error) throw error;
+  let { data, error } = await sb.rpc("whoami").maybeSingle();   // security-definer lookup, works before two-factor
+  if (error) {   // no signal: use who this phone last signed in as, so the app can open offline (the server still checks every request)
+    if (!DEMO && isNetErr(error)) { try { const c = JSON.parse(localStorage.getItem("tp-me") || "null"); if (c && c.uid === s.user?.id) data = c.data; } catch { } }
+    if (!data) throw error;
+  } else if (data && !DEMO) { try { localStorage.setItem("tp-me", JSON.stringify({ uid: s.user?.id, data })); } catch { } }
   return data ? { ...data, isOwner: data.role === "owner", isStaff: data.role === "owner" || (data.perms || []).length > 0, can: a => data.role === "owner" || (data.perms || []).includes(a) } : null;
 }
 export async function aal() { const { data } = await sb.auth.mfa.getAuthenticatorAssuranceLevel(); return data; }
@@ -114,14 +122,79 @@ export function isSort(code) { return /^SUP/.test(code); }
 export function runLabel(r) { return r?.label || r?.code || ""; }
 
 /* ---------- Push ---------- */
-export async function enablePush(personId, vapidPublic) {
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return { ok: false, why: "This browser can't do notifications. On iPhone, add the app to your Home Screen first (Share → Add to Home Screen)." };
-  const reg = await navigator.serviceWorker.register("/sw.js");
-  const perm = await Notification.requestPermission(); if (perm !== "granted") return { ok: false, why: "Notifications were not allowed." };
-  const key = Uint8Array.from(atob(vapidPublic.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(vapidPublic.length / 4) * 4, "=")), c => c.charCodeAt(0));
-  const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+const pushOk = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const vapidBytes = k => Uint8Array.from(atob(k.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(k.length / 4) * 4, "=")), c => c.charCodeAt(0));
+// store this phone's subscription against the signed-in person (the server moves it if the phone was last used by someone else)
+async function savePush(sub, personId) {
   const j = sub.toJSON();
+  if (!DEMO) { const { error } = await sb.rpc("push_subscribe", { p_endpoint: j.endpoint, p_keys: j.keys }); if (!error) return; if (error.code !== "PGRST202") throw error; }   // PGRST202: database function not there yet, use the table
   await q(sb.from("push_subs").upsert({ person: personId, endpoint: j.endpoint, keys: j.keys }, { onConflict: "endpoint" }));
-  return { ok: true };
 }
-export async function pushState() { if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "unsupported"; const reg = await navigator.serviceWorker.getRegistration(); const sub = reg && await reg.pushManager.getSubscription(); return sub ? "on" : (Notification.permission === "denied" ? "denied" : "off"); }
+export async function enablePush(personId, vapidPublic) {
+  if (!pushOk()) return { ok: false, why: "This browser can't do notifications. On iPhone, add the app to your Home Screen first (Share → Add to Home Screen)." };
+  try {
+    await navigator.serviceWorker.register("/sw.js"); const reg = await navigator.serviceWorker.ready;   // wait until the worker is running: subscribing before that fails
+    const perm = await Notification.requestPermission(); if (perm !== "granted") return { ok: false, why: perm === "denied" ? "Notifications are blocked for this app in the phone's settings." : "Notifications were not allowed." };
+    const key = vapidBytes(vapidPublic); let sub = await reg.pushManager.getSubscription();
+    // a subscription made with a different key can't receive our notifications: drop it and make a fresh one
+    if (sub) { const cur = sub.options?.applicationServerKey ? new Uint8Array(sub.options.applicationServerKey) : null; if (cur && (cur.length !== key.length || cur.some((v, i) => v !== key[i]))) { await sub.unsubscribe(); sub = null; } }
+    sub ||= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    await savePush(sub, personId); return { ok: true };
+  } catch (e) { reportError("push", e); return { ok: false, why: "Couldn't turn notifications on: " + String(e?.message || e).slice(0, 120) }; }
+}
+// Each time the app opens: if this phone already has notifications on, make sure the server still has its subscription
+// (the phone can say "on" while the server has lost the record, and then nothing ever arrives).
+export async function syncPush(personId) {
+  try { if (DEMO || !pushOk() || Notification.permission !== "granted") return; const reg = await navigator.serviceWorker.getRegistration(); const sub = reg && await reg.pushManager.getSubscription(); if (sub) await savePush(sub, personId); }
+  catch (e) { reportError("push-sync", e); }
+}
+export async function pushState() { if (!pushOk()) return "unsupported"; const reg = await navigator.serviceWorker.getRegistration(); const sub = reg && await reg.pushManager.getSubscription(); return sub ? "on" : (Notification.permission === "denied" ? "denied" : "off"); }
+
+/* ---------- Offline ---------- */
+// A save that could not reach the server (no signal) is kept on the phone and sent, in order, when the connection is back.
+// Each entry carries the time it was made, so a SOD or a ticked task keeps its real time rather than the time it finally got through.
+export function isNetErr(e) { return !!e && !e.code && !e.status && (!navigator.onLine || /fetch|network|load failed|abort|timeout|timed out/i.test(String(e.message || e))); }
+export const uuid = () => crypto.randomUUID ? crypto.randomUUID() : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c => (+c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> +c / 4).toString(16));
+const OB_KEY = "tp-outbox";
+function obAll() { try { const a = JSON.parse(localStorage.getItem(OB_KEY) || "[]"); return Array.isArray(a) ? a : []; } catch { return []; } }
+function obSave(a) { try { localStorage.setItem(OB_KEY, JSON.stringify(a)); } catch (e) { reportError("outbox-save", e); } }
+/** saves waiting on this phone for the signed-in person */
+export function pending() { if (DEMO) return []; return obAll().filter(o => o.who === _ctx.person); }
+/** op: { kind:"insert", table, row, ret?, notify? } or { kind:"rpc", fn, args }; stamp: "sent_at" (row) or "p_at" (args) is filled with the time now */
+export function queueOp(op) {
+  const at = new Date().toISOString(); const o = { ...op, id: uuid(), at, who: _ctx.person };
+  if (op.stamp === "sent_at" && !o.row?.sent_at) o.row = { ...o.row, sent_at: at };
+  if (op.stamp === "p_at" && !o.args?.p_at) o.args = { ...o.args, p_at: at };
+  obSave([...obAll(), o]); return o;
+}
+/** run one save now; gives up after 15 s so a dead connection doesn't leave the driver waiting */
+export async function runOp(op) {
+  let ctl = null, tm = null; const sig = () => { if (DEMO || typeof AbortController === "undefined") return null; ctl = new AbortController(); tm = setTimeout(() => ctl.abort(), 15000); return ctl.signal; };
+  try {
+    if (op.kind === "insert") { let p = sb.from(op.table).insert(op.row); if (op.ret) p = p.select("id").single(); const sg = sig(); if (sg && p.abortSignal) p = p.abortSignal(sg); return await p; }
+    if (op.kind === "rpc") { let p = sb.rpc(op.fn, op.args); const sg = sig(); if (sg && p.abortSignal) p = p.abortSignal(sg); return await p; }
+    return { error: { message: "unknown save", code: "tp" } };
+  } catch (e) { return { data: null, error: { message: String(e?.message || e) } }; }
+  finally { clearTimeout(tm); }
+}
+let _flushing = false;
+/** send what's waiting, oldest first. Stops at the first one that still can't get through. */
+export async function flushOutbox() {
+  if (DEMO || _flushing || !navigator.onLine) return { sent: 0, bad: [] };
+  _flushing = true; let sent = 0; const bad = [];
+  try {
+    for (;;) { const op = pending()[0]; if (!op) break;
+      let { data, error } = await runOp(op);
+      if (error && op.kind === "rpc" && op.args?.p_at && error.code === "PGRST202") { const { p_at, ...rest } = op.args; ({ data, error } = await runOp({ ...op, args: rest })); }   // database not updated to take a time yet
+      if (error && isNetErr(error)) break;
+      if (error && error.code !== "23505") { bad.push(String(error.message || "").slice(0, 140)); reportError("outbox", error, { op }); }   // 23505: it's already there (sent twice), which is fine
+      else { sent++; if (!error && op.notify && data?.id) sb.functions.invoke("notify", { body: { type: op.notify, id: data.id } }).catch(() => { }); }
+      obSave(obAll().filter(x => x.id !== op.id));
+    }
+  } finally { _flushing = false; }
+  return { sent, bad };
+}
+// Last loaded data, kept on the phone so the app can open with no signal
+function idb() { return new Promise((res, rej) => { const r = indexedDB.open("tp-offline", 1); r.onupgradeneeded = () => r.result.createObjectStore("kv"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+export async function snapSave(key, val) { try { const db = await idb(); await new Promise((res, rej) => { const tx = db.transaction("kv", "readwrite"); tx.objectStore("kv").put(val, key); tx.oncomplete = res; tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error); }); db.close(); } catch (e) { console.warn("snapshot not saved", e); } }
+export async function snapLoad(key) { try { const db = await idb(); const v = await new Promise((res, rej) => { const rq = db.transaction("kv").objectStore("kv").get(key); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); db.close(); return v ?? null; } catch { return null; } }
