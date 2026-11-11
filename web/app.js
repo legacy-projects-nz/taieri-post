@@ -149,12 +149,14 @@ function renderNow() {
   const greet = n.min < 720 ? "Morning" : n.min < 1020 ? "Hi" : "Evening";
   const T = S.days[t];
   const nextDay = Object.values(S.days).filter(d => d.day > t).sort((a, b) => a.day < b.day ? -1 : 1)[0];
+  // day done = every EOD for today is in: Today drops away and Next shift moves up under the SOD / EOD buttons, open
+  const tRuns = T ? T.segs.filter(x => !x.sort) : []; const dayDone = !!T && (tRuns.length ? tRuns.every(x => x.eod) : T.segs.some(x => x.eod));
   app.innerHTML = `<div class="wrap">
     ${demoBar()}${viewBar()}
     <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
     ${S.loadErr ? `<p class="hint" style="margin:0 0 8px;color:var(--crit)">No connection. Showing what loaded at ${fmtT(nzNow(new Date(S.loadedAt)).min)}. Trying again on its own.</p>` : ""}
     ${part("SOD / EOD", () => quickBar(T, n))}
-    ${part("Today", () => todayCard(T, nextDay, n))}
+    ${dayDone ? part("Next shift", () => nextShiftCard(nextDay, n)) : part("Today", () => todayCard(T, nextDay, n))}
     ${part("Today's tasks", () => addonsCard(T, nextDay, n))}
     ${part("Roster changes", () => rosterChanges(n))}
     ${part("Alerts", () => alertsCard())}
@@ -163,7 +165,7 @@ function renderNow() {
     ${part("My scores", () => scoresCard())}
     ${part("Parcel pick-ups", () => pickupsCard(T))}
     <div class="folds">
-    ${part("Next shift", () => nextShiftCard(nextDay, n))}
+    ${dayDone ? "" : part("Next shift", () => nextShiftCard(nextDay, n))}
     ${pair(part("My van", () => vanCard(T, null)), part("My shifts", () => shiftsCard(t)))}
     ${pair(part("To fix", () => toFixCard(n)), part("Notes from Jeremy", () => fromJeremy()))}
     ${pair(part("Leave", () => leaveCard()), part("My details", () => detailsCard()))}
