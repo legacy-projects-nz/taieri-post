@@ -78,7 +78,7 @@ export function openKpi(kind, days) {
     const items = all.filter(pick); const by = {}; for (const i of items) (by[i.driver] ??= []).push(i);
     const n = { ok: items.filter(i => i.st === "ok").length, late: items.filter(i => i.st === "late").length, miss: items.filter(i => i.st === "miss").length, over: items.filter(i => i.st === "over").length };
     return `<h3>${t} · ${items.length}</h3><p class="meta">${sub} · ${days.length === 1 ? label(days[0]) : `${label(days[0])} – ${label(days[days.length - 1])}`}</p>
-      <div class="row" style="gap:4px"><span class="chip ok">${n.ok} on time</span><span class="chip late">${n.late} late</span><span class="chip over">${n.over} overdue</span><span class="chip miss">${n.miss} missing</span></div>
+      <div class="row" style="gap:4px"><span class="chip ok">${n.ok} on time</span><span class="chip ${n.late ? "late" : "ok"}">${n.late} late</span><span class="chip ${n.over ? "over" : "ok"}">${n.over} overdue</span><span class="chip ${n.miss ? "miss" : "ok"}">${n.miss} missing</span></div>
       ${Object.entries(by).sort((a, b) => b[1].length - a[1].length).map(([d, L]) => `<div class="item"><div class="row" style="justify-content:space-between"><b>${drvName(d)} · ${L.length}</b></div><div class="row" style="gap:3px">${L.sort((a, b) => a.day.localeCompare(b.day)).map(i => `<span>${days.length > 1 ? `<span class="meta">${label(i.day).slice(0, 3)}</span> ` : ""}${chip(i)}</span>`).join("")}</div></div>`).join("") || `<p class="empty">Nothing in this group.</p>`}<p class="hint">Tap a chip to review, excuse or post it for them.</p>`;
   }, null, { wide: true });
 }
