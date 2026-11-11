@@ -173,7 +173,7 @@ function renderNow() {
     ${part("More", () => moreCard())}
     ${part("Passwords & logins", () => accessCard())}
     </div>
-    <p class="foot">Shift or score looks wrong? Message Jeremy.<br>Signed in as ${esc((S.viewer || S.me).email || "")}</p>
+    <p class="foot">Signed in as ${esc((S.viewer || S.me).email || "")}</p>
   </div>`;
   try { folds(); } catch (e) { reportError("folds", e); }
   try { wire(); } catch (e) { reportError("wire", e); }
@@ -374,9 +374,9 @@ function todayCard(T, N, n) {
         return `<div class="card today tdmini" id="today-mini" role="button" tabindex="0" aria-expanded="false" title="Tap for the full day">
           <div class="tdr1"><b>Today</b><span class="big">${fmtT((left[0] || T.segs[0]).st)}–${fmtT(T.end)}</span>${vanChips(T)}<i class="fchev" aria-hidden="true"></i></div>
           <div class="tdr2 meta"><span class="c-ok">✓ SOD ${fmtTime(sodSeg.sod.sent_at)}</span> · now <b>${esc(nm(cur))}</b> till ${fmtT(cur.en)}${nxt ? ` · next <b>${esc(nm(nxt))}</b> ${fmtT(nxt.st)}` : ""}${S.locOn ? " · 📍" : ""}</div></div>`; }
-      return `<div class="card today${sodSeg ? " " : ""}" ${sodSeg ? `id="today-full"` : ""}><h2>Today<span>${label(T.day)}${sodSeg ? ` <button class="btn ghost sm" id="today-less" type="button" style="min-height:28px;padding:2px 10px">Less ▴</button>` : ""}</span></h2><div class="big bigrow"><span>${fmtT((left[0] || T.segs[0]).st)}–${fmtT(T.end)}</span>${vanChips(T)}</div>${left.length === T.segs.length ? `<div class="meta" style="margin-top:-4px">${T.hours} h rostered</div>` : ""}
+      return `<div class="card today${sodSeg ? " " : ""}" ${sodSeg ? `id="today-full"` : ""}><h2>Today<span>${label(T.day)}${sodSeg ? ` <button class="btn ghost sm" id="today-less" type="button" style="min-height:28px;padding:2px 10px">Less ▴</button>` : ""}</span></h2><div class="big bigrow"><span>${fmtT((left[0] || T.segs[0]).st)}–${fmtT(T.end)}</span>${vanChips(T)}</div>
         ${sodBtn}${(left.length ? left : T.segs).map(x => segRow(x, T.day, n, true, false)).join("")}
-        ${S.locOn ? `<p class="hint">📍 Sharing your location with the depot until your EOD.</p>` : ""}</div>`;
+</div>`;
     }
   }
   const why = hol ? esc(hol.name) : !T ? "Day off today" : "Today's shift is done ✓";
@@ -401,9 +401,9 @@ function buSection(n) {
   return `<section class="ns"><h3 class="sub">Back-up and on-call</h3>${rows}</section>`;
 }
 function nextShiftCard(N, n) {   // one box: shift, tasks, vehicle, split by grey lines
-  if (!N) return `<div class="card nextc"><h2>Next shift<span>not on the roster yet</span></h2><div class="big">Not on the roster yet</div><p class="hint">Your next shift, tasks and van show here once the roster is out.</p>${buSection(n)}</div>`;
+  if (!N) return `<div class="card nextc"><h2>Next shift<span>not on the roster yet</span></h2>${buSection(n)}</div>`;
   return `<div class="card nextc"><h2>Next shift<span>${N.day === addDays(today(), 1) ? "Tomorrow" : label(N.day)} · ${fmtT(N.start)}–${fmtT(N.end)}</span></h2>
-    <section class="ns"><h3 class="sub">Shift</h3><div class="big bigrow"><span>${fmtT(N.start)}–${fmtT(N.end)}</span>${vanChips(N)}</div><div class="meta" style="margin-top:-4px">${N.hours} h rostered</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}</section>
+    <section class="ns"><div class="bigrow">${vanChips(N)}</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}</section>
     <section class="ns shade">${tasksCard(N, n, true, true)}</section>
     <section class="ns"><h3 class="sub">Vehicle</h3>${vanInner(N)}</section>${buSection(n)}</div>`;
 }
@@ -418,7 +418,7 @@ function vanInner(src) {
   return `${plates.map(p => { const v = S.vans[p] || {}; const w = st(v.wof_due), r = st(v.rego_due); let ruc = ["unknown", "not on file"], rtxt = "";
     if (v.no_ruc) { ruc = ["ok", "✓"]; rtxt = "not needed (petrol)"; } else if (v.ruc_paid_to) { const left = v.odometer ? v.ruc_paid_to - v.odometer : null; rtxt = `paid to ${v.ruc_paid_to.toLocaleString()} km${left != null ? ` · ${left.toLocaleString()} km left` : ""}`; ruc = left == null ? ["ok", "✓"] : left <= 0 ? ["crit", "overdue"] : left <= (S.C.rules.rucSoonKm || 1000) ? ["warn", "low"] : ["ok", "✓"]; }
     return `<div><button class="plate clk" data-vanv="${esc(p)}" style="background:none;cursor:pointer" title="Tap for this van's history">${esc(p)}</button>${v.model ? ` <span class="meta">${esc(v.model)}</span>` : ""}<dl class="kv" style="margin-top:8px;grid-template-columns:56px 1fr"><dt>WOF</dt><dd>${v.wof_due ? label(v.wof_due, true) + " " : ""}${pill(w[1], w[0] === "unknown" ? "grey" : w[0])}</dd><dt>Rego</dt><dd>${v.rego_due ? label(v.rego_due, true) + " " : ""}${pill(r[1], r[0] === "unknown" ? "grey" : r[0])}</dd><dt>RUCs</dt><dd>${esc(rtxt)} ${pill(ruc[1], ruc[0] === "unknown" ? "grey" : ruc[0])}</dd></dl></div>`; }).join("")}
-    <p class="hint">Low or overdue? Tell Stu. Tap the plate for your checks and history with this van.</p>`;
+`;
 }
 function shiftsCard(t) {
   const mon = monOf(t); const nextMon = addDays(mon, 7);
@@ -429,7 +429,7 @@ function shiftsCard(t) {
   const nextW = []; for (let d = nextMon; d < addDays(nextMon, 7); d = addDays(d, 1)) nextW.push(d);
   const nShifts = nextW.filter(d => S.days[d]).length; const rosterOut = S.shifts.some(s => s.day >= nextMon) || nShifts > 0;
   const lastW = []; for (let d = addDays(mon, -7); d < mon; d = addDays(d, 1)) lastW.push(d); const earlier = []; for (let d = mon; d <= t; d = addDays(d, 1)) earlier.push(d);
-  return `<div class="card"><h2>My shifts<span>tap a day for posts, figures and your score that day</span></h2>${earlier.length ? `<details><summary>Earlier this week<span class="meta">${earlier.filter(d => S.days[d]).length} shift${earlier.filter(d => S.days[d]).length === 1 ? "" : "s"}</span></summary>${earlier.map(row).join("")}</details>` : ""}<div class="meta mono">This week</div>${thisW.length ? thisW.map(row).join("") : `<div class="day off"><div class="dl"></div><div>Nothing left this week</div><div></div></div>`}
+  return `<div class="card"><h2>My shifts</h2>${earlier.length ? `<details><summary>Earlier this week<span class="meta">${earlier.filter(d => S.days[d]).length} shift${earlier.filter(d => S.days[d]).length === 1 ? "" : "s"}</span></summary>${earlier.map(row).join("")}</details>` : ""}<div class="meta mono">This week</div>${thisW.length ? thisW.map(row).join("") : `<div class="day off"><div class="dl"></div><div>Nothing left this week</div><div></div></div>`}
     <details><summary>Next week<span class="meta">${rosterOut ? `${nShifts} shift${nShifts === 1 ? "" : "s"}` : "roster not out yet"}</span></summary>${nextW.map(row).join("")}</details>
     <details><summary>Last week<span class="meta">${lastW.filter(d => S.days[d]).length} shift${lastW.filter(d => S.days[d]).length === 1 ? "" : "s"}</span></summary>${lastW.map(row).join("")}</details></div>`;
 }
@@ -461,7 +461,7 @@ function tasksCard(D, n, next, bare = false) {
     const items = []; const covered = new Set();
     for (const r of rulesFor(x, D.day)) { const key = r.done_key || r.addon || null; if (r.addon) covered.add(r.addon); const gp = !!key?.startsWith("tw_") && /game plan/i.test(r.name); const planned = gp && Object.keys(plan).length > 0;
       const meetEdit = code === "DB" && key === "milton";   // D>B driver sets the day's Milton drop-off time; it goes to the Lawrence driver
-      items.push({ key, title: r.name, desc: meetEdit ? `${r.note || ""} Different time? Change it here and the Lawrence driver gets it straight away.`.trim() : r.note || (key && !key.startsWith("tw_") ? (S.addons.find(a => a.id === key)?.name || "") : ""), time: winTxt(r), opens: toMin(r.opens), closes: toMin(r.closes), doneAt: key ? done[key] : null, planned, meetEdit, meetVal: String(x.shift.milton_at || r.closes || "").slice(0, 5) }); }
+      items.push({ key, title: r.name, short: r.short, code: r.code, desc: meetEdit ? `${r.note || ""} Different time? Change it here and the Lawrence driver gets it straight away.`.trim() : r.note || (key && !key.startsWith("tw_") ? (S.addons.find(a => a.id === key)?.name || "") : ""), time: winTxt(r), opens: toMin(r.opens), closes: toMin(r.closes), doneAt: key ? done[key] : null, planned, meetEdit, meetVal: String(x.shift.milton_at || r.closes || "").slice(0, 5) }); }
     for (const id of x.shift.addons || []) { if (covered.has(id) || id.startsWith("tw_")) continue; const o = S.addons.find(a => a.id === id); if (!o) continue;
       items.push({ key: id, title: o.name, desc: plan[id] ? `planned ${fmtT(toMin(plan[id]))}` : o.minutes ? `${o.minutes} min allowed on the run` : "add-on on this run", time: "any time", opens: null, closes: null, doneAt: done[id], planned: false }); }
     const nDone = items.filter(t => t.doneAt || t.planned).length;
@@ -470,21 +470,22 @@ function tasksCard(D, n, next, bare = false) {
       else if (isT) { if (t.closes != null && n.min > t.closes) { cls = "over"; st = `overdue · was due ${fmtT(t.closes)}`; } else if (t.closes != null && t.closes - n.min <= 15) { cls = "soon"; st = `due in ${t.closes - n.min} min`; } else { cls = "pend"; st = "not done yet"; } }
       const pu = puAreaOf(t.key); const btn = isT && !isDone && t.key && (!S.viewAs || S.viewer?.isStaff) ? (isPhotoTask(t.key) ? rsBtn(x.shift.id, t.key) : pu ? `<div class="row" style="flex:0 0 auto;gap:6px">${puBtn(t.key, x.shift.id)}${noneBtn(t.key, x.shift.id)}</div>` : `<button class="btn sm accent" data-done="${esc(t.key)}" data-shift="${x.shift.id}">Done</button>`) : isT && isDone && pu && !S.viewAs ? puEditBtn(t.key, x.shift.day) : "";
       const meet = t.meetEdit && !isDone && D.day >= n.date && (!S.viewAs || S.viewer?.isStaff) ? `<label class="meta" style="display:flex;flex-direction:column;gap:2px;flex:0 0 112px">Milton time<input class="in" type="time" step="300" style="min-height:40px" value="${esc(t.meetVal)}" data-meet="${x.shift.id}" aria-label="Milton drop-off time"></label>` : "";
-      return `<div class="tk ${cls}"><div class="tkt"><div class="t">${esc(t.title)}</div><div class="d">${esc(t.desc || "")}</div><div class="w">${esc(t.time)}${st ? ` · ${st}` : ""}</div></div>${meet}${btn}</div>`; };
+      const when = cls === "over" ? `✗ ${fmtT(t.closes)}` : cls === "soon" ? `${t.closes - n.min} min` : t.time === "any time" ? "" : t.time;
+      return `<div class="tk tk1 ${cls}"><div class="w">${esc(when)}</div><div class="tkt"><span class="t">${esc(t.short || tkShort(t.key, t.title))}</span>${t.code ? `<span class="tw-code">🔑 ${esc(t.code)}</span>` : ""}</div>${meet}${btn}</div>`; };
     return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${fmtT(x.st)} – ${fmtT(x.en)}${items.length && isT ? ` · ${nDone}/${items.length} done` : ""}</span></div>
       ${items.length ? (() => { const isDone = t => !!(t.doneAt || t.planned); const todo = items.filter(t => !isDone(t)), fin = items.filter(isDone);
         // done ones shrink into half-height tiles with a short name; tap a tile to undo (pick-up tiles open the pick-up editor instead)
         const tile = t => { const pu = puAreaOf(t.key); const can = isT && t.key && !t.planned && (!S.viewAs || S.viewer?.isStaff);
           const puOk = pu && puAreaLines(pu, x.shift.day).length; const attrs = !can ? "" : pu ? (puOk ? `data-puarea="${esc(pu)}" data-puday="${x.shift.day}"` : "") : `data-done="${esc(t.key)}" data-undo="1" data-shift="${x.shift.id}"`;
           return `<button type="button" class="tkd" ${attrs} ${attrs ? `title="${esc(t.title)} · tap to ${pu ? "edit" : "undo"}"` : `title="${esc(t.title)}" disabled`}><b>${esc(tkShort(t.key, t.title))}</b><small>✓ ${t.doneAt ? fmtTime(t.doneAt) : "plan in"}</small></button>`; };
-        return `${todo.length ? `<div class="tks">${todo.map(row).join("")}</div>` : ""}${fin.length ? `<div class="tkds">${fin.map(tile).join("")}</div>` : ""}`; })() : `<p class="meta" style="margin:4px 0 0">Nothing extra on this run.</p>`}
-      <details class="abmore"><summary>Change what's on this run${opts.some(o => o.task && on.has(o.id)) ? " · planned times" : ""}</summary><div class="list" style="margin-top:6px">${opts.map(o => { const isOn = on.has(o.id); const rule = S.rules.find(r => r.addon === o.id);
+        return `${todo.length ? `<div class="tks">${todo.map(row).join("")}</div>` : ""}${fin.length ? `<div class="tkds">${fin.map(tile).join("")}</div>` : ""}`; })() : `""`}
+      <details class="abmore"><summary>Change run add-ons</summary><div class="list" style="margin-top:6px">${opts.map(o => { const isOn = on.has(o.id); const rule = S.rules.find(r => r.addon === o.id);
         return `<div class="row" style="align-items:center"><label class="chk ${isOn ? "on" : ""}" style="flex:1 1 60%"><input type="checkbox" data-addon="${o.id}" data-shift="${x.shift.id}" ${isOn ? "checked" : ""}>${esc(o.name)}${rule ? `<span class="meta" style="margin-left:auto">${winTxt(rule)}</span>` : ""}</label>
           ${o.task && isOn ? `<input class="in" type="time" step="900" style="flex:0 0 120px;min-height:40px" value="${esc(plan[o.id] || "")}" data-plan="${o.id}" data-shift="${x.shift.id}" aria-label="Planned time for ${esc(o.name)}">` : ""}</div>`; }).join("")}</div>
-        <p class="hint" style="margin:6px 0 0">Ticks and times save straight away and show on the Run Board${opts.some(o => o.task && on.has(o.id)) ? " (your planned times are your game plan)" : ""}.</p></details></div>`;
+</details></div>`;
   }).join("");
   if (bare) return `<h3 class="sub">Tasks</h3>${blocks || `<p class="hint">Nothing extra on this shift.</p>`}`;
-  return `<div class="card${next ? " nextc" : ""}"><h2>${isT ? "Today's tasks" : "Next tasks"}<span>${isT ? "add-ons + timed tasks" : dayTag(D.day)}</span></h2>
+  return `<div class="card${next ? " nextc" : ""}"><h2>${isT ? "Tasks" : "Next tasks"}${isT ? "" : `<span>${dayTag(D.day)}</span>`}</h2>
     ${blocks || `<p class="hint">Nothing extra on this shift.</p>`}</div>`;
 }
 
