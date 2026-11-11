@@ -424,16 +424,21 @@ function vanInner(src) {
 }
 function shiftsCard(t) {
   const mon = monOf(t); const nextMon = addDays(mon, 7);
-  const row = d => { const D = S.days[d]; const hol = S.C.holidays[d]; const isT = d === t;
-    const txt = hol ? esc(hol.name) : D ? D.segs.map(x => x.sort ? esc(S.runsBy[x.shift.run]?.label || "Sort") : `${esc(x.shift.run)}${x.shift.van ? ` · ${esc(x.shift.van)}` : ""}`).join(" → ") : "Off";
-    return `<div class="day ${D ? "clk" : "off"} ${isT ? "todayrow" : ""}" ${D ? `data-dayv="${d}" title="Tap for the detail"` : ""}><div class="dl">${label(d).slice(0, 6)}</div><div>${txt}</div><div class="dh">${D ? `${fmtT(D.start)}–${fmtT(D.end)}` : ""}</div></div>`; };
+  const trOf = d => (S.trainee || []).filter(s => s.day === d);
+  const trTxt = s => { const w = first(S.people[s.driver]?.name || ""); const m = (s.note || "").match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*[–-]\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm))/i); return { t: `Training · ${esc(s.run)}${w ? ` with ${esc(w)}` : ""}${s.van ? ` · ${esc(s.van)}` : ""}`, h: m ? `${m[1]}–${m[2]}` : `${fmtT(toMin(s.start_at))}–${fmtT(toMin(s.end_at))}` }; };
+  const has = d => !!S.days[d] || trOf(d).length > 0;
+  const row = d => { const D = S.days[d]; const hol = S.C.holidays[d]; const isT = d === t; const tr = trOf(d).map(trTxt);
+    const own = D ? D.segs.map(x => x.sort ? esc(S.runsBy[x.shift.run]?.label || "Sort") : `${esc(x.shift.run)}${x.shift.van ? ` · ${esc(x.shift.van)}` : ""}`).join(" → ") : "";
+    const txt = hol ? esc(hol.name) : [own, ...tr.map(z => z.t)].filter(Boolean).join(" → ") || "Off";
+    const hrs = D ? `${fmtT(D.start)}–${fmtT(D.end)}` : tr.map(z => z.h).join(", ");
+    return `<div class="day ${D ? "clk" : tr.length ? "" : "off"} ${isT ? "todayrow" : ""}" ${D ? `data-dayv="${d}" title="Tap for the detail"` : ""}><div class="dl">${label(d).slice(0, 6)}</div><div>${txt}</div><div class="dh">${hrs}</div></div>`; };
   const thisW = []; for (let d = addDays(t, 1); d < nextMon; d = addDays(d, 1)) thisW.push(d);
   const nextW = []; for (let d = nextMon; d < addDays(nextMon, 7); d = addDays(d, 1)) nextW.push(d);
-  const nShifts = nextW.filter(d => S.days[d]).length; const rosterOut = S.shifts.some(s => s.day >= nextMon) || nShifts > 0;
+  const nShifts = nextW.filter(has).length; const rosterOut = S.shifts.some(s => s.day >= nextMon) || nShifts > 0;
   const lastW = []; for (let d = addDays(mon, -7); d < mon; d = addDays(d, 1)) lastW.push(d); const earlier = []; for (let d = mon; d <= t; d = addDays(d, 1)) earlier.push(d);
-  return `<div class="card"><h2>My shifts</h2>${earlier.length ? `<details><summary>Earlier this week<span class="meta">${earlier.filter(d => S.days[d]).length} shift${earlier.filter(d => S.days[d]).length === 1 ? "" : "s"}</span></summary>${earlier.map(row).join("")}</details>` : ""}<div class="meta mono">This week</div>${thisW.length ? thisW.map(row).join("") : `<div class="day off"><div class="dl"></div><div>Nothing left this week</div><div></div></div>`}
+  return `<div class="card"><h2>My shifts</h2>${earlier.length ? `<details><summary>Earlier this week<span class="meta">${earlier.filter(has).length} shift${earlier.filter(has).length === 1 ? "" : "s"}</span></summary>${earlier.map(row).join("")}</details>` : ""}<div class="meta mono">This week</div>${thisW.length ? thisW.map(row).join("") : `<div class="day off"><div class="dl"></div><div>Nothing left this week</div><div></div></div>`}
     <details><summary>Next week<span class="meta">${rosterOut ? `${nShifts} shift${nShifts === 1 ? "" : "s"}` : "roster not out yet"}</span></summary>${nextW.map(row).join("")}</details>
-    <details><summary>Last week<span class="meta">${lastW.filter(d => S.days[d]).length} shift${lastW.filter(d => S.days[d]).length === 1 ? "" : "s"}</span></summary>${lastW.map(row).join("")}</details></div>`;
+    <details><summary>Last week<span class="meta">${lastW.filter(has).length} shift${lastW.filter(has).length === 1 ? "" : "s"}</span></summary>${lastW.map(row).join("")}</details></div>`;
 }
 
 /* ---------- Add-ons (beside the shift: one button per add-on, tap = done) ---------- */
