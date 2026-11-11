@@ -348,8 +348,9 @@ function timingRows(x, day, nowMin) {
     else if (isT) { if (t != null && nowMin > t) { st = `✗ not done by ${fmtT(t)}`; cls = "miss"; } else if (f != null && nowMin >= f) { tag = "now"; cls = "now"; } else if (t != null && t - nowMin <= 60) { tag = "due soon"; cls = "now"; } }
     else if (day < today() && key) { st = `✗ not marked done`; cls = "miss"; }
     const btn = !(isT && key && !S.viewAs) ? "" : done ? `<div class="row" style="flex:0 0 auto;gap:6px">${puEditBtn(key, x.shift.day)}<button class="btn sm" data-done="${esc(key)}" data-undo="1" data-shift="${x.shift.id}" title="Tap again to undo" style="flex:0 0 auto;min-height:34px">✓ Done</button></div>` : isPhotoTask(key) ? rsBtn(x.shift.id, key) : puAreaOf(key) ? `<div class="row" style="flex:0 0 auto;gap:6px">${puBtn(key, x.shift.id)}${noneBtn(key, x.shift.id)}</div>` : !(gp && planned) ? `<button class="btn sm ${cls === "miss" ? "warn" : "ghost"}" data-done="${esc(key)}" data-shift="${x.shift.id}" style="flex:0 0 auto;min-height:34px">Done</button>` : "";
-    return `<div class="tw-r ${cls}"><div class="w">${winTxt(r)}${tag ? `<span class="tw-tag">${tag}</span>` : ""}</div><div class="row" style="justify-content:space-between;align-items:center;gap:6px;flex-wrap:nowrap"><div style="flex:1 1 auto"><span class="n">${esc(r.name)}</span>${r.note ? `<span class="x">${esc(r.note)}</span>` : ""}${st ? `<span class="x ${cls === "miss" ? "c-crit" : "c-ok"}" style="font-weight:600">${st}</span>` : ""}${gp && !planned && !done && isT ? `<span class="x">Set your planned times under Change what&#39;s on this run (that counts as the game plan), or tap Done.</span>` : ""}</div>${btn}</div></div>`; });
-  return `<div class="tw"><h4>${isT ? "Timed tasks today · tap Done as you finish each one" : "Timed tasks"}</h4>${rows.join("")}${isT ? `<p class="hint" style="margin:4px 0 0">Jeremy sees each Done straight away; a window that passes without Done raises an alert for you both.</p>` : ""}</div>`;
+    const when = done ? `✓ ${fmtTime(done)}` : gp && planned ? "✓ plan" : cls === "miss" ? `✗ ${t != null ? fmtT(t) : "not done"}` : winTxt(r) === "any time" ? "" : winTxt(r);
+    return `<div class="tw-r ${cls}"><div class="w">${when}${tag ? `<span class="tw-tag">${tag}</span>` : ""}</div><div class="tw-l"><span class="n">${esc(r.short || r.name)}</span>${r.code ? `<span class="tw-code">🔑 ${esc(r.code)}</span>` : ""}</div>${btn}</div>`; });
+  return `<div class="tw"><h4>${isT ? "Tasks today" : "Tasks"}</h4>${rows.join("")}</div>`;
 }
 const canEditEod = day => !S.viewAs && day >= addDays(today(), -1) && day <= today();
 function segActions(x, day, n) {
@@ -633,11 +634,11 @@ function editPickupArea(area, day) {
 }
 /** Pick-up entry task: the add-on's pick-up area, if it has one */
 const puAreaOf = key => key ? S.addons.find(a => a.id === key)?.pu_area || null : null;
-const noneBtn = (key, shiftId) => puAreaOf(key) === PU_MIN_AREA ? `<button class="btn sm ghost" data-pumin="${esc(key)}" data-shift="${shiftId}" style="flex:0 0 auto;min-height:34px">None · split fee</button>` : `<button class="btn sm ghost" data-done="${esc(key)}" data-shift="${shiftId}" style="flex:0 0 auto;min-height:34px">None</button>`;
-const puBtn = (key, shiftId) => puAreaOf(key) ? `<button class="btn sm accent" data-puopen="${esc(key)}" data-shift="${shiftId}" style="flex:0 0 auto;min-height:34px">Enter pick-ups</button>` : "";
+const noneBtn = (key, shiftId) => puAreaOf(key) === PU_MIN_AREA ? `<button class="btn sm ghost" data-pumin="${esc(key)}" data-shift="${shiftId}" style="flex:0 0 auto;min-height:34px">None ½</button>` : `<button class="btn sm ghost" data-done="${esc(key)}" data-shift="${shiftId}" style="flex:0 0 auto;min-height:34px">None</button>`;
+const puBtn = (key, shiftId) => puAreaOf(key) ? `<button class="btn sm accent" data-puopen="${esc(key)}" data-shift="${shiftId}" style="flex:0 0 auto;min-height:34px">Enter</button>` : "";
 /** Runsheet photo task: the Done button opens the camera; the photo is uploaded and the task ticked */
 const isPhotoTask = key => !!key && !!S.addons.find(a => a.id === key)?.photo;
-const rsBtn = (shiftId, key = "tw_twrunsheet") => `<label class="btn sm accent" style="flex:0 0 auto;min-height:34px;cursor:pointer">📷 Take photo<input type="file" accept="image/*" capture="environment" data-rsphoto="${shiftId}" data-rskey="${esc(key)}" hidden></label>`;
+const rsBtn = (shiftId, key = "tw_twrunsheet") => `<label class="btn sm accent" style="flex:0 0 auto;min-height:34px;cursor:pointer">📷 Photo<input type="file" accept="image/*" capture="environment" data-rsphoto="${shiftId}" data-rskey="${esc(key)}" hidden></label>`;
 function logPickup(opt = {}) {
   const area = opt.area || PU_AREA[puToday(S.days[today()])] || "Lawrence";
   sheet(`<h3>Enter pick-ups${opt.area ? ` · ${esc(opt.area)}` : ""}</h3><form class="frm" id="pf"><label class="f">Date<input class="in" type="date" id="pu-day" value="${today()}" required></label>

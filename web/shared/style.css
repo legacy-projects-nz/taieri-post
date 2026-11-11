@@ -223,3 +223,11 @@ button.qb:disabled{opacity:.4}
 @media (hover:hover){.card.fold.shut:hover{box-shadow:0 0 0 1px var(--line),var(--shadow)}}
 /* Home Screen app: green status bar. Android/Chrome uses theme-color; on iPhone the bar is see-through (black-translucent), so paint the strip behind it green. */
 @media (display-mode: standalone){html::before{content:"";position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top);background:#16803f;z-index:2147483647;pointer-events:none}}
+
+/* Compact task rows: time · short title (+ code) · small button, all on one line */
+.tw-r{grid-template-columns:62px minmax(0,1fr) auto!important;align-items:center!important;gap:0 8px!important;padding:3px 6px!important}
+.tw-r .w{white-space:nowrap;font-size:12px!important}
+.tw-l{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tw-code{margin-left:6px;font:700 12px var(--fm);color:var(--ink2)}
+.tw-r .btn,.tw-r label.btn{min-height:24px!important;padding:1px 8px!important;font-size:12px!important;line-height:1.2}
+.tw-r .row{gap:4px!important}
