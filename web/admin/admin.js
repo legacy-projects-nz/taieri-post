@@ -2,7 +2,7 @@
 import { sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmt24, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, settings as loadSettings, signOut, hours, nzToIso, avg, errCtx, reportError } from "/shared/core.js";
 import { requireUser } from "/shared/auth.js";
 import { AREAS, AREA_LABEL } from "/shared/config.js";
-import { cfg, dayShifts, itemsFor, scoreFor, payBand, money, fortnight, itemNote, STATE_LABEL, addName, segTimes, setEvidence, setAddonNames, meetRule, meetOn } from "/shared/score.js";
+import { cfg, dayShifts, itemsFor, scoreFor, payBand, money, fortnight, itemNote, STATE_LABEL, addName, segTimes, setEvidence, setAddonNames, meetRule, meetOn, eodState } from "/shared/score.js";
 import { runBoardTab, wireRunBoard } from "/admin/runboard.js";
 import { scorecardTab, wireScorecard } from "/admin/scorecard.js";
 import { fixTab, wireFix, fixCount } from "/admin/fix.js";
@@ -181,7 +181,7 @@ function liveTab() {
     return `<div class="bcard ${cls}"><div class="row" style="justify-content:space-between"><a class="nm" href="/#as=${esc(d.id)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none" title="Open ${esc(first(d.name))}'s app as they see it">${esc(d.name)} <span class="meta">↗</span></a><span class="meta mono">${fmtT(D.start)}–${fmtT(D.end)}</span></div>
       <div>${D.segs.map(x => `<span class="tag ${x.sort ? "" : "van"}">${esc(x.sort ? S.runsBy[x.shift.run]?.label || "Sort" : x.shift.run)}${x.shift.van && !x.sort ? ` · ${esc(x.shift.van)}` : ""}</span>`).join(" ")}</div>
       <div>SOD ${sod ? `<span class="chip ${sodSt}">${fmtTime(sod.sent_at)}${sodSt === "late" ? ` +${sodMin - sodDue}m` : ""}</span>` : `<span class="chip ${sodSt}">${sodSt === "miss" ? `missing · due ${fmtT(sodDue)}` : `by ${fmtT(sodDue)}`}</span>`}</div>
-      ${eods.map(r => `<div>EOD ${esc(r.x.shift.run)} ${r.e ? `<span class="chip ${nzNow(new Date(r.e.sent_at)).min > r.due ? "late" : "ok"}">${fmtTime(r.e.sent_at)}</span>` : `<span class="chip ${n.min > r.due ? "miss" : "due"}">${n.min > r.due ? "overdue" : `due ${fmtT(r.due)}`}</span>`}</div>`).join("")}
+      ${eods.map(r => `<div>EOD ${esc(r.x.shift.run)} ${r.e ? (q => `<span class="chip ${q.st}" title="${q.st === "slow" ? `finished ${q.overFin} min after expected` : q.st === "lsub" ? `posted ${q.posted} min after expected · not counted late` : "on time"}">${fmtTime(r.e.sent_at)}</span>`)(eodState(r.x.en ?? r.x.st, nzNow(new Date(r.e.sent_at)).min, r.e.finish_time)) : `<span class="chip ${n.min > r.due ? "miss" : "due"}">${n.min > r.due ? "overdue" : `due ${fmtT(r.due)}`}</span>`}</div>`).join("")}
       ${taskLine(D, t, n)}
       ${loc ? `<div class="meta">📍 ${ago(loc.at)}</div>` : sod && !allDone ? `<div class="meta">📍 no location yet (app closed?)</div>` : ""}</div>`;
   }).join("");

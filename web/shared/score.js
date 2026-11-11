@@ -65,7 +65,8 @@ export function itemsFor(driver, days, sods, eods, marks, C, nowRef) {
   const minsAt = (iso, day) => { const n = nzNow(new Date(iso)); const d = (new Date(n.date) - new Date(day)) / 86400000; return n.min + d * 1440; };
   const status = (it) => {
     const nowMin = now.date === it.day ? now.min : (now.date > it.day ? 1e9 : -1e9);
-    if (it.at != null) { it.late = Math.max(0, it.at - it.due); it.st = it.late > 0 ? "late" : "ok"; }
+    if (it.at != null && it.kind === "EOD") { const e = eodState(it.sched, it.at, it.row?.finish_time); it.st = e.st; it.late = 0; it.posted = e.posted; it.overFin = e.overFin; }
+    else if (it.at != null) { it.late = Math.max(0, it.at - it.due); it.st = it.late > 0 ? "late" : "ok"; }
     else it.st = nowMin > it.closeAt ? "miss" : nowMin > it.due ? "over" : it.sched != null && nowMin > it.sched ? "wait" : "due";   // wait = past the rostered time but still inside the allowance
     it.auto = it.st; const m = mk[it.key]; if (m?.status) { it.st = m.status; it.mark = m; } else if (m) it.mark = m;
     if (it.day < R.adminStart) { it.st = "exc"; it.pre = true; }
@@ -87,11 +88,25 @@ export function itemsFor(driver, days, sods, eods, marks, C, nowRef) {
   }
   return items;
 }
+/** EOD colours (from 11 Nov 2026, applied to all EODs): an EOD is never recorded late.
+ *  green "ok"   – finish time within 1 h of the expected (rostered) finish and posted within 1 h of it
+ *  orange "slow" – finish time more than 1 h after expected: an efficiency/speed flag, not an Admin late
+ *  grey "lsub"  – finish time fine but the EOD was posted more than 1 h after expected (drivers can set their time later) */
+export const EOD_FLAG_MIN = 60;
+export function eodState(sched, at, finishTime) {
+  const fin = toMin(finishTime); const exp = sched ?? null;
+  const posted = exp == null ? 0 : Math.max(0, at - exp);
+  let overFin = 0; if (exp != null && fin != null) { let f = fin; while (f < exp - 720) f += 1440; overFin = Math.max(0, f - exp); }
+  const st = overFin > EOD_FLAG_MIN ? "slow" : posted > EOD_FLAG_MIN ? "lsub" : "ok";
+  return { st, posted, overFin };
+}
 /** Fix posts: an EOD that is only a little late (up to rules.eodFixGrace minutes, default 90) still counts as late but needs no fix entry */
 export const needsFix = (it, C) => !(it.kind === "EOD" && it.st === "late" && (it.late ?? 0) <= (C?.rules?.eodFixGrace ?? 90));
-export const STATE_LABEL = { ok: "On time", late: "Late", part: "Incomplete", over: "Overdue", miss: "Missing", exc: "Excused", due: "Due", wait: "Waiting" };
+export const STATE_LABEL = { slow: "Finished 1h+ over", lsub: "Posted 1h+ after", ok: "On time", late: "Late", part: "Incomplete", over: "Overdue", miss: "Missing", exc: "Excused", due: "Due", wait: "Waiting" };
 export function itemNote(it) {
   if (it.st === "ok") return `posted ${fmtT(it.at % 1440)}`;
+  if (it.st === "slow") return `finished ${late(it.overFin)} after expected · posted ${fmtT(it.at % 1440)}`;
+  if (it.st === "lsub") return `posted ${fmtT(it.at % 1440)}, ${late(it.posted)} after expected · not counted late`;
   if (it.st === "late") return `posted ${fmtT(it.at % 1440)}, late by ${late(it.late)}`;
   if (it.st === "miss") return "not posted";
   if (it.st === "over") return `not posted yet · due ${fmtT(it.due % 1440)}`;
@@ -189,7 +204,7 @@ function scoreForRaw(driver, from, to, D, C) {
   const days = dayShifts(D.shifts.filter(s => s.day >= from && s.day <= to), D.runsBy, driver);
   const items = itemsFor(driver, days, D.sods, D.eods, D.marks, C, D.nowRef);
   const closed = items.filter(i => !["due", "wait", "over", "exc"].includes(i.st));
-  const onTime = closed.filter(i => i.st === "ok" || i.st === "part").length;
+  const onTime = closed.filter(i => i.st === "ok" || i.st === "part" || i.st === "slow" || i.st === "lsub").length;
   const events = closed.filter(i => i.st === "late" || i.st === "miss").length;
   const nPart = closed.filter(i => i.st === "part").length;
   const ents = D.entries.filter(e => e.driver === driver && e.day >= from && e.day <= to);
