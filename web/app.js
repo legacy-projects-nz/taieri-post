@@ -1,5 +1,5 @@
 // Taieri Post · driver app
-import { DEMO, sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, longLabel, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, enablePush, pushState, nzToIso, settings as loadSettings, signOut, errCtx, reportError } from "/shared/core.js";
+import { DEMO, sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, longLabel, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, enablePush, pushState, nzToIso, settings as loadSettings, signOut, errCtx, reportError, syncPush, pending, queueOp, runOp, flushOutbox, isNetErr, uuid, snapSave, snapLoad } from "/shared/core.js";
 import { requireUser } from "/shared/auth.js";
 import { VAPID_PUBLIC } from "/shared/config.js";
 import { resetDemo, newRuns } from "/shared/demo.js";
@@ -20,6 +20,7 @@ S.open = {};   // which folded boxes are open this visit (not saved: everything 
   for (let i = 0; ; i++) {
     try { await viewAs(); await loadAll(); break; }
     catch (e) { reportError("boot", e);
+      if (!S.loadedAt && await restoreSnap(e)) { reconnect(); break; }   // no signal: open with what this phone last loaded
       app.innerHTML = `<div class="wrap"><div class="top"><div><div class="brand">Taieri Post · driver portal</div><h1>Can't connect</h1></div></div><div class="card"><p>The app can't reach Taieri Post right now. Check your signal. It will keep trying on its own.</p><button class="btn" id="boot-retry">Try again now</button></div></div>`;
       await new Promise(r => { const t = setTimeout(r, Math.min(30000, 4000 * (i + 1))); const bt = $("#boot-retry"); if (bt) bt.onclick = () => { clearTimeout(t); bt.disabled = true; bt.textContent = "Trying…"; r(); }; }); }
   }
@@ -29,6 +30,12 @@ S.open = {};   // which folded boxes are open this visit (not saved: everything 
   setInterval(() => render(true), 60000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadAll().then(() => render(true)); } });
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => { });
+  // offline: send anything saved on the phone as soon as there's a connection again
+  window.addEventListener("online", () => { flushSaved(); loadAll().then(() => render(true)); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) flushSaved(); });
+  setInterval(flushSaved, 30000); flushSaved();
+  // notifications: re-register this phone's subscription with the server, and show a prompt at the top while they're off
+  if (!S.viewAs && !DEMO) { syncPush(S.me.id); pushState().then(st => { if (st === "off") { S.pushOff = true; render(true); } }); }
   // pick up new versions without a manual refresh: compare app.js's ETag now and whenever the app comes back to the front
   let tag = null; const ver = async () => { try { const ts = await Promise.all(["/app.js", "/shared/core.js", "/shared/score.js"].map(async u => { const r = await fetch(u, { method: "HEAD", cache: "no-store" }); return r.ok ? (r.headers.get("etag") || r.headers.get("last-modified") || "") : null; })); if (ts.some(x => !x)) return; const t = ts.join("|"); const typing = document.activeElement?.matches?.("input:not([type=checkbox]):not([type=radio]),textarea,select"); if (tag && t !== tag && !document.querySelector(".sheet-bg") && !typing) location.reload(); tag = tag || t; } catch { } };
   // overdue alert: beep (and buzz) every 5 minutes while the app is open and something is still overdue
@@ -66,10 +73,7 @@ async function loadAllNow() {
     q(sb.from("nzpost_feed").select("*").gte("day", from)),
     q((S.viewer?.isStaff ? sb.from("vehicle_checks").select("*").eq("driver", m) : sb.from("vehicle_checks").select("*")).order("at", { ascending: false }).limit(12)),
   ]);
-  S.set = set; S.C = cfg(set); S.runs = runs; S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vans = Object.fromEntries(vans.map(v => [v.plate, v])); S.addons = addons; setAddonNames(addons); S.rules = rules;
-  S.people = Object.fromEntries(people.map(p => [p.id, p])); S.shifts = shifts.filter(s => s.driver === m); S.trainee = shifts.filter(s => s.trainee === m && s.driver !== m);
-  S.changes = changes; S.acks = acks; S.msgs = msgs; S.leave = leave; S.alerts = alerts; S.entries = entries; S.marks = marks; S.feed = feed; S.vchk = vchk || [];
-  const ids = S.shifts.map(s => s.id);
+  const ids = shifts.filter(s => s.driver === m).map(s => s.id);
   // second round, all at once (was one after another): SOD/EOD/overrides, pick-ups, access info, van washes, breaks
   const soft = (p, d) => Promise.resolve(p).then(r => r?.error ? d : (r?.data ?? d), () => d);
   const [sods, eods, ovs, pk, ai, vw, br, sr, hz, ha] = await Promise.all([
@@ -83,11 +87,50 @@ async function loadAllNow() {
     soft(sb.from("hazards").select("*").is("resolved_at", null).order("created_at", { ascending: false }).limit(2000), []),
     soft(sb.from("hazard_acks").select("*").eq("driver", m), null),
   ]);
-  S.sods = sods; S.eods = eods; S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || []; S.sodReqs = sr || []; S.hazards = hz || []; S.hzAckOn = Array.isArray(ha); S.hzAcks = Object.fromEntries((ha || []).map(a => [a.hazard_id, a.acked_at]));   // confirmations only once the table exists
+  S.raw = { m, set, runs, vans, addons, rules, people, shifts, changes, acks, msgs, leave, alerts, entries, marks, feed, vchk, sods, eods, ovs, pk, ai, vw, br, sr, hz, ha };
+  applyData(S.raw); saveSnapSoon();
+  locationTick();
+}
+// Put loaded data (fresh from the server, or the copy kept on this phone) into S, with any saves still waiting on the phone laid over the top
+function applyData(raw) {
+  const { m, set, runs, vans, addons, rules, people, shifts, changes, acks, msgs, leave, alerts, entries, marks, feed, vchk, sods, eods, ovs, pk, ai, vw, br, sr, hz, ha } = raw; const pend = pending();
+  S.set = set; S.C = cfg(set); S.runs = runs; S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vans = Object.fromEntries(vans.map(v => [v.plate, v])); S.addons = addons; setAddonNames(addons); S.rules = rules;
+  S.people = Object.fromEntries(people.map(p => [p.id, p])); S.shifts = shifts.filter(s => s.driver === m).map(s => pendShift(s, pend)); S.trainee = shifts.filter(s => s.trainee === m && s.driver !== m);
+  S.changes = changes; S.acks = acks; S.msgs = msgs; S.leave = leave; S.alerts = alerts; S.entries = entries; S.marks = marks; S.feed = feed; S.vchk = vchk || [];
+  S.sods = pendRows(sods, pend, "sod"); S.eods = pendRows(eods, pend, "eod"); S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || []; S.sodReqs = [...(sr || []), ...pend.filter(o => o.kind === "insert" && o.table === "sod_requests").map(o => ({ status: "pending", ...o.row, _pending: true }))]; S.hazards = hz || []; S.hzAckOn = Array.isArray(ha); S.hzAcks = Object.fromEntries((ha || []).map(a => [a.hazard_id, a.acked_at]));   // confirmations only once the table exists
   setEvidence(S.shifts, S.eods);
   S.days = dayShifts(S.shifts, S.runsBy, m);
   for (const d of Object.values(S.days)) for (const x of d.segs) { x.sod = S.sods.find(s => s.shift_id === x.shift.id); x.eod = S.eods.find(e => e.shift_id === x.shift.id); x.ov = S.ovs.find(o => o.shift_id === x.shift.id); }
-  locationTick();
+}
+const MARK_COL = { sor: "sor_at", eor: "eor_at", dlv: "deliver_at" };
+function pendShift(s, pend) { let o = s;
+  for (const p of pend) { if (p.kind !== "rpc" || p.args?.p_shift !== s.id) continue;
+    if (p.fn === "task_done") o = { ...o, done: { ...(o.done || {}), [p.args.p_addon]: p.args.p_at || p.at } };
+    else if (p.fn === "run_mark" && !p.args.p_undo && MARK_COL[p.args.p_kind]) o = { ...o, [MARK_COL[p.args.p_kind]]: p.args.p_at || p.at }; }
+  return o; }
+function pendRows(rows, pend, table) { const out = [...rows]; for (const p of pend) if (p.kind === "insert" && p.table === table && !out.some(r => r.shift_id === p.row.shift_id)) out.push({ extra: {}, legs: [], ...p.row, sent_at: p.row.sent_at || p.at, _pending: true }); return out; }
+let _snapT = 0;
+function saveSnapSoon() { if (DEMO || S.viewAs || Date.now() - _snapT < 20000) return; _snapT = Date.now(); snapSave("drv:" + S.me.id, { at: Date.now(), raw: S.raw }); }
+async function restoreSnap(err) {
+  if (DEMO || S.viewAs) return false; const snap = await snapLoad("drv:" + S.me.id); if (!snap?.raw || snap.raw.m !== S.me.id) return false;
+  S.drivers ||= []; S.login ||= {}; S.gps ||= {};
+  try { S.raw = snap.raw; applyData(snap.raw); } catch (e) { reportError("snapshot", e); return false; }
+  S.loadedAt = snap.at; S.loadErr = err || new Error("offline"); return true;
+}
+// after an offline start: keep trying until the connection is back, then carry on as normal
+function reconnect() { const go = async () => { try { await viewAs(); await loadAll(); render(true); if (S.loadErr) throw S.loadErr; } catch { setTimeout(go, 15000); } }; setTimeout(go, 5000); }
+// Save now if there's a connection; otherwise keep it on the phone (with the time it was made) and send it later
+async function saveOp(op) {
+  if (DEMO) return runOp(op);
+  if (navigator.onLine) { const r = await runOp(op); if (!r.error || !isNetErr(r.error)) return r; }
+  queueOp(op); if (S.raw) { try { applyData(S.raw); } catch (e) { reportError("apply-pending", e); } } return { queued: true };
+}
+const offMsg = what => `No signal · ${what} saved on your phone at ${fmtT(nzNow().min)}. It will send by itself when you're back in range.`;
+let _flushBusy = false;
+async function flushSaved() {
+  if (_flushBusy || DEMO || !pending().length || !navigator.onLine) return; _flushBusy = true;
+  try { const r = await flushOutbox(); if (r.sent || r.bad.length) { if (r.bad.length) toast(`${r.bad.length} saved entr${r.bad.length === 1 ? "y" : "ies"} couldn't be sent (${r.bad[0]}). Jeremy has been told.`, "err"); else toast(`${r.sent} saved entr${r.sent === 1 ? "y" : "ies"} sent ✓`, "ok"); await loadAll(); render(true); } }
+  finally { _flushBusy = false; }
 }
 
 /* ================= staff "view as" ================= */
@@ -155,6 +198,8 @@ function renderNow() {
     ${demoBar()}${viewBar()}
     <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
     ${S.loadErr ? `<p class="hint" style="margin:0 0 8px;color:var(--crit)">No connection. Showing what loaded at ${fmtT(nzNow(new Date(S.loadedAt)).min)}. Trying again on its own.</p>` : ""}
+    ${(() => { const k = pending().length; return k ? `<p class="hint" style="margin:0 0 8px;color:var(--warn)">📴 ${k} entr${k === 1 ? "y" : "ies"} saved on this phone, waiting for signal. ${k === 1 ? "It" : "They"} will send by ${k === 1 ? "itself" : "themselves"}; open the app when you're back in range.</p>` : ""; })()}
+    ${S.pushOff && !S.viewAs ? `<p class="hint" style="margin:0 0 8px">🔔 Notifications are off on this phone, so reminders and messages won't pop up. <button type="button" class="linkbtn" id="push-top">Turn them on</button></p>` : ""}
     ${part("SOD / EOD", () => quickBar(T, n))}
     ${dayDone ? part("Next shift", () => nextShiftCard(nextDay, n)) : part("Today", () => todayCard(T, nextDay, n))}
     ${part("Today's tasks", () => addonsCard(T, nextDay, n))}
@@ -686,7 +731,7 @@ function wire() {
   $$("#va-prev,#va-next").forEach(b => b.onclick = () => { if (b.dataset.id) location.hash = "as=" + b.dataset.id; });
   if (S.viewAs) { $$("#gotit,#gotit-again,[data-confirm],[data-addon],[data-plan],[data-meet],#leave-new,#push-btn,#vchk-btn,#wash-btn,#hz-new,[data-hzack],#hz-ackall").forEach(el => { el.disabled = true; el.title = "Only " + first(S.viewAs.name) + " can do this"; el.style.opacity = ".5"; }); }
   pushState().then(s => { const el = $("#push-state"); if (el) el.textContent = s === "on" ? "on" : s === "denied" ? "blocked in phone settings" : s === "unsupported" ? "add to Home Screen first" : "off, tap to turn on"; });
-  $("#push-btn")?.addEventListener("click", async () => { const r = await enablePush(S.me.id, VAPID_PUBLIC); toast(r.ok ? "Notifications are on" : r.why, r.ok ? "ok" : "err"); render(); });
+  $$("#push-btn,#push-top").forEach(el => el.addEventListener("click", async () => { const r = await enablePush(S.me.id, VAPID_PUBLIC); if (r.ok) S.pushOff = false; toast(r.ok ? "Notifications are on" : r.why, r.ok ? "ok" : "err"); render(); }));
   $("#gotit")?.addEventListener("click", async e => { const ids = e.currentTarget.dataset.ids.split(","); for (const id of ids) S.gotit[id] = new Date().toISOString(); localStorage.setItem("tp-gotit", JSON.stringify(S.gotit)); render();
     const { error } = await sb.from("change_acks").update({ confirmed_at: new Date().toISOString(), seen_at: new Date().toISOString() }).in("item_id", ids).eq("driver", S.me.id); if (error) toast("Couldn't send. Try again.", "err"); else toast("Confirmed ✓", "ok"); });
   $("#gotit-again")?.addEventListener("click", () => { S.gotit = {}; localStorage.removeItem("tp-gotit"); render(); });
@@ -724,10 +769,11 @@ function wire() {
   $$("[data-pumin]").forEach(b => b.onclick = async e => { e.stopPropagation(); b.disabled = true; if (!(await puMinFee(today(), b.dataset.shift, b.dataset.pumin))) b.disabled = false; });
   $$("[data-puopen]").forEach(b => b.onclick = e => { e.stopPropagation(); logPickup({ area: puAreaOf(b.dataset.puopen), key: b.dataset.puopen, shift: b.dataset.shift }); });
   $$("[data-runmark]").forEach(b => b.onclick = async () => { b.disabled = true; const k = b.dataset.runmark;
-    const { error } = await sb.rpc("run_mark", { p_shift: b.dataset.shift, p_kind: k });
+    const r = await saveOp({ kind: "rpc", fn: "run_mark", args: { p_shift: b.dataset.shift, p_kind: k }, stamp: "p_at" }); const error = r.error;
     if (error) { b.disabled = false; return toast(error.message, "err"); }
+    if (r.queued) { toast(offMsg(k === "sor" ? "Start" : k === "dlv" ? "Delivering" : "Run end"), "ok"); render(); return; }
     toast(k === "sor" ? "Started ▶ (the one before is ended)" : k === "dlv" ? "Delivering ▶ · sorting time recorded" : "Run ended ■ · send its EOD when you can", "ok"); await loadAll(); render(); });
-  $$("[data-done]").forEach(b => b.onclick = async () => { const undo = !!b.dataset.undo; b.disabled = true; const { error } = await sb.rpc(undo ? "task_undo" : "task_done", { p_shift: b.dataset.shift, p_addon: b.dataset.done }); if (error) { b.disabled = false; toast(error.message, "err"); } else { toast(undo ? "Done undone" : "Marked done ✓ · tap again to undo", "ok"); await loadAll(); render(); } });
+  $$("[data-done]").forEach(b => b.onclick = async () => { const undo = !!b.dataset.undo; b.disabled = true; const args = { p_shift: b.dataset.shift, p_addon: b.dataset.done }; const r = undo ? await sb.rpc("task_undo", args) : await saveOp({ kind: "rpc", fn: "task_done", args, stamp: "p_at" }); const error = r.error; if (error) { b.disabled = false; toast(error.message, "err"); } else if (r.queued) { toast(offMsg("Done"), "ok"); render(); } else { toast(undo ? "Done undone" : "Marked done ✓ · tap again to undo", "ok"); await loadAll(); render(); } });
   $$("[data-sc]").forEach(b => b.onclick = () => { S.scSel = S.scSel === b.dataset.sc ? null : b.dataset.sc; render(); setTimeout(() => $("#scores")?.scrollIntoView({ block: "nearest" }), 0); });
   $("#leave-new")?.addEventListener("click", leaveForm);
   $$("[data-cal]").forEach(b => b.onclick = () => { const [y, m] = (S.calMonth || today().slice(0, 7)).split("-").map(Number); const d = new Date(Date.UTC(y, m - 1 + +b.dataset.cal, 1)); S.calMonth = d.toISOString().slice(0, 7); render(); setTimeout(() => $("#cal")?.scrollIntoView({ block: "nearest" }), 0); });
@@ -790,12 +836,15 @@ async function sendSod(shiftId, lateMode = false) {
     const early = off < 0; const mins = Math.abs(off);
     sheet(`<h3>${early ? "Starting early" : "Starting late"}</h3><p class="hint">You're starting <b>${minsTxt(mins)} ${early ? "before" : "after"}</b> your rostered start of <b>${fmtT(D.start)}</b>. Your SOD goes in now, and Jeremy gets a request to sign off the ${early ? "earlier" : "later"} start. When he approves it, today's run times move to match (${fmtT(D.start + off)}–${fmtT(D.end + off)}).${early ? ` Until then your hours count from ${fmtT(D.start)}.` : ""}</p>
       <label class="f">Note for Jeremy (optional)<textarea class="in" id="note" rows="3" placeholder="${early ? "e.g. parcels in early, getting a head start" : "e.g. van wouldn't start"}"></textarea></label><button class="btn" id="go">Send SOD + request</button>`, (bg, close) => {
-      bg.querySelector("#go").onclick = async e => { e.currentTarget.disabled = true; const note = bg.querySelector("#note").value.trim() || null;
-        const { error } = await sb.from("sod").insert({ shift_id: shiftId, driver: S.me.id, van, run_id: runId, note }); if (error) { e.currentTarget.disabled = false; return toast(error.message, "err"); }
-        await sendSodReq(shiftId, D, now, note); close(); toast(`SOD sent ${fmtT(now)} ✓ · Jeremy will sign off the start`, "ok"); await loadAll(); render(); };
+      bg.querySelector("#go").onclick = async e => { const bt = e.currentTarget; bt.disabled = true; const note = bg.querySelector("#note").value.trim() || null;
+        const r = await saveOp({ kind: "insert", table: "sod", row: { shift_id: shiftId, driver: S.me.id, van, run_id: runId, note }, stamp: "sent_at" }); if (r.error) { bt.disabled = false; return toast(r.error.message, "err"); }
+        await sendSodReq(shiftId, D, now, note); close();
+        if (r.queued) { toast(offMsg("SOD and start-time request"), "ok"); render(); return; }
+        toast(`SOD sent ${fmtT(now)} ✓ · Jeremy will sign off the start`, "ok"); await loadAll(); render(); };
     }); return;
   }
-  const { error } = await sb.from("sod").insert({ shift_id: shiftId, driver: S.me.id, van, run_id: runId }); if (error) return toast(error.message, "err");
+  const r = await saveOp({ kind: "insert", table: "sod", row: { shift_id: shiftId, driver: S.me.id, van, run_id: runId }, stamp: "sent_at" }); if (r.error) return toast(r.error.message, "err");
+  if (r.queued) { toast(offMsg("SOD"), "ok"); render(); return; }
   toast(`SOD sent ${fmtT(nzNow().min)} ✓`, "ok"); await loadAll(); render();
 }
 /* ---- start-time sign-off (SOD more than 20 min off the rostered start) ---- */
@@ -805,7 +854,8 @@ const clampT = m => Math.max(0, Math.min(1439, m));
 async function sendSodReq(shiftId, D, startMin, note) {
   const off = startMin - D.start;
   const moves = D.segs.map(x => ({ shift_id: x.shift.id, start_at: fmt24s(clampT(x.st + off)), end_at: x.sort && !x.shift.end_at ? null : fmt24s(clampT((x.en ?? x.st) + off)) }));
-  const { data, error } = await sb.from("sod_requests").insert({ shift_id: shiftId, driver: S.me.id, day: D.day, kind: off < 0 ? "early" : "late", rostered: fmt24s(D.start), started: fmt24s(clampT(startMin)), delta_min: off, moves, note }).select("id").single();
+  const r = await saveOp({ kind: "insert", table: "sod_requests", row: { id: uuid(), shift_id: shiftId, driver: S.me.id, day: D.day, kind: off < 0 ? "early" : "late", rostered: fmt24s(D.start), started: fmt24s(clampT(startMin)), delta_min: off, moves, note }, ret: true, notify: "sod_request" });
+  if (r.queued) return; const { data, error } = r;
   if (error) return toast("SOD is in, but the sign-off request didn't send: " + error.message, "err");
   const rid = (Array.isArray(data) ? data[0] : data)?.id; if (rid && !DEMO) sb.functions.invoke("notify", { body: { type: "sod_request", id: rid } }).catch(() => { });
 }
@@ -832,6 +882,31 @@ const EOD_INFO = {
   parcels: "Every parcel you delivered on this run. Parcels you collected for NZ Couriers, Post Haste or TGE are pick-ups, so they go under Enter pick-ups, not here.",
   tgeParcels: "Every parcel you delivered on this run. Parcels you collected go in the pick-up boxes below, not here.",
 };
+// tasks on a shift (timed tasks + add-ons) that haven't been ticked, in the same order as the Tasks box
+function undoneTasks(x, day) {
+  const plan = x.shift.plan || {}, done = x.shift.done || {}; const out = [], covered = new Set();
+  for (const r of rulesFor(x, day)) { const key = r.done_key || r.addon || null; if (r.addon) covered.add(r.addon); if (!key || out.some(t => t.key === key)) continue;
+    const planned = key.startsWith("tw_") && /game plan/i.test(r.name) && Object.keys(plan).length > 0; if (!done[key] && !planned) out.push({ key, title: r.name, closes: toMin(r.closes) }); }
+  for (const id of x.shift.addons || []) { if (covered.has(id) || id.startsWith("tw_")) continue; const o = S.addons.find(a => a.id === id); if (o && !done[id] && !out.some(t => t.key === id)) out.push({ key: id, title: o.name }); }
+  // a photo task needs its photo and a pick-up task needs its totals, so those can't simply be ticked here
+  return out.map(t => ({ ...t, need: isPhotoTask(t.key) ? "Needs its photo: go back and add it under Today's tasks, or mark it Missed." : puAreaOf(t.key) ? "Needs its pick-up totals: go back and enter them (or None) under Today's tasks, or mark it Missed." : "" }));
+}
+// The step between tapping Send EOD and the EOD going: each task that isn't ticked gets Done or Missed
+function eodTasksStep(bg, und, onGo) {
+  const f = bg.querySelector("#ef"); bg.querySelector("#eod-tk")?.remove(); f.style.display = "none"; const pick = {};
+  const el = h(`<div id="eod-tk"><h3 class="sub" style="margin-top:8px">${und.length} task${und.length === 1 ? "" : "s"} not ticked</h3>
+    <p class="hint">Before this EOD goes: tap <b>Done</b> if you did it, or <b>Missed</b> if you didn't. Missed ones stay as not done.</p>
+    <div class="tks">${und.map((t, i) => `<div class="tk pend"><div class="tkt"><div class="t">${esc(t.title)}</div>${t.need ? `<div class="d">${esc(t.need)}</div>` : ""}</div><div class="row" style="flex:0 0 auto;gap:6px">${t.need ? "" : `<button type="button" class="btn sm ghost" data-tki="${i}" data-pick="done">Done</button>`}<button type="button" class="btn sm ghost" data-tki="${i}" data-pick="missed">Missed</button></div></div>`).join("")}</div>
+    <div class="row" style="margin-top:12px;gap:8px"><button type="button" class="btn ghost" id="tk-back" style="flex:1">Back</button><button type="button" class="btn" id="tk-go" style="flex:2" disabled>Send EOD</button></div></div>`);
+  f.after(el); const go = el.querySelector("#tk-go");
+  const paint = () => { el.querySelectorAll("[data-pick]").forEach(b => { const on = pick[b.dataset.tki] === b.dataset.pick; b.classList.toggle("ghost", !on); b.style.background = on && b.dataset.pick === "missed" ? "var(--crit)" : ""; b.style.color = on && b.dataset.pick === "missed" ? "#fff" : ""; });
+    const left = und.length - Object.keys(pick).length; go.disabled = left > 0; go.textContent = left > 0 ? `Send EOD (${left} to answer)` : "Send EOD"; };
+  el.querySelectorAll("[data-pick]").forEach(b => b.onclick = () => { pick[b.dataset.tki] = b.dataset.pick; paint(); });
+  el.querySelector("#tk-back").onclick = () => { el.remove(); f.style.display = ""; };
+  go.onclick = () => { go.disabled = true; go.textContent = "Sending…"; el.querySelector("#tk-back").disabled = true;
+    onGo({ done: und.filter((t, i) => pick[i] === "done").map(t => t.key), missed: und.filter((t, i) => pick[i] === "missed").map(t => t.key) }); };
+  paint(); el.scrollIntoView({ block: "start", behavior: "smooth" });
+}
 function eodForm(shiftId, sortOnly, edit = false) {
   const shift = S.shifts.find(s => s.id === shiftId); const code = shift.run; const net = NET(code); const n = nzNow();
   const ex = edit ? S.eods.find(e => e.shift_id === shiftId) : null;   // editing the EOD already sent (same day or the day after)
@@ -871,25 +946,41 @@ function eodForm(shiftId, sortOnly, edit = false) {
   const needRs = !ex && !sortOnly && !isSort(code) && !shift.done?.tw_twrunsheet && rulesFor({ shift }, shift.day).some(r => r.addon === "tw_twrunsheet");
   if (needRs) fields += `<label class="chk full"><input type="checkbox" id="runsheet" required>Runsheet photo taken (NZ Post needs it before every EOD)</label>`;
   fields += `<label class="f full">Note (optional)<input class="in" id="note" placeholder="anything Jeremy should know" value="${esc(ex?.note || "")}"></label>`;
-  sheet(`<h3>${ex ? "Edit EOD" : "EOD"} · ${esc(sortOnly || isSort(code) ? (S.runsBy[code]?.label || "Sort") : code)}</h3><p class="hint">${label(shift.day)}${shift.van ? ` · ${esc(shift.van)}` : ""}. ${ex ? `Sent ${fmtTime(ex.sent_at)}${ex.edited_at ? `, last edited ${fmtTime(ex.edited_at)}` : ""}. Change what's wrong and save — Jeremy sees it was edited.` : "Fill in every box that applies."}</p><form class="frm" id="ef">${fields}<button class="btn full" type="submit">${ex ? "Save changes" : "Send EOD"}</button></form>`, (bg, close) => {
+  sheet(`<h3>${ex ? "Edit EOD" : "EOD"} · ${esc(sortOnly || isSort(code) ? (S.runsBy[code]?.label || "Sort") : code)}</h3><p class="hint">${label(shift.day)}${shift.van ? ` · ${esc(shift.van)}` : ""}. ${ex ? `Sent ${fmtTime(ex.sent_at)}${ex.edited_at ? `, last edited ${fmtTime(ex.edited_at)}` : ""}. Change what's wrong and save — Jeremy sees it was edited.` : "Fill in every box (put 0 if there were none)."}</p><form class="frm" id="ef" novalidate>${fields}<button class="btn full" type="submit">${ex ? "Save changes" : "Send EOD"}</button></form>`, (bg, close) => {
     bg.querySelectorAll(".chk input").forEach(i => i.onchange = () => i.parentElement.classList.toggle("on", i.checked));
     // sorting minutes from the taps: prefilled, and kept in step with a typed start time until the driver changes the box themselves
     const smIn = bg.querySelector("#sort_min"); let smTouched = false; const tapNow = () => { const r = bg.querySelector("#run_st"); return seg ? sortTap(TD, seg, r?.value ? Date.parse(nzToIso(shift.day, r.value)) : undefined) : null; };
     if (smIn && !ex) { if (tap0 != null && smIn.value === "") smIn.value = tap0; smIn.oninput = () => { smTouched = true; }; }
     bg.querySelector("#run_st")?.addEventListener("change", () => { const t = tapNow(); if (smIn && !smTouched && t != null) smIn.value = t; const h = bg.querySelector("#sorthint"); if (h && t != null) h.textContent = `Sorting time filled in from your times (${t} min). Change it if that's not right.`; });
     bg.querySelectorAll("[data-ib]").forEach(b => b.onclick = e => { e.preventDefault(); const h = bg.querySelector(`[data-ih="${b.dataset.ib}"]`); if (h) h.hidden = !h.hidden; });
-    bg.querySelector("#ef").onsubmit = async e => { e.preventDefault(); const g = id => bg.querySelector("#" + id); const num = id => g(id) && g(id).value !== "" ? +g(id).value : null; const bool = id => g(id) && g(id).value !== "" ? g(id).value === "true" : null;
+    let taskRes = null;   // answers from the "tasks not ticked" step: { done: [keys], missed: [keys] }
+    const send = async () => { const g = id => bg.querySelector("#" + id); const num = id => g(id) && g(id).value !== "" ? +g(id).value : null; const bool = id => g(id) && g(id).value !== "" ? g(id).value === "true" : null;
       const row = { finish_time: g("finish").value, sort_min: num("sort_min"), parcels: num("parcels"), stops: num("stops"), trays: num("trays"), pickups: num("pickups"), pickup_parcels: num("pickup_parcels"), cycled: num("cycled"), sorted_parcels: bool("sorted_parcels"), sorted_mail: bool("sorted_mail"), nzc_ph: bool("nzc_ph"), legs: [...bg.querySelectorAll("input[name=leg]:checked")].map(i => i.value), newspapers: !!g("news")?.checked, note: g("note").value || null, run_id: S.C.runCodes[code] || null };
       if (g("tge_rural")) row.extra = { ...(ex?.extra || {}), tge_rural: num("tge_rural") ?? 0 };
       const tapM = !ex ? tapNow() : null; if (tapM != null) row.extra = { ...(row.extra || ex?.extra || {}), sort_tap: tapM };
       if (g("run_st")?.value) { const at = nzToIso(shift.day, g("run_st").value); if (toMin(g("run_st").value) >= toMin(g("finish").value)) return toast("The start has to be before the finish time", "err");
-        const { error: eS } = await sb.rpc("run_mark", { p_shift: shiftId, p_kind: "sor", p_at: at }); if (eS) return toast(eS.message, "err"); }
+        const { error: eS } = await saveOp({ kind: "rpc", fn: "run_mark", args: { p_shift: shiftId, p_kind: "sor", p_at: at } }); if (eS) return toast(eS.message, "err"); }
       if (isDB) { const t = num("db_tge") ?? 0, o = num("db_other") ?? 0; row.parcels = t + o; row.extra = { ...(row.extra || ex?.extra || {}), tge_total: t, other_total: o }; }
       if (ex) { const { error } = await sb.from("eod").update(row).eq("shift_id", shiftId); if (error) return toast(error.message.includes("row-level") ? "Too late to edit this one — ask Jeremy" : error.message, "err"); close(); toast("EOD updated ✓", "ok"); await loadAll(); render(); return; }
       Object.assign(row, { shift_id: shiftId, driver: S.me.id }); if (shift.day !== n.date) row.sent_at = nzToIso(shift.day, g("finish").value);
-      const { error } = await sb.from("eod").insert(row); if (error) return toast(error.message, "err");
-      if (g("runsheet")?.checked) { const { error: e2 } = await sb.rpc("task_done", { p_shift: shiftId, p_addon: "tw_twrunsheet" }); if (e2) toast(`EOD sent, but the runsheet task couldn't be ticked: ${e2.message}`, "err"); }
-      close(); toast("EOD sent ✓ Thanks!", "ok"); await loadAll(); render(); };
+      // tasks answered in the "not ticked" step: tick the ones marked Done, and keep the ones marked Missed on the EOD
+      for (const k of taskRes?.done || []) { const { error: eT } = await saveOp({ kind: "rpc", fn: "task_done", args: { p_shift: shiftId, p_addon: k }, stamp: "p_at" }); if (eT) return toast(`Couldn't tick ${addName(k) || "a task"}: ${eT.message}`, "err"); }
+      if (taskRes?.missed?.length) row.extra = { ...(row.extra || {}), missed_tasks: taskRes.missed };
+      const r = await saveOp({ kind: "insert", table: "eod", row, stamp: "sent_at" }); if (r.error) return toast(r.error.message, "err");
+      if (g("runsheet")?.checked) { const { error: e2 } = await saveOp({ kind: "rpc", fn: "task_done", args: { p_shift: shiftId, p_addon: "tw_twrunsheet" }, stamp: "p_at" }); if (e2) toast(`EOD sent, but the runsheet task couldn't be ticked: ${e2.message}`, "err"); }
+      close(); if (r.queued) { toast(offMsg("EOD"), "ok"); render(); return; }
+      toast("EOD sent ✓ Thanks!", "ok"); await loadAll(); render(); };
+    bg.querySelector("#ef").onsubmit = async e => { e.preventDefault(); const f = e.currentTarget;
+      // 1) every box filled in (the note is the only optional one); 0 is fine where there were none
+      const boxes = [...f.querySelectorAll(".in")].filter(i => i.id !== "note"); boxes.forEach(i => i.style.borderColor = "");
+      const empty = boxes.filter(i => i.value.trim() === ""); const badNum = boxes.filter(i => i.value.trim() !== "" && /numeric|decimal/.test(i.getAttribute("inputmode") || "") && !(+i.value >= 0));
+      if (empty.length || badNum.length) { [...empty, ...badNum].forEach(i => i.style.borderColor = "var(--crit)"); (empty[0] || badNum[0]).focus();
+        return toast(empty.length ? `Fill in every box before sending (${empty.length} left). Put 0 if there were none.` : "That box needs a number (0 or more).", "err"); }
+      const rs = bg.querySelector("#runsheet"); if (rs && !rs.checked) { rs.focus(); return toast("Tick the runsheet photo box first (NZ Post needs it before every EOD).", "err"); }
+      // 2) tasks on this run that aren't ticked: ask about each one before the EOD goes
+      if (!ex && !taskRes) { const nowM = nzNow(); const und = seg ? undoneTasks(seg, shift.day).filter(t => !(t.key === "tw_twrunsheet" && bg.querySelector("#runsheet")) && !(shift.day === nowM.date && t.closes != null && nowM.min < t.closes)) : [];
+        if (und.length) return eodTasksStep(bg, und, res => { taskRes = res; send().then(() => { if (bg.isConnected) { bg.querySelector("#eod-tk")?.remove(); f.style.display = ""; } }); }); }
+      await send(); };
   });
 }
 function leaveForm() {

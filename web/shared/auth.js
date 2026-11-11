@@ -12,7 +12,7 @@ export async function requireUser(root, { staff = false } = {}) {
   if (!person.active) { root.innerHTML = `<div class="wrap"><div class="card"><h2>Account paused</h2><p>Your Taieri Post account is paused. Talk to Jeremy if that's a surprise.</p>${outBtn()}</div></div>`; wireOut(root); throw new Error("inactive"); }
   if (person.isStaff) {
     const a = await aal();
-    if (a.currentLevel !== "aal2") { await mfaScreen(root, a, person); }
+    if (a && a.currentLevel !== "aal2") { await mfaScreen(root, a, person); }   // a is empty only with no signal; the server still refuses staff data without the second step
   }
   return person;
 }
