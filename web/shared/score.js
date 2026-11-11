@@ -43,7 +43,7 @@ export function dayShifts(shifts, runsBy, driver) {
   const by = {};
   for (const s of shifts) { if (driver && s.driver !== driver) continue; if (s.run === "BU") continue; (by[s.day] ??= []).push(s); }
   const out = {};
-  for (const [day, list] of Object.entries(by)) {
+  for (const [day, list] of Object.entries(by).sort((a, b) => a[0].localeCompare(b[0]))) {   // days in date order (Mon → Sun)
     const segs = list.map(s => { const { st, en } = segTimes(s, runsBy); return { shift: s, st, en, sort: isSort(s.run) }; }).filter(x => x.st != null).sort((a, b) => a.st - b.st);
     // sort shifts without an end run until the next run starts (max 3 h)
     segs.forEach((x, i) => { if (x.sort && (x.en == null || x.en <= x.st)) { const nx = segs.slice(i + 1).find(y => !y.sort); x.en = nx ? Math.min(nx.st, x.st + 180) : x.st + 90; } });
