@@ -24,3 +24,6 @@ begin
   where id = p_shift;
 end $$;
 grant execute on function public.task_photo_done(uuid, text, text, text) to authenticated;
+
+-- Lawrence mail tray photo: every weekday now (was Mon / Wed / Fri)
+update public.timing_rules set days = array[1,2,3,4,5], active = true where id = 'lawtrays';
