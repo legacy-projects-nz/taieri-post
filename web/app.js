@@ -152,7 +152,7 @@ function renderNow() {
   const T = S.days[t];
   const nextDay = Object.values(S.days).filter(d => d.day > t).sort((a, b) => a.day < b.day ? -1 : 1)[0];
   // day done = every EOD for today is in: Today drops away and Next shift moves up under the SOD / EOD buttons, open
-  const tRuns = T ? T.segs.filter(x => !x.sort) : []; const dayDone = !!T && (tRuns.length ? tRuns.every(x => x.eod) : T.segs.some(x => x.eod));
+  const tRuns = T ? T.segs.filter(x => !x.sort) : []; const dayDone = !!T && (tRuns.length ? tRuns.every(x => x.eod) : T.segs.some(x => x.eod)); S.dayDone = dayDone;
   app.innerHTML = `<div class="wrap">
     ${demoBar()}${viewBar()}
     <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
@@ -183,7 +183,7 @@ function renderNow() {
 
 /* ---------- collapsible boxes: Next shift and everything below it (plus Parcel pick-ups) are one row until tapped ---------- */
 function folds() {
-  app.querySelectorAll(".folds .card, #pickups, #hazards").forEach(c => {
+  app.querySelectorAll(".folds .card, #pickups, #hazards, #tasks, #nextshift").forEach(c => {
     const h = c.querySelector(":scope > h2"); if (!h) return;
     const key = c.id || [...h.childNodes].filter(x => x.nodeType === 3).map(x => x.textContent).join("").trim();
     if (!(key in S.open)) S.open[key] = c.dataset.foldOpen === "1";
@@ -452,8 +452,8 @@ function buSection(n) {
   return `<section class="ns"><h3 class="sub">Back-up and on-call</h3>${rows}</section>`;
 }
 function nextShiftCard(N, n) {   // one box: shift, tasks, vehicle, split by grey lines
-  if (!N) return `<div class="card nextc"><h2>Next shift<span>not on the roster yet</span></h2>${buSection(n)}</div>`;
-  return `<div class="card nextc"><h2>Next shift<span>${N.day === addDays(today(), 1) ? "Tomorrow" : label(N.day)} · ${fmtT(N.start)}–${fmtT(N.end)}</span></h2>
+  if (!N) return `<div class="card nextc" id="nextshift"><h2>Next shift<span>not on the roster yet</span></h2>${buSection(n)}</div>`;
+  return `<div class="card nextc" id="nextshift" data-fold-open="${S.dayDone ? 1 : 0}"><h2>Next shift<span>${N.day === addDays(today(), 1) ? "Tomorrow" : label(N.day)} · ${fmtT(N.start)}–${fmtT(N.end)}</span></h2>
     <section class="ns"><div class="bigrow">${vanChips(N)}</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}</section>
     <section class="ns"><h3 class="sub">Vehicle</h3>${vanInner(N)}</section>${buSection(n)}</div>`;
 }
@@ -493,7 +493,7 @@ function shiftsCard(t) {
 function runSegOf(D) { return D && D.segs.filter(x => (!x.sort || x.shift.addons?.length) && (S.addons.some(a => a.runs.includes(x.shift.run)) || x.shift.addons?.length || rulesFor(x, D.day).length)); }
 function addonsCard(T, N, n) {   // today's tasks, only while today's run is still going
   const rs = runSegOf(T); const openTask = !!T && !!rs?.some(x => rulesFor(x, T.day).some(r => r.addon && !(x.shift.done || {})[r.done_key || r.addon])); const runs = T ? T.segs.filter(x => !x.sort) : []; const eodIn = !!T && (runs.length ? runs.every(x => x.eod) : T.segs.some(x => x.eod));
-  const done = !T || !rs?.length || (eodIn && !openTask);   // stays up (done ones green) until the EOD is in
+  const done = !T || !rs?.length;   // always there on a day with tasks (done ones green); folds up
   return done ? "" : tasksCard(T, n, false);
 }
 function nextTasksCard(N, n) {   // tasks for the next shift (tomorrow when rostered), grey side bar
@@ -541,7 +541,7 @@ function tasksCard(D, n, next, bare = false) {
 </details></div>`;
   }).join("");
   if (bare) return `<h3 class="sub">Tasks</h3>${blocks || `<p class="hint">Nothing extra on this shift.</p>`}`;
-  return `<div class="card${next ? " nextc" : ""}"><h2>${isT ? "Tasks" : "Next tasks"}${isT ? "" : `<span>${dayTag(D.day)}</span>`}</h2>
+  return `<div class="card${next ? " nextc" : ""}" ${isT ? `id="tasks" data-fold-open="1"` : ""}><h2>${isT ? "Tasks" : "Next tasks"}${isT ? "" : `<span>${dayTag(D.day)}</span>`}</h2>
     ${blocks || `<p class="hint">Nothing extra on this shift.</p>`}</div>`;
 }
 
