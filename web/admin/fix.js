@@ -42,7 +42,7 @@ function addTodo() {
 function addSection() {
   const L = addTodo(); if (!L.length) return "";
   const by = {}; for (const i of L) (by[i.s.day] ??= []).push(i);
-  return `<div class="card"><h2>Add-ons not done<span>${L.length}</span></h2><p class="hint"><b>Done</b> ticks it off. <b>Late</b> ticks it off as done late. <b>Not done</b> records it as missed. <b>Excuse</b> clears it with nothing recorded against the driver. Each takes it off the list.</p>${allBar("add", L.length)}
+  return `<div class="card"><h2>Add-ons not done<span>${L.length}</span></h2><p class="hint"><b>Done</b> ticks it off. <b>Late</b> ticks it off as done late (admin penalty, and the driver gets a polite email). <b>Not done</b> records it as missed and puts it at the top of the driver's app in red the next day, to do before their SOD. <b>Excuse</b> clears it with nothing recorded against the driver. Each takes it off the list.</p>${allBar("add", L.length)}
     ${Object.entries(by).map(([day, items]) => `<h4 style="margin:12px 0 4px">${label(day, true)}</h4><div class="list">${items.map(({ s, k }) => `<div class="item warn"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(nm(s.driver))}</b> · ${esc(s.run)}<span class="meta"> ${esc(keyName(k))}</span></span><span class="row" style="flex:0;gap:4px;flex-wrap:wrap;justify-content:flex-end">${actBtns("data-fxadd", `data-sid="${s.id}" data-k="${esc(k)}" data-drv="${esc(s.driver)}"`)}</span></div></div>`).join("")}</div>`).join("")}</div>`;
 }
 
@@ -102,11 +102,11 @@ async function emailLate(list) {
 /** Add-ons: Done / Late tick it on the shift (Late also leaves a late mark), Not done / Excuse leave a mark */
 async function settleAdds(list, act) {
   const at = new Date().toISOString();
-  if (act === "done" || act === "late") {
+  if (act === "late") { for (const { s, k } of list) { const { error } = await sb.rpc("task_done_late", { p_shift: s.id, p_addon: k, p_name: keyName(k) }); if (error) toast(error.message, "err"); } emailLate(list.map(({ s, k }) => ({ driver: s.driver, what: `${keyName(k)} · ${s.run} · ${label(s.day)}` }))); return list.length; }   // ticked, marked late, penalty logged
+  if (act === "done") {
     const by = {}; for (const { s, k } of list) (by[s.id] ??= { s, ks: [] }).ks.push(k);
     for (const { s, ks } of Object.values(by)) { const done = { ...(s.done || {}) }; for (const k of ks) done[k] = at; const { error } = await sb.from("shifts").update({ done }).eq("id", s.id); if (error) toast(error.message, "err"); }
   }
-  if (act === "late") emailLate(list.map(({ s, k }) => ({ driver: s.driver, what: `${keyName(k)} · ${s.run} · ${label(s.day)}` })));
   if (act !== "done") { const rows = list.map(({ s, k }) => ({ key: addKey(s.id, k), driver: s.driver, reviewed: true, by_person: S.me.id, at, status: act, note: `${({ late: "Done late", miss: "Not done", exc: "Excused" })[act]} · ${keyName(k)} (Fix posts)` })); if (rows.length) await q(sb.from("marks").upsert(rows)); }
   return list.length;
 }

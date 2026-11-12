@@ -146,6 +146,22 @@ function render(bg) {
   try { renderNow(); }
   catch (e) { reportError("render", e); if (!app.querySelector(".card")) app.innerHTML = `<div class="wrap"><div class="top"><div><div class="brand">Taieri Post · driver portal</div><h1>Something went wrong</h1></div></div><div class="card"><p>The app hit a problem showing this page. Jeremy has been told.</p><button class="btn" onclick="location.reload()">Reload</button></div></div>`; }
 }
+/* ---------- Carried over: tasks left undone on an earlier day (last 7 days) come back in red and must be done before SOD ---------- */
+function carryOver() {
+  const t = today(), from = addDays(t, -7); const out = []; const mk = {}; for (const m of S.marks || []) mk[m.key] = m;
+  for (const s of S.shifts) {
+    if (s.driver !== S.me.id || s.run === "BU" || s.day < from || s.day >= t) continue;
+    const sat = dayName(s.day) === "Sat";
+    const keys = new Set([...(s.addons || []), ...S.addons.filter(a => a.always && a.runs.includes(s.run) && !(sat && a.no_saturday)).map(a => a.id)]);
+    for (const r of S.rules) if (r.active && r.done_key && keys.has(r.addon) && r.runs.includes(s.run) && r.days.includes(dow(s.day) + 1)) keys.add(r.done_key);
+    for (const k of keys) { const m = mk[`add|${s.id}|${k}`]; if (s.done?.[k] || (m && m.status !== "miss")) continue; out.push({ s, k, name: S.rules.find(r => r.done_key === k)?.name || addName(k) }); }
+  }
+  return out.sort((a, b) => a.s.day.localeCompare(b.s.day));
+}
+function carryCard() {
+  const L = carryOver(); if (!L.length) return "";
+  return `<div class="card hot"><h2 class="c-crit">Do these first<span>${L.length} from an earlier day</span></h2><p class="hint" style="margin:0 0 8px">These weren't done on the day. Please do them before you post your SOD. Each one is recorded as done late.</p><div class="list">${L.map(({ s, k, name }) => `<div class="item crit"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(name)}</b><span class="meta"> · ${esc(s.run)} · ${label(s.day)}</span></span><button class="btn sm" data-carry="${s.id}|${esc(k)}" data-name="${esc(name)}">Done</button></div></div>`).join("")}</div></div>`;
+}
 function renderNow() {
   const n = nzNow(); const t = n.date; const name = first(S.me.name);
   const greet = n.min < 720 ? "Morning" : n.min < 1020 ? "Hi" : "Evening";
@@ -157,6 +173,7 @@ function renderNow() {
     ${demoBar()}${viewBar()}
     <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
     ${S.loadErr ? `<p class="hint" style="margin:0 0 8px;color:var(--crit)">No connection. Showing what loaded at ${fmtT(nzNow(new Date(S.loadedAt)).min)}. Trying again on its own.</p>` : ""}
+    ${part("Do these first", () => carryCard())}
     ${part("SOD / EOD", () => quickBar(T, n))}
     ${dayDone ? part("Next shift", () => nextShiftCard(nextDay, n)) : part("Today", () => todayCard(T, nextDay, n))}
     ${part("Today's tasks", () => addonsCard(T, nextDay, n))}
@@ -763,6 +780,7 @@ function wire() {
   $("#brk-end")?.addEventListener("click", e => { e.currentTarget.disabled = true; endBreak(); });
   $("#sod-edit")?.addEventListener("click", e => editSod(e.currentTarget.dataset.shift));
   $$("[data-sod-late]").forEach(b => b.onclick = () => sendSod(b.dataset.sodLate, true));
+  $$("[data-carry]").forEach(b => b.onclick = async () => { const [sid, k] = b.dataset.carry.split("|"); b.disabled = true; const { error } = await sb.rpc("task_done_late", { p_shift: sid, p_addon: k, p_name: b.dataset.name || null }); if (error) { b.disabled = false; return toast(error.message, "err"); } toast("Done · recorded as late", "ok"); await loadAll(); render(); });
   $$("[data-eod]").forEach(b => b.onclick = () => eodForm(b.dataset.eod, !!b.dataset.sort));
   $$("[data-eodedit]").forEach(b => b.onclick = () => eodForm(b.dataset.eodedit, !!b.dataset.sort, true));
   $$("[data-addon]").forEach(c => c.onchange = async () => { const shift = S.shifts.find(s => s.id === c.dataset.shift); const set = new Set(shift.addons || []); c.checked ? set.add(c.dataset.addon) : set.delete(c.dataset.addon); const { error } = await sb.rpc("set_my_addons", { p_shift: shift.id, p_addons: [...set] }); if (error) { toast(error.message, "err"); c.checked = !c.checked; } else { shift.addons = [...set]; render(); } });
@@ -851,6 +869,7 @@ const opt = (list, val) => list.map(([v, l]) => `<option value="${esc(v)}" ${v =
 
 async function sendSod(shiftId, lateMode = false) {
   const shift = S.shifts.find(s => s.id === shiftId); const D = S.days[shift.day];
+  if (!lateMode && !S.viewAs && carryOver().length) { window.scrollTo(0, 0); return toast("Do the red tasks from an earlier day first, then post your SOD", "err"); }
   const runs = D.segs.filter(x => !x.sort).map(x => x.shift.run); const van = D.segs.map(x => x.shift.van).find(Boolean) || null;
   const runId = runs.map(r => S.C.runCodes[r] || r).join(" + ");
   if (lateMode) { // late: ask for the actual start time
