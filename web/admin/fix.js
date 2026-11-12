@@ -38,7 +38,7 @@ function addTodo() {
 function addSection() {
   const L = addTodo(); if (!L.length) return "";
   const by = {}; for (const i of L) (by[i.s.day] ??= []).push(i);
-  return `<div class="card"><h2>Add-ons not done<span>${L.length}</span></h2><p class="hint"><b>Done</b> ticks it off as done. <b>Excuse</b> takes it off the list as excused.</p>
+  return `<div class="card"><h2>Add-ons not done<span>${L.length}</span></h2><p class="hint"><b>Done</b> ticks it off as done. <b>Excuse</b> takes it off the list as excused.</p><button class="btn ghost sm" data-fxall="add">Excuse all ${L.length}</button>
     ${Object.entries(by).map(([day, items]) => `<h4 style="margin:12px 0 4px">${label(day, true)}</h4><div class="list">${items.map(({ s, k }) => `<div class="item warn"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(nm(s.driver))}</b> · ${esc(s.run)}<span class="meta"> ${esc(keyName(k))}</span></span><span class="row" style="flex:0;gap:4px"><button class="btn sm" data-fxadd="done" data-sid="${s.id}" data-k="${esc(k)}">Done</button><button class="btn sm ghost" data-fxadd="exc" data-sid="${s.id}" data-k="${esc(k)}" data-drv="${esc(s.driver)}">Excuse</button></span></div></div>`).join("")}</div>`).join("")}</div>`;
 }
 
@@ -49,7 +49,7 @@ export function fixTab() {
   const miss = L.filter(i => i.st === "miss").length, part = L.filter(i => i.st === "part").length, late = L.filter(i => i.st === "late").length;
   return `${weekBar(`<label class="chk ${both ? "on" : ""}"><input type="checkbox" id="fx-both" ${both ? "checked" : ""}>include last week</label>`)}
     <div class="card"><h2>Fix posts<span>${L.length ? `${miss} missing · ${part} incomplete · ${late} late` : "all clear"}</span></h2>
-    <p class="hint">Every SOD or EOD that is missing, incomplete or late (an EOD up to ${Math.round((S.C.rules.eodFixGrace ?? 90) / 6) / 10} h late is left off: it still counts as late, but needs no fix). <b>Fix</b> opens an editor: add a missing SOD or EOD for the driver, correct the start or finish time, or fill in missing figures. Once you save a fix, choose whether it is excused (no deduction) or recorded as an admin error, and it drops off the list. <b>Excuse</b> removes the deduction, <b>OK</b> accepts a late post as it is.</p>
+    <p class="hint">Every SOD or EOD that is missing, incomplete or late (an EOD up to ${Math.round((S.C.rules.eodFixGrace ?? 90) / 6) / 10} h late is left off: it still counts as late, but needs no fix). <b>Fix</b> opens an editor: add a missing SOD or EOD for the driver, correct the start or finish time, or fill in missing figures. Once you save a fix, choose whether it is excused (no deduction) or recorded as an admin error, and it drops off the list. <b>Excuse</b> removes the deduction, <b>OK</b> accepts a late post as it is.</p>${L.length ? `<button class="btn ghost sm" data-fxall="post">Excuse all ${L.length}</button>` : ""}
     ${Object.entries(by).map(([day, items]) => `<h4 style="margin:12px 0 4px">${label(day, true)}</h4><div class="list">${items.map(it => `<div class="item ${it.st === "miss" || it.st === "over" ? "crit" : "warn"}"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(nm(it.driver))}</b> · ${chip(it)}<span class="meta"> ${esc(STATE_LABEL[it.st])}${it.st === "part" || it.st === "miss" ? "" : ""}</span></span><span class="row" style="flex:0;gap:4px"><button class="btn sm" data-fx="fix" data-key="${esc(it.key)}">Fix</button><button class="btn sm ghost" data-fxshift="${it.driver}|${it.day}" title="Edit or delete this driver's shifts that day">Shifts</button><button class="btn sm ghost" data-fx="exc" data-key="${esc(it.key)}" data-drv="${it.driver}">Excuse</button>${it.st === "late" || it.st === "part" ? `<button class="btn sm ghost" data-fx="ok" data-key="${esc(it.key)}" data-drv="${it.driver}">OK</button>` : ""}</span></div></div>`).join("")}</div>`).join("") || `<p class="empty">✓ Nothing to fix.</p>`}</div>${addSection()}${alertsTab()}`;
 }
 
@@ -61,6 +61,14 @@ export function wireFix() {
   wireWeek(); wireAlerts();
   $("#fx-both")?.addEventListener("change", e => { both = e.target.checked; render(); });
   $$("[data-fxshift]").forEach(b => b.onclick = () => { const [drv, day] = b.dataset.fxshift.split("|"); shiftSheet(drv, day); });
+  $$("[data-fxall]").forEach(b => b.onclick = async () => {
+    if (b.dataset.sure !== "1") { b.dataset.sure = "1"; const t = b.textContent; b.textContent = "Tap again to excuse all"; b.classList.add("warn"); setTimeout(() => { if (b.isConnected) { b.dataset.sure = ""; b.textContent = t; b.classList.remove("warn"); } }, 4000); return; }
+    b.disabled = true; const at = new Date().toISOString();
+    const rows = b.dataset.fxall === "add"
+      ? addTodo().map(({ s, k }) => ({ key: addKey(s.id, k), driver: s.driver, reviewed: true, by_person: S.me.id, at, status: "exc", note: `Add-on excused in Fix posts (${keyName(k)}) · excuse all` }))
+      : todo().map(it => ({ key: it.key, driver: it.driver, reviewed: true, by_person: S.me.id, at, status: "exc", note: "Excused in Fix posts · excuse all" }));
+    if (rows.length) await q(sb.from("marks").upsert(rows)); toast(`Excused ${rows.length}`, "ok"); await loadAll(); render();
+  });
   $$("[data-fxadd]").forEach(b => b.onclick = async () => {
     const sid = b.dataset.sid, k = b.dataset.k; b.disabled = true;
     if (b.dataset.fxadd === "done") {
