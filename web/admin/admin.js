@@ -15,7 +15,7 @@ import { bind } from "/admin/detail.js";
 import { errorCard } from "/admin/errorcard.js";
 import { hazardsTab, wireHazards, hazardBadge } from "/admin/hazards.js";
 
-export const S = { me: null, tab: location.hash.slice(1) || "live", week: monOf(today()), set: {}, C: null, runs: [], runsBy: {}, vans: [], vansBy: {}, addons: [], rules: [], people: [], peopleBy: {}, shifts: [], sods: [], eods: [], marks: [], entries: [], feed: [], ovs: [], changes: [], items: [], acks: [], sent: [], msgs: [], recips: [], leave: [], alerts: [], locs: [], skills: [], notes: [], vchk: [], log: [] };
+export const S = { me: null, tab: (h => h === "alerts" ? "fix" : h)(location.hash.slice(1)) || "live", week: monOf(today()), set: {}, C: null, runs: [], runsBy: {}, vans: [], vansBy: {}, addons: [], rules: [], people: [], peopleBy: {}, shifts: [], sods: [], eods: [], marks: [], entries: [], feed: [], ovs: [], changes: [], items: [], acks: [], sent: [], msgs: [], recips: [], leave: [], alerts: [], locs: [], skills: [], notes: [], vchk: [], log: [] };
 const app = $("#app");
 export const fn = async (name, body) => { const { data, error } = await sb.functions.invoke(name, { body }); if (error) throw error; return data; };
 
@@ -35,7 +35,7 @@ export const fn = async (name, body) => { const { data, error } = await sb.funct
   // safety net if a live update is missed (or skipped while a sheet was open): reload every 30 s and whenever the window comes back into focus
   const refresh = async () => { if (document.visibilityState === "hidden") return; const at = S._loadedAt; try { await loadAll({ ifStale: true }); if (S._loadedAt !== at) render(true); } catch (e) { console.warn(e); } };
   setInterval(refresh, 60000); window.addEventListener("focus", refresh); document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
-  window.addEventListener("hashchange", () => { S.tab = location.hash.slice(1) || "live"; render(); });
+  window.addEventListener("hashchange", () => { const h = location.hash.slice(1); S.tab = (h === "alerts" ? "fix" : h) || "live"; render(); });
 })();
 
 // One load at a time: the 60 s timer, window focus, tab coming back and realtime updates often fire together — share the one in flight,
@@ -94,7 +94,7 @@ async function loadAllNow() {
   setEvidence(S.shifts, S.eods);   // average figures per run & weekday → the estimate used until each EOD is in
 }
 
-const TABS = [["live", "Live", "scorecard"], ["runboard", "Run Board", "roster"], ["classic", "Run Board (classic)", "roster"], ["scorecard", "Scorecard", "scorecard"], ["fix", "Fix posts", "scorecard"], ["routes", "Routes", "alerts"], ["allowances", "Allowances", "roster"], ["pickups", "Pick-ups", "roster"], ["hazards", "Hazards", "roster"], ["alerts", "Alerts", "alerts"], ["messages", "Messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"], ["pay", "Penalties & pay", "people"]];
+const TABS = [["live", "Live", "scorecard"], ["runboard", "Run Board", "roster"], ["classic", "Run Board (classic)", "roster"], ["scorecard", "Scorecard", "scorecard"], ["fix", "Fix posts", "scorecard"], ["routes", "Routes", "alerts"], ["allowances", "Allowances", "roster"], ["pickups", "Pick-ups", "roster"], ["hazards", "Hazards", "roster"], ["messages", "Messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"], ["pay", "Penalties & pay", "people"]];
 /* tabs that live behind the ☰ button at the end of the tab bar */
 const MENU_TABS = ["classic", "allowances", "fleet", "timing", "pay"];
 /* collapsible boxes: on every tab, every box after the first starts collapsed; tap its heading to open. Open/closed is kept while the page is open.
@@ -198,7 +198,7 @@ function liveTab() {
   const open = S.alerts.filter(a => !a.resolved_at);
   return `${weekless()}
     <div class="card"><h2>Today · ${label(t)}<span>${todays.filter(s => s.driver).length ? `${Object.keys(dayShifts(todays, S.runsBy)).length ? new Set(todays.map(s => s.driver)).size : 0} drivers rostered` : "nobody rostered"}</span></h2>${cards ? `<div class="board">${cards}</div>` : `<p class="empty">No shifts today.</p>`}</div>
-    <div class="grid2"><div class="card"><h2>Open alerts<span>${open.length}</span></h2>${open.length ? `<div class="list">${open.slice(0, 12).map(alertRow).join("")}</div>${open.length > 12 ? `<p class="meta">+${open.length - 12} more on the Alerts tab</p>` : ""}` : `<p class="empty">✓ Nothing open</p>`}</div>
+    <div class="grid2"><div class="card"><h2>Open alerts<span>${open.length}</span></h2>${open.length ? `<div class="list">${open.slice(0, 12).map(alertRow).join("")}</div>${open.length > 12 ? `<p class="meta">+${open.length - 12} more on the Fix posts tab</p>` : ""}` : `<p class="empty">✓ Nothing open</p>`}</div>
     <div class="card"><h2>Where everyone is<span>between SOD and EOD · app open</span></h2><div class="map" id="map"></div><p class="hint">Dots update every couple of minutes while a driver's app is on screen. Grey = older than 10 minutes.</p></div></div>`;
 }
 function weekless() { return ""; }
@@ -238,7 +238,7 @@ function timingsToday() {
   rows.sort((a, b) => a.sort - b.sort);
   return `<div class="card"><h2>Timings today<span>${label(t)} · red = passed without being done</span></h2>${rows.length ? `<div class="scroll"><table class="dt"><tr><th>Window</th><th>What to do</th><th>Who</th><th>Status</th></tr>${rows.map(r => r.html).join("")}</table></div>` : `<p class="empty">No timed tasks on today's runs.</p>`}<p class="hint">Drivers tap Done in their app as each one is finished (every timed task on their run shows there with its own Done button). A passed window raises an alert here and pings you and the driver; Done clears it. Tap a row for the plan, the history and the driver's day.</p></div>`;
 }
-function alertsTab() {
+export function alertsTab() {
   const open = S.alerts.filter(a => !a.resolved_at), done = S.alerts.filter(a => a.resolved_at);
   const rem = S.set.reminders || {};
   return `${timingsToday()}<div class="card"><h2>Open alerts<span>${open.length}</span></h2>${open.length ? `<div class="list">${open.map(alertRow).join("")}</div><button class="btn ghost sm" id="resolve-all">Resolve all</button>` : `<p class="empty">✓ Nothing open</p>`}</div>
@@ -246,7 +246,7 @@ function alertsTab() {
       <label class="chk ${rem.enabled ? "on" : ""}"><input type="checkbox" id="rem-on" ${rem.enabled ? "checked" : ""} ${S.me.can("people") ? "" : "disabled"}>Email drivers automatically when a post is late (between ${esc(rem.from || "07:00")} and ${esc(rem.to || "20:00")})</label></div>
     <div class="card"><h2>Resolved recently<span>${done.length}</span></h2>${done.length ? `<div class="list">${done.slice(0, 30).map(alertRow).join("")}</div>` : `<p class="empty">Nothing yet</p>`}</div>`;
 }
-function wireAlerts() {
+export function wireAlerts() {
   $("#resolve-all")?.addEventListener("click", async () => { await q(sb.from("alerts").update({ resolved_at: new Date().toISOString(), resolved_by: S.me.id }).is("resolved_at", null)); toast("Resolved", "ok"); });
   $("#rem-on")?.addEventListener("change", async e => { await q(sb.from("settings").upsert({ key: "reminders", value: { ...(S.set.reminders || {}), enabled: e.target.checked } })); toast("Saved", "ok"); });
 }
