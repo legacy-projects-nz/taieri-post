@@ -49,7 +49,8 @@ export function loadAll(opts = {}) {
 }
 async function loadAllNow() {
   const t = today(); const wk = S.week; const mt = monOf(t); // ISO dates compare as strings (Math.min/max gave NaN, so weeks more than ~2 weeks out never loaded)
-  const from = addDays(wk < mt ? wk : mt, -63), to = addDays(wk > mt ? wk : mt, 20);
+  let from = addDays(wk < mt ? wk : mt, -63); const to = addDays(wk > mt ? wk : mt, 20);
+  if (S.tsRange === "custom" && S.tsFrom && S.tsFrom < from) from = S.tsFrom;   // dashboard dates further back than usual
   const [set, runs, vans, addons, rules, people, shifts, items, acks, sent, msgs, recips, leave, alerts, entries, marks, feed, ovs, locs, skills, notes, vchk] = await Promise.all([
     loadSettings(), q(sb.from("runs").select("*").order("sort")), q(sb.from("vans").select("*").order("plate")), q(sb.from("addons").select("*")), q(sb.from("timing_rules").select("*")),
     q(sb.from("people").select("*").order("name")),
@@ -94,6 +95,8 @@ async function loadAllNow() {
 }
 
 const TABS = [["live", "Live", "scorecard"], ["runboard", "Run Board", "roster"], ["classic", "Run Board (classic)", "roster"], ["scorecard", "Scorecard", "scorecard"], ["fix", "Fix posts", "scorecard"], ["routes", "Routes", "alerts"], ["allowances", "Allowances", "roster"], ["pickups", "Pick-ups", "roster"], ["hazards", "Hazards", "roster"], ["alerts", "Alerts", "alerts"], ["messages", "Messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"], ["pay", "Penalties & pay", "people"]];
+/* tabs that live behind the ☰ button at the end of the tab bar */
+const MENU_TABS = ["classic", "allowances", "fleet", "timing", "pay"];
 /* collapsible boxes: on every tab, every box after the first starts collapsed; tap its heading to open. Open/closed is kept while the page is open.
    "Shift right now" and "Add-ons right now" (ids rightnow*) can be collapsed too, wherever they sit, but start open. */
 S.open ??= {};
@@ -120,12 +123,15 @@ export function render(soft = false) {
   app.innerHTML = `<div class="wrap">
     <div class="top"><div><div class="brand">Taieri Ops</div><h1>${({ live: "Live board", runboard: "Run Board", classic: "Run Board (classic)", scorecard: "Driver Scorecard", fix: "Fix posts", routes: "Routes", allowances: "Back-up & on-call allowances", pickups: "Pick-ups to invoice", hazards: "Hazard register", alerts: "Alerts & timings", messages: "Messages", leave: "Leave", fleet: "Fleet", timing: "Timing rules", people: "People & settings", pay: "Penalties & pay" })[S.tab]}</h1></div>
       <div class="upd">${S.me.can("scorecard") ? `<span class="row" style="gap:6px;justify-content:flex-end;margin-bottom:6px"><a class="btn ghost sm" href="/" style="flex:0 0 auto;text-decoration:none">Driver portals</a><button class="btn ghost sm" id="quick-err" style="flex:0 0 auto">+ Record</button></span>` : ""}<span class="dot live"></span>live · ${fmtT(n.min)}<br>${esc(first(S.me.name))} · <button class="linkbtn" id="signout">sign out</button></div></div>
-    <nav class="nav">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? "on" : ""}">${l}${badge[k] ? `<span class="b ${k === "runboard" ? "warn" : ""}">${badge[k]}</span>` : ""}</button>`).join("")}</nav>
+    <nav class="nav">${tabs.filter(([k]) => !MENU_TABS.includes(k)).map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? "on" : ""}">${l}${badge[k] ? `<span class="b ${k === "runboard" ? "warn" : ""}">${badge[k]}</span>` : ""}</button>`).join("")}${tabs.some(([k]) => MENU_TABS.includes(k)) ? `<button id="nav-menu" class="${MENU_TABS.includes(S.tab) ? "on" : ""}" aria-label="More pages" title="More">☰${MENU_TABS.includes(S.tab) ? ` ${tabs.find(([k]) => k === S.tab)?.[1] || ""}` : ""}</button>` : ""}</nav>
     <div id="view">${(() => { try { return ({ live: liveTab2, runboard: runBoardTab, classic: classicTab, scorecard: scorecardTab, fix: fixTab, routes: routesTab, allowances: allowancesTab, pickups: pickupsTab, hazards: hazardsTab, alerts: alertsTab, messages: messagesTab, leave: leaveTab, fleet: fleetTab, timing: timingTab, people: peopleTab, pay: payTab })[S.tab](); } catch (e) { reportError("view:" + S.tab, e); return `<div class="card"><h2>This page hit a problem</h2><p class="hint">It couldn't be shown just now and the error has been logged. The other tabs still work.</p><button class="btn ghost sm" onclick="location.reload()">Reload</button></div>`; } })()}</div>
     <p class="foot">Safe. Sharp. Swift. · <a href="/">driver portal</a></p></div>`;
   $("#signout").onclick = signOut;
   $("#quick-err")?.addEventListener("click", () => errorCard());
   $$("[data-tab]").forEach(b => b.onclick = () => { S.tab = b.dataset.tab; location.hash = S.tab; render(); });
+  $("#nav-menu")?.addEventListener("click", () => { const list = tabs.filter(([k]) => MENU_TABS.includes(k));
+    sheet(`<h3>More</h3><div class="list">${list.map(([k, l]) => `<button class="btn ${S.tab === k ? "" : "ghost"} full" data-menutab="${k}" style="justify-content:flex-start">${l}</button>`).join("")}</div>`, bg => {
+      bg.querySelectorAll("[data-menutab]").forEach(b => b.onclick = () => { closeSheets(); S.tab = b.dataset.menutab; location.hash = S.tab; render(); }); }); });
   // classic Run Board in its own full-size browser window (falls back to a new tab if pop-ups are blocked)
   $$("[data-popout]").forEach(a => a.onclick = e => { e.preventDefault(); const w = window.open(a.dataset.popout, "tp_classic", `popup=yes,width=${screen.availWidth},height=${screen.availHeight},left=0,top=0`); if (w) { try { w.moveTo(0, 0); w.resizeTo(screen.availWidth, screen.availHeight); } catch (_) { } w.focus(); } else window.open(a.dataset.popout, "_blank", "noopener"); });
   if (S.tab !== "live") { /* the live board draws its own map */ }
@@ -154,15 +160,17 @@ export function teamRange(base) {
   if (r === "last") return { r, from: addDays(base, -7), to: addDays(base, -1), txt: `last week · ${label(addDays(base, -7))} – ${label(addDays(base, -1))}`, lbl: "Last week" };
   if (r === "month") { const e = addDays(base, 6); const y = +e.slice(0, 4), m = +e.slice(5, 7); const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
     return { r, from: `${py}-${String(pm).padStart(2, "0")}-01`, to: addDays(`${y}-${String(m).padStart(2, "0")}-01`, -1), txt: `${MON[pm - 1]} ${py}`, lbl: "Last month" }; }
+  if (r === "custom" && S.tsFrom && S.tsTo) return { r, from: S.tsFrom, to: S.tsTo, txt: `${label(S.tsFrom)} – ${label(S.tsTo)}`, lbl: "Dates" };
   return { r: "week", from: base, to: addDays(base, 6), txt: `week of ${label(base)}`, lbl: "This week" };
 }
-export const rangeBar = () => `<div class="seg-btns" style="margin:2px 0 8px">${[["week", "This week"], ["last", "Last week"], ["month", "Last month"]].map(([k, l]) => `<button data-tsr="${k}" class="${(S.tsRange || "week") === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+export const rangeBar = () => `<div class="seg-btns" style="margin:2px 0 8px">${[["week", "This week"], ["last", "Last week"], ["month", "Last month"], ["custom", "Dates"]].map(([k, l]) => `<button data-tsr="${k}" class="${(S.tsRange || "week") === k ? "on" : ""}">${l}</button>`).join("")}</div>${S.tsRange === "custom" ? `<div class="row" style="align-items:flex-end;margin:0 0 8px"><label class="f" style="flex:1 1 130px">From<input class="in" type="date" id="tsr-from" value="${S.tsFrom || ""}"></label><label class="f" style="flex:1 1 130px">To<input class="in" type="date" id="tsr-to" value="${S.tsTo || ""}"></label><button class="btn sm" id="tsr-go" style="flex:0 0 auto">Show</button></div>` : ""}`;
 export function teamStats(rg) {
   const ss = S.drivers.map(d => scoreFor(d.id, rg.from, rg.to, scoreData(), S.C)).filter(s => s.closed || s.effDays.length || s.nMist || s.accDays.length);
   const real = ss.filter(s => !S.peopleBy[s.driver]?.pay_exclude);
   return { n: ss.length, team: k => avg(real.map(s => s[k])) };
 }
-export function wireRange() { $$("[data-tsr]").forEach(b => b.onclick = () => { S.tsRange = b.dataset.tsr; render(); }); }
+export function wireRange() { $$("[data-tsr]").forEach(b => b.onclick = () => { S.tsRange = b.dataset.tsr; if (S.tsRange === "custom" && !S.tsFrom) { S.tsFrom = S.week; S.tsTo = addDays(S.week, 6); } render(); });
+  $("#tsr-go")?.addEventListener("click", async () => { const f = $("#tsr-from").value, t = $("#tsr-to").value; if (!f || !t || t < f) return toast("Pick a From and To date", "err"); S.tsFrom = f; S.tsTo = t; S._sd = null; await loadAll(); render(); }); }
 export const scoreData = () => S._sd ||= ({ extra: S.extra || [], shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, ovs: S.ovs, runsBy: S.runsBy, breaks: S.breaks || [], effBreakFor: (S.people || []).filter(p => p.pay_exclude).map(p => p.id) });   // unpaid breaks come off efficiency time for everyone; the owner (Jeremy) also before 9 Nov
 
 /* ================= LIVE ================= */
