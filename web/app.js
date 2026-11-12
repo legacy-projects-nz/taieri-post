@@ -194,6 +194,7 @@ function renderNow() {
     ${pair(part("Leave", () => leaveCard()), part("My details", () => detailsCard()))}
     ${part("Calendar", () => calendarCard(t))}
     ${part("More", () => moreCard())}
+    <div class="qbar">${rbBtn()}</div>
     ${part("Passwords & logins", () => accessCard())}
     </div>
     <p class="foot">Signed in as ${esc((S.viewer || S.me).email || "")}</p>
@@ -219,7 +220,7 @@ function folds() {
 
 /* ---------- SOD / EOD quick bar: always under the greeting on a work day ---------- */
 function quickBar(T, n) {
-  if (!T) return `<div class="qbar"><div class="qb off"><b>▶ SOD</b><small>no shift today</small></div><div class="qb off"><b>■ EOD</b><small>no shift today</small></div>${rbBtn()}</div>`;
+  if (!T) return `<div class="qbar"><div class="qb off"><b>▶ SOD</b><small>no shift today</small></div><div class="qb off"><b>■ EOD</b><small>no shift today</small></div></div>`;
   const va = !!S.viewAs; const offB = (lab, txt) => `<div class="qb off"><b>${lab}</b><small>${txt}</small></div>`;
   const runs = T.segs.filter(x => !x.sort); const sodSeg = T.segs.find(x => x.sod); const sod = sodSeg?.sod;
   const sortOnly = !runs.length; const eodOf = x => x.eod;
@@ -230,9 +231,9 @@ function quickBar(T, n) {
         return x.eod ? `<div class="qb done"><b>✓ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${fmtTime(x.eod.sent_at)}${x.eod.finish_time ? ` · finished ${fmtT(toMin(x.eod.finish_time))}` : ""}</small></div>`
           : va ? offB(`■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}`, late ? "overdue" : "not posted yet") : `<button class="btn qb ${late ? "warn" : "accent"}" data-eod="${x.shift.id}" ${sod ? "" : "disabled"}><b>■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${!sod ? "after your SOD" : late ? "overdue" : ""}</small></button>`; }).join("");
   const out = {}; const rb = runBar(T, sod, runs, va, offB, out);   // while sorting, Sort done sits first on the break row, beside the unpaid break
-  return `<div class="qbar">${sodBtn}${eodBtns}${brkRow(out.sort || "", breakBtn(T, sod), hoursBtn(T, sod))}${rbBtn()}</div>${rb}`;
+  return `<div class="qbar">${sodBtn}${eodBtns}${brkRow(out.sort || "", breakBtn(T, sod), hoursBtn(T, sod))}</div>${rb}`;
 }
-// Runboard (view only for drivers): a full-width button on the quick bar, like the break / hours row
+// Runboard (view only for drivers): a full-width button near the end of the page, styled like the break / hours row
 const rbBtn = () => `<a class="btn ghost qb brk" href="/admin/#runboard" style="text-decoration:none"><b>Runboard</b><small>this week's roster, view only</small></a>`;
 /* Stages: a driver's day is its shifts in order, sorts included. The first starts with the SOD; ▶ Start [run] starts the next one
    and ends the one before (so a sort before a run is timed by the tap); ■ EOR ends the run you're on (e.g. a gap before the next one);
