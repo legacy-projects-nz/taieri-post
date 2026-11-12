@@ -93,7 +93,8 @@ hr.gl{display:none}
 .tk.ok{background:var(--ok-fill);border:1px solid var(--ok);border-left:5px solid var(--ok)}.tk.ok .w{color:var(--ok)}
 
 /* break button: full width under SOD / EOD */
-.qb.brk{grid-column:1/-1;min-height:56px}.qb.brk b{font-size:18px}.qb.brk.on{background:var(--warn);color:var(--on-warn);border-color:transparent}
+.qb.brk{grid-column:1/-1;min-height:56px}
+.brkrow{grid-column:1/-1;display:flex;gap:8px}.brkrow>.qb.brk{flex:1 1 0;min-width:0}.qb.brk b{font-size:18px}.qb.brk.on{background:var(--warn);color:var(--on-warn);border-color:transparent}
 
 /* calendar */
 .calg{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
