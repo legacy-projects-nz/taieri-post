@@ -7,6 +7,7 @@ import { dayRow } from "/admin/detail.js";
 import { labourWeek } from "/admin/live.js";
 import { wagesView, wireWages } from "/admin/wages.js";
 import { sortingView } from "/admin/sorting.js";
+import { actBtns } from "/admin/settle.js";
 
 const KIND = { mistake: "Mistake", praise: "Praise", issue: "Went wrong", note: "Note", adjust: "Admin points", safety: "Safety", eff: "Efficiency set" };
 let sub = "dash";
@@ -38,9 +39,9 @@ function reviewQueue(scores) { return scores.flatMap(s => s.items.filter(i => (i
 function review(scores) {
   const qu = reviewQueue(scores); const by = {}; for (const i of qu) (by[i.driver] ??= []).push(i);
   const mist = S.entries.filter(e => e.kind === "mistake" && e.day >= S.week && e.day <= addDays(S.week, 6));
-  return `<div class="card"><h2>Posts to check<span>${qu.length}</span></h2><p class="hint">Confirm keeps the deduction · Excuse removes it · Mark OK if it was done right. Email sends the driver one email covering all their posts here.</p>
+  return `<div class="card"><h2>Posts to check<span>${qu.length}</span></h2><p class="hint">Done = on time · Late and Not done keep the deduction (Late also emails the driver) · Excuse removes it. Email sends the driver one email covering all their posts here.</p>
     ${Object.entries(by).map(([d, L]) => `<div class="item"><div class="row" style="justify-content:space-between"><b>${esc(nm(d))} · ${L.length} post${L.length > 1 ? "s" : ""}</b><span class="row" style="flex:0"><button class="btn sm ghost" data-confirm-all="${d}" data-keys="${L.map(i => i.key).join("|")}">Confirm all</button><button class="btn sm ghost" data-email="${d}" data-keys="${L.map(i => i.key).join("|")}">Email ${esc(fnm(d))}</button></span></div>
-      ${L.map(i => `<div class="row" style="justify-content:space-between;border-top:1px solid var(--line);padding-top:6px"><span>${label(i.day)} · ${chip(i)}</span><span class="row" style="flex:0;gap:4px"><button class="btn sm ghost" data-mark="confirm" data-key="${esc(i.key)}" data-drv="${d}">Confirm</button><button class="btn sm ghost" data-mark="exc" data-key="${esc(i.key)}" data-drv="${d}">Excuse</button><button class="btn sm ghost" data-mark="ok" data-key="${esc(i.key)}" data-drv="${d}">Mark OK</button></span></div>`).join("")}</div>`).join("") || `<p class="empty">✓ Nothing to review this week.</p>`}</div>
+      ${L.map(i => `<div class="row" style="justify-content:space-between;border-top:1px solid var(--line);padding-top:6px"><span>${label(i.day)} · ${chip(i)}</span><span class="row" style="flex:0;gap:4px">${actBtns("post", `data-key="${esc(i.key)}" data-drv="${d}"`)}</span></div>`).join("")}</div>`).join("") || `<p class="empty">✓ Nothing to review this week.</p>`}</div>
     <div class="card"><h2>Driver Mistakes Record<span>${mist.length} this week · −${S.C.rules.mistakePct}% Accuracy each</span></h2>${mist.map(e => `<div class="item clk ${e.excused ? "accent" : "crit"}" data-entry="${e.id}"><div class="row" style="justify-content:space-between"><span><b>${esc(nm(e.driver))}</b> · ${label(e.day)} · ${esc(e.title)}${e.note ? ` — ${esc(e.note)}` : ""}${e.pct_off != null ? ` · −${+e.pct_off}%` : ""}${e.excused ? ` ${pill("removed", "grey")}` : ""}${e.show_driver ? ` ${e.seen_at ? pill("viewed by driver", "ok") : pill("not viewed yet", "warn")}` : ""}</span>${e.excused ? "" : `<button class="btn sm ghost" data-excuse="${e.id}">Remove</button>`}</div>${e.note ? `<div class="meta">${esc(e.note)}</div>` : ""}</div>`).join("") || `<p class="meta">None logged this week.</p>`}</div>`;
 }
 function effView() {
@@ -161,7 +162,7 @@ export function itemSheet(key) {
   sheet(`<h3>${esc(nm(drv))} · ${esc(it.label)}</h3><p class="meta">${label(day, true)} · due ${fmtT(it.due % 1440)}</p>
     <p>Worked out: <b>${STATE_LABEL[it.auto]}</b>${it.mark?.status ? ` · you set: <b>${STATE_LABEL[it.mark.status]}</b>` : ""} · ${itemNote({ ...it, st: it.auto })}</p>
     ${row ? `<pre class="msg">${esc(Object.entries(row).filter(([k, v]) => v != null && !["shift_id", "driver", "id"].includes(k) && v !== "" && !(Array.isArray(v) && !v.length)).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`).join("\n"))}</pre>` : `<p class="meta">Nothing posted.</p>`}
-    <div class="row">${["ok", "late", "miss", "exc"].map(st => `<button class="btn sm ${st === "exc" ? "ghost" : st === "ok" ? "" : st === "miss" ? "crit" : "warn"}" data-set="${st}">${STATE_LABEL[st]}</button>`).join("")}</div>
+    <div class="row" style="gap:4px;flex-wrap:wrap">${actBtns("post", `data-key="${esc(key)}" data-drv="${esc(drv)}"`)}</div>
     <label class="f">Note (optional)<input class="in" id="mnote" value="${esc(it.mark?.note || "")}" placeholder="e.g. told me by text"></label>
     <div class="row"><button class="btn ghost sm" id="auto">Back to automatic</button>${kind === "EOD" && row ? `<button class="btn ghost sm" id="edit-eod">Edit EOD figures</button>` : ""}${!row ? `<button class="btn ghost sm" id="post-for">Post it for them</button>` : ""}<button class="btn ghost sm" data-dayof="${drv}|${day}">Whole day</button></div>`, (bg, close) => {
     bg.querySelectorAll("[data-set]").forEach(b => b.onclick = async () => { await q(sb.from("marks").upsert({ key, driver: drv, status: b.dataset.set, reviewed: true, note: bg.querySelector("#mnote").value || null, by_person: S.me.id, at: new Date().toISOString() })); close(); });

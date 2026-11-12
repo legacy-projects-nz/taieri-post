@@ -5,6 +5,7 @@ import { sodStart, scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, ownerBre
 import { S, sheet, opt, nm, fnm, loadAll, render, scoreData, alertRow, fn, teamRange, rangeBar, teamStats } from "/admin/admin.js";
 import { itemKeyFor } from "/admin/detail.js";
 import { moneyCard, wireMoney } from "/admin/money.js";
+import { actBtns, addMark } from "/admin/settle.js";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 /** The week the live board is showing: this week by default, back 8 weeks or forward 1 */
@@ -118,11 +119,11 @@ function addonBoard(day, n) {
   for (const { s, st, en } of segs) {
     const chips = []; const seen = new Set(); const dn = s.done || {}; const plan = s.plan || {};
     for (const r of rulesForShift(s)) { const key = r.done_key || r.addon; const d = key ? dn[key] : null; const gp = key?.startsWith("tw_") && /game plan/i.test(r.name); const planned = gp && Object.keys(plan).length > 0; const closes = toMin(r.closes), opens = toMin(r.opens);
-      let cls = "due", txt = winTxt(r); if (d) { cls = "ok"; txt = `✓ ${fmtTime(d)}`; } else if (planned) { cls = "ok"; txt = "✓ game plan in"; } else if (closes != null && nowMin > closes) { cls = "miss"; txt = `✗ not done by ${fmtT(closes)}`; } else if (closes != null && nowMin >= closes - 15 && nowMin >= (opens ?? -1)) { cls = "over"; txt = `due in ${closes - nowMin} min · ${txt}`; } else if (opens != null && nowMin >= opens) { cls = "now"; txt = `now · ${txt}`; }
+      const mk = d || !key ? null : addMark(s.id, key); let cls = "due", txt = winTxt(r); if (mk) { [cls, txt] = mk; } else if (d) { cls = "ok"; txt = `✓ ${fmtTime(d)}`; } else if (planned) { cls = "ok"; txt = "✓ game plan in"; } else if (closes != null && nowMin > closes) { cls = "miss"; txt = `✗ not done by ${fmtT(closes)}`; } else if (closes != null && nowMin >= closes - 15 && nowMin >= (opens ?? -1)) { cls = "over"; txt = `due in ${closes - nowMin} min · ${txt}`; } else if (opens != null && nowMin >= opens) { cls = "now"; txt = `now · ${txt}`; }
       if (key) { seen.add(r.addon); tot++; if (cls === "ok") done++; if (cls === "miss") missed++; }
       chips.push(`<span class="chip ${cls}" title="${esc(r.name)}">${esc(r.name)} <span style="font-weight:500">${esc(txt)}</span></span>`); }
     for (const id of s.addons || []) { if (seen.has(id)) continue; const a = S.addons.find(x => x.id === id); if (!a) continue; const d = dn[id]; const p = plan[id]; const ended = en != null && nowMin > en;
-      const cls = d ? "ok" : ended ? "miss" : "due"; const txt = d ? `✓ ${fmtTime(d)}` : ended ? "✗ not marked" : p ? `~${fmtT(toMin(p))}` : isT ? "not yet" : ""; tot++; if (d) done++; else if (ended) missed++;
+      const mk = d ? null : addMark(s.id, id); const cls = mk ? mk[0] : d ? "ok" : ended ? "miss" : "due"; const txt = mk ? mk[1] : d ? `✓ ${fmtTime(d)}` : ended ? "✗ not marked" : p ? `~${fmtT(toMin(p))}` : isT ? "not yet" : ""; tot++; if (d) done++; else if (cls === "miss") missed++;
       chips.push(`<span class="chip ${cls}" title="${esc(a.name)}">${esc(a.short || a.name)}${txt ? ` <span style="font-weight:500">${esc(txt)}</span>` : ""}</span>`); }
     if (!chips.length) continue;
     const nd = chips.filter(c => c.includes('class="chip ok"')).length;
@@ -270,7 +271,7 @@ function notConfirmed(n) {
   const t = n.date; const ackOf = {}; for (const a of S.acks) (ackOf[a.item_id] ??= {})[a.driver] = a; const by = {};
   for (const i of S.items.filter(i => i.roster_changes.status === "sent" && i.day >= t)) for (const d of i.affects) { const a = ackOf[i.id]?.[d]; const st = toMin(i.after?.start_at); const past = i.day === t && st != null && n.min >= st; if (!a?.confirmed_at && !a?.dismissed_at && !past) (by[d] ??= []).push(i); }
   const L = Object.entries(by).sort((a, b) => (a[1][0].roster_changes.sent_at || "").localeCompare(b[1][0].roster_changes.sent_at || ""));
-  return `<div class="card ${L.length ? "hot" : ""}"><h2>Roster changes — not confirmed<span>${L.length ? `${L.length} driver${L.length > 1 ? "s" : ""} waiting, oldest first` : "nothing waiting"}</span></h2>${L.length ? `<div class="list">${L.map(([d, items]) => `<div class="item crit clk" data-changes="${d}" title="Tap for every change sent to ${esc(fnm(d))}"><div class="row" style="justify-content:space-between"><b>${esc(nm(d))}</b><span class="meta">sent ${fmtTs(items[0].roster_changes.sent_at)} · ${ago(items[0].roster_changes.sent_at)}</span><span class="row" style="flex:0"><button class="btn sm ghost" data-ack="ok" data-drv="${d}" data-items="${items.map(i => i.id).join(",")}">✓ Confirm</button><button class="btn sm ghost" data-ack="dis" data-drv="${d}" data-items="${items.map(i => i.id).join(",")}">Dismiss</button></span></div><ul style="margin:4px 0;padding-left:18px;color:var(--crit)">${items.map(i => `<li>${esc(i.summary)}</li>`).join("")}</ul></div>`).join("")}</div>` : ""}<p class="meta">Drivers confirm with one tap in the app. <button class="linkbtn" data-go="runboard">History of all roster changes →</button></p></div>`;
+  return `<div class="card ${L.length ? "hot" : ""}"><h2>Roster changes — not confirmed<span>${L.length ? `${L.length} driver${L.length > 1 ? "s" : ""} waiting, oldest first` : "nothing waiting"}</span></h2>${L.length ? `<div class="list">${L.map(([d, items]) => `<div class="item crit clk" data-changes="${d}" title="Tap for every change sent to ${esc(fnm(d))}"><div class="row" style="justify-content:space-between"><b>${esc(nm(d))}</b><span class="meta">sent ${fmtTs(items[0].roster_changes.sent_at)} · ${ago(items[0].roster_changes.sent_at)}</span><span class="row" style="flex:0;gap:4px;flex-wrap:wrap;justify-content:flex-end">${actBtns("chg", `data-drv="${d}" data-items="${items.map(i => i.id).join(",")}"`)}</span></div><ul style="margin:4px 0;padding-left:18px;color:var(--crit)">${items.map(i => `<li>${esc(i.summary)}</li>`).join("")}</ul></div>`).join("")}</div>` : ""}<p class="meta">Drivers confirm with one tap in the app. <button class="linkbtn" data-go="runboard">History of all roster changes →</button></p></div>`;
 }
 
 /* ---- Drivers grid ---- */

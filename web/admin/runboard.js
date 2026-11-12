@@ -5,6 +5,7 @@ import { sb, q, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, 
 import { addName, segTimes } from "/shared/score.js";
 import { S, sheet, opt, nm, fnm, weekBar, wireWeek, loadAll, render, fn } from "/admin/admin.js";
 import { sickSheet, onLongPress } from "/admin/sick.js";
+import { actBtns } from "/admin/settle.js";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const key = s => `${s.day}|${s.run}|${s.slot}`;
@@ -98,7 +99,7 @@ function confirmCard(sentItems, ackOf, n) {
   const waiting = Object.entries(by).map(([d, L]) => ({ d, L: L.filter(x => !x.a?.confirmed_at && !x.a?.dismissed_at && !x.past) })).filter(x => x.L.length);
   const hist = sentItems.length;
   return `<div class="card ${waiting.length ? "hot" : ""}"><h2>Roster changes — confirmations<span>${waiting.length ? `${waiting.length} driver${waiting.length === 1 ? "" : "s"} waiting` : "all confirmed"}</span></h2>
-    ${waiting.length ? waiting.map(({ d, L }) => `<div class="item crit clk" data-changes="${d}" title="Tap for every change sent to ${esc(fnm(d))}"><div class="row" style="justify-content:space-between"><b>${esc(nm(d))}</b><span class="row" style="flex:0"><button class="btn sm ghost" data-ack="ok" data-drv="${d}" data-items="${L.map(x => x.i.id).join(",")}">✓ Confirm</button><button class="btn sm ghost" data-ack="dis" data-drv="${d}" data-items="${L.map(x => x.i.id).join(",")}">Dismiss</button></span></div><ul style="margin:4px 0;padding-left:18px;color:var(--crit)">${L.map(x => `<li>${esc(x.i.summary)} <span class="meta">sent ${ago(x.i.roster_changes.sent_at)}${x.a?.seen_at ? " · seen" : ""}</span></li>`).join("")}</ul></div>`).join("") : `<p class="meta c-ok">✓ Nothing waiting to be confirmed</p>`}
+    ${waiting.length ? waiting.map(({ d, L }) => `<div class="item crit clk" data-changes="${d}" title="Tap for every change sent to ${esc(fnm(d))}"><div class="row" style="justify-content:space-between"><b>${esc(nm(d))}</b><span class="row" style="flex:0;gap:4px;flex-wrap:wrap;justify-content:flex-end">${actBtns("chg", `data-drv="${d}" data-items="${L.map(x => x.i.id).join(",")}"`)}</span></div><ul style="margin:4px 0;padding-left:18px;color:var(--crit)">${L.map(x => `<li>${esc(x.i.summary)} <span class="meta">sent ${ago(x.i.roster_changes.sent_at)}${x.a?.seen_at ? " · seen" : ""}</span></li>`).join("")}</ul></div>`).join("") : `<p class="meta c-ok">✓ Nothing waiting to be confirmed</p>`}
     <details><summary>All ${hist} change lines this week</summary><div class="list" style="margin-top:8px">${sentItems.map(i => `<div class="item ${i.affects.every(d => ackOf[i.id]?.[d]?.confirmed_at || ackOf[i.id]?.[d]?.dismissed_at) ? "done" : ""}"><div>${esc(i.summary)}</div><div class="row" style="gap:3px">${i.affects.map(d => { const a = ackOf[i.id]?.[d]; const st = toMin(i.after?.start_at); const past = i.day < t || (i.day === t && st != null && n.min >= st); return `<span class="chip ${a?.confirmed_at ? "ok" : a?.dismissed_at ? "exc" : past ? "due" : "over"}">${esc(fnm(d))} ${a?.confirmed_at ? `✓ ${a.confirmed_by ? "by " + fnm(a.confirmed_by) : fmtTs(a.confirmed_at)}` : a?.dismissed_at ? "dismissed" : past ? "run started · not confirmed" : "waiting"}</span>`; }).join("")}</div></div>`).join("")}</div></details></div>`;
 }
 function historyList() {
