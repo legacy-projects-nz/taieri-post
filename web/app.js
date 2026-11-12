@@ -174,7 +174,7 @@ function renderNow() {
   const tRuns = T ? T.segs.filter(x => !x.sort) : []; const dayDone = !!T && (tRuns.length ? tRuns.every(x => x.eod) : T.segs.some(x => x.eod)); S.dayDone = dayDone;
   app.innerHTML = `<div class="wrap">
     ${demoBar()}${viewBar()}
-    <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><a class="btn ghost sm" href="/admin/#runboard" style="text-decoration:none;margin-bottom:6px;display:inline-flex">Run Board</a><br><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
+    <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
     ${S.loadErr ? `<p class="hint" style="margin:0 0 8px;color:var(--crit)">No connection. Showing what loaded at ${fmtT(nzNow(new Date(S.loadedAt)).min)}. Trying again on its own.</p>` : ""}
     ${part("Do these first", () => carryCard())}
     ${part("SOD / EOD", () => quickBar(T, n))}
@@ -219,7 +219,7 @@ function folds() {
 
 /* ---------- SOD / EOD quick bar: always under the greeting on a work day ---------- */
 function quickBar(T, n) {
-  if (!T) return `<div class="qbar"><div class="qb off"><b>▶ SOD</b><small>no shift today</small></div><div class="qb off"><b>■ EOD</b><small>no shift today</small></div></div>`;
+  if (!T) return `<div class="qbar"><div class="qb off"><b>▶ SOD</b><small>no shift today</small></div><div class="qb off"><b>■ EOD</b><small>no shift today</small></div>${rbBtn()}</div>`;
   const va = !!S.viewAs; const offB = (lab, txt) => `<div class="qb off"><b>${lab}</b><small>${txt}</small></div>`;
   const runs = T.segs.filter(x => !x.sort); const sodSeg = T.segs.find(x => x.sod); const sod = sodSeg?.sod;
   const sortOnly = !runs.length; const eodOf = x => x.eod;
@@ -230,8 +230,10 @@ function quickBar(T, n) {
         return x.eod ? `<div class="qb done"><b>✓ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${fmtTime(x.eod.sent_at)}${x.eod.finish_time ? ` · finished ${fmtT(toMin(x.eod.finish_time))}` : ""}</small></div>`
           : va ? offB(`■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}`, late ? "overdue" : "not posted yet") : `<button class="btn qb ${late ? "warn" : "accent"}" data-eod="${x.shift.id}" ${sod ? "" : "disabled"}><b>■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${!sod ? "after your SOD" : late ? "overdue" : ""}</small></button>`; }).join("");
   const out = {}; const rb = runBar(T, sod, runs, va, offB, out);   // while sorting, Sort done sits first on the break row, beside the unpaid break
-  return `<div class="qbar">${sodBtn}${eodBtns}${brkRow(out.sort || "", breakBtn(T, sod), hoursBtn(T, sod))}</div>${rb}`;
+  return `<div class="qbar">${sodBtn}${eodBtns}${brkRow(out.sort || "", breakBtn(T, sod), hoursBtn(T, sod))}${rbBtn()}</div>${rb}`;
 }
+// Runboard (view only for drivers): a full-width button on the quick bar, like the break / hours row
+const rbBtn = () => `<a class="btn ghost qb brk" href="/admin/#runboard" style="text-decoration:none"><b>Runboard</b><small>this week's roster, view only</small></a>`;
 /* Stages: a driver's day is its shifts in order, sorts included. The first starts with the SOD; ▶ Start [run] starts the next one
    and ends the one before (so a sort before a run is timed by the tap); ■ EOR ends the run you're on (e.g. a gap before the next one);
    ▶ Delivering marks the end of a sort done inside the run (no sort shift before it). */
@@ -926,9 +928,9 @@ async function sendSodReq(shiftId, D, startMin, note) {
 }
 function sodReqLine(T) {
   const r = (S.sodReqs || []).find(x => x.day === T.day); if (!r) return "";
-  const what = `${r.kind === "early" ? "Early" : "Late"} start ${fmtT(toMin(r.started))} (rostered ${fmtT(toMin(r.rostered))})`;
-  return r.status === "pending" ? `<div class="meta c-warn">⏳ ${what} · waiting for Jeremy to sign off${r.kind === "early" ? ` · hours count from ${fmtT(toMin(r.rostered))} until then` : ""}</div>`
-    : r.status === "approved" ? `<div class="meta c-ok">✓ ${what} · signed off by Jeremy, run times updated${r.reply ? ` · ${esc(r.reply)}` : ""}</div>`
+  const what = `${r.kind === "early" ? "Early" : "Late"} start ${fmtT(toMin(r.started))}${r.sod_at ? ` (SOD ${fmtT(toMin(r.sod_at))}, start edited)` : ""} (rostered ${fmtT(toMin(r.rostered))})`;
+  return r.status === "pending" ? `<div class="meta c-warn">⏳ ${what} · waiting for sign-off${r.kind === "early" ? ` · hours count from ${fmtT(toMin(r.rostered))} until then` : ""}</div>`
+    : r.status === "approved" ? `<div class="meta c-ok">✓ ${what} · signed off, run times updated${r.reply ? ` · ${esc(r.reply)}` : ""}</div>`
     : `<div class="meta c-crit">✗ ${what} · not signed off${r.kind === "early" ? `, hours count from ${fmtT(toMin(r.rostered))}` : ""}${r.reply ? ` · ${esc(r.reply)}` : ""}</div>`;
 }
 function fmt24s(min) { return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`; }
