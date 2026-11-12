@@ -114,7 +114,8 @@ var DEFAULT_VANS=[
  {id:"mbk700",plate:"MBK700",col:"white",type:"van",make:"Nissan"},
  {id:"mjk872",plate:"MJK872",col:"silver",type:"van",make:"Renault"},
  {id:"phz879",plate:"PHZ879",col:"red",type:"van",make:"Nissan X-Trail"},
- {id:"jqy940",plate:"JQY940",col:"white",type:"van",make:"Toyota Hiace"}
+ {id:"jqy940",plate:"JQY940",col:"white",type:"van",make:"Toyota Hiace"},
+ {id:"rce761",plate:"RCE761",col:"white",type:"van",make:""}
 ];
 /* standing allocations: the van that lives on a run every week */
 var FIXED_VAN={T:"mjk872"};
