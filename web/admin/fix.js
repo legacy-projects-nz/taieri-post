@@ -22,9 +22,9 @@ function todo() {
 /** Add-ons not ticked done on a finished shift (day gone, or EOD in): each can be marked done or excused */
 const addKey = (sid, a) => `add|${sid}|${a}`;
 /** the four outcomes, for one item or for a whole section */
-const ACTS = [["done", "Done", ""], ["late", "Late", "ghost"], ["miss", "Not done", "ghost"], ["exc", "Excuse", "ghost"]];
-const actBtns = (attr, data) => ACTS.map(([a, t, c]) => `<button class="btn sm ${c}" ${attr}="${a}" ${data}>${t}</button>`).join("");
-const allBar = (sec, n) => n ? `<div class="row" style="gap:4px;flex-wrap:wrap;align-items:center;margin:6px 0"><span class="meta">All ${n}:</span>${ACTS.map(([a, t]) => `<button class="btn ghost sm" data-fxall="${sec}|${a}">${t}</button>`).join("")}</div>` : "";
+export const ACTS = [["done", "Done", ""], ["late", "Late", "ghost"], ["miss", "Not done", "ghost"], ["exc", "Excuse", "ghost"]];
+export const actBtns = (attr, data) => ACTS.map(([a, t, c]) => `<button class="btn sm ${c}" ${attr}="${a}" ${data}>${t}</button>`).join("");
+export const allBar = (sec, n) => n ? `<div class="row" style="gap:4px;flex-wrap:wrap;align-items:center;margin:6px 0"><span class="meta">All ${n}:</span>${ACTS.map(([a, t]) => `<button class="btn ghost sm" data-fxall="${sec}|${a}">${t}</button>`).join("")}</div>` : "";
 const keyName = k => S.rules.find(r => r.done_key === k)?.name || addName(k);
 function addTodo() {
   const from = both ? addDays(S.week, -7) : S.week, to = addDays(S.week, 6), t = today(); const out = [];
@@ -68,8 +68,15 @@ export function wireFix() {
   $$("[data-fxall]").forEach(b => b.onclick = async () => {
     const [sec, act] = b.dataset.fxall.split("|"); const t0 = b.textContent;
     if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = `Tap again: all ${t0}`; b.classList.add("warn"); setTimeout(() => { if (b.isConnected) { b.dataset.sure = ""; b.textContent = t0; b.classList.remove("warn"); } }, 4000); return; }
-    b.disabled = true; const n = sec === "add" ? await settleAdds(addTodo(), act) : await settlePosts(todo().map(it => ({ key: it.key, driver: it.driver, what: postWhat(it) })), act);
+    b.disabled = true; let n = 0;
+    if (sec === "add") n = await settleAdds(addTodo(), act);
+    else if (sec === "post") n = await settlePosts(todo().map(it => ({ key: it.key, driver: it.driver, what: postWhat(it) })), act);
+    else if (sec === "tim") { const seen = new Set(); const L = []; $$('[data-fxadd][data-sec="tim"]').forEach(x => { const id = x.dataset.sid + "|" + x.dataset.k; const sh = S.shifts.find(z => z.id === x.dataset.sid); if (sh && !seen.has(id)) { seen.add(id); L.push({ s: sh, k: x.dataset.k }); } }); n = await settleAdds(L, act); }
+    else if (sec === "alert") { const L = S.alerts.filter(a => !a.resolved_at); for (const a of L) await settleAlert(a, act); n = L.length; }
     toast(`${n} marked ${t0}`, "ok"); await loadAll(); render();
+  });
+  $$("[data-fxalert]").forEach(b => b.onclick = async () => {
+    const a = S.alerts.find(x => x.id === b.dataset.id); if (!a) return; b.disabled = true; await settleAlert(a, b.dataset.fxalert); toast(b.textContent, "ok"); await loadAll(); render();
   });
   $$("[data-fxadd]").forEach(b => b.onclick = async () => {
     const sh = S.shifts.find(x => x.id === b.dataset.sid); if (!sh) return; b.disabled = true;
@@ -87,7 +94,8 @@ const POST_NOTE = { done: "Marked done in Fix posts", late: "Kept as late in Fix
 async function settlePosts(list, act) {
   const at = new Date().toISOString(); const status = act === "done" ? "ok" : act;
   const rows = list.map(i => ({ key: i.key, driver: i.driver, reviewed: true, by_person: S.me.id, at, status, note: POST_NOTE[act] }));
-  if (rows.length) await q(sb.from("marks").upsert(rows)); if (act === "late") emailLate(list); return rows.length;
+  if (rows.length) await q(sb.from("marks").upsert(rows)); if (act === "late") emailLate(list);
+  const sids = list.map(i => findItem(i.key)?.shift?.id).filter(Boolean); if (sids.length) resolveFor(sids, ["sod", "eod"]); return rows.length;
 }
 const postWhat = it => `${it.kind}${it.shift?.run ? ` · ${it.shift.run}` : ""} · ${label(it.day)}`;
 /** Marked late: one polite email per driver asking for it to be done on time tomorrow */
@@ -100,8 +108,21 @@ async function emailLate(list) {
   }
 }
 /** Add-ons: Done / Late tick it on the shift (Late also leaves a late mark), Not done / Excuse leave a mark */
+/** An alert settled with one of the four: a task alert settles the task, an SOD/EOD alert settles the post, anything else is just logged; the alert is resolved */
+async function settleAlert(a, act) {
+  const sh = a.shift_id ? S.shifts.find(x => x.id === a.shift_id) : null; const r = a.rule_id ? S.rules.find(x => x.id === a.rule_id) : null; const k = r ? (r.done_key || r.addon) : null;
+  if (sh && k && !sh.done?.[k]) await settleAdds([{ s: sh, k }], act);
+  else if (sh && /^(sod|eod)/.test(a.kind)) { const kind = a.kind.startsWith("sod") ? "SOD" : "EOD"; const its = scoreFor(sh.driver, sh.day, sh.day, scoreData(), S.C).items.filter(i => i.kind === kind && (kind === "SOD" || !i.code || i.code === sh.run)); if (its.length) await settlePosts(its.map(i => ({ key: i.key, driver: i.driver, what: postWhat(i) })), act); }
+  else if (act === "late" && a.driver) emailLate([{ driver: a.driver, what: a.title }]);
+  await sb.from("alerts").update({ resolved_at: new Date().toISOString(), resolved_by: S.me.id }).eq("id", a.id);
+}
+/** settling an item elsewhere on the page also resolves its open alerts */
+async function resolveFor(shiftIds, kinds) {
+  const ids = S.alerts.filter(a => !a.resolved_at && a.shift_id && shiftIds.includes(a.shift_id) && kinds.some(k => a.kind.startsWith(k))).map(a => a.id);
+  if (ids.length) await sb.from("alerts").update({ resolved_at: new Date().toISOString(), resolved_by: S.me.id }).in("id", ids);
+}
 async function settleAdds(list, act) {
-  const at = new Date().toISOString();
+  const at = new Date().toISOString(); resolveFor([...new Set(list.map(i => i.s.id))], ["timing"]);
   if (act === "late") { for (const { s, k } of list) { const { error } = await sb.rpc("task_done_late", { p_shift: s.id, p_addon: k, p_name: keyName(k) }); if (error) toast(error.message, "err"); } emailLate(list.map(({ s, k }) => ({ driver: s.driver, what: `${keyName(k)} · ${s.run} · ${label(s.day)}` }))); return list.length; }   // ticked, marked late, penalty logged
   if (act === "done") {
     const by = {}; for (const { s, k } of list) (by[s.id] ??= { s, ks: [] }).ks.push(k);
