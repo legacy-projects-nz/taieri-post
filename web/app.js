@@ -162,9 +162,9 @@ function renderNow() {
     ${part("Today's tasks", () => addonsCard(T, nextDay, n))}
     ${part("Roster changes", () => rosterChanges(n))}
     ${part("Alerts", () => alertsCard())}
-    ${part("Hazards", () => hazardsCard(T))}
     ${part("Messages", () => messagesCard())}
     ${part("My scores", () => scoresCard())}
+    ${part("Hazards", () => hazardsCard(T))}
     ${part("Parcel pick-ups", () => pickupsCard(T))}
     <div class="folds">
     ${dayDone ? "" : part("Next shift", () => nextShiftCard(nextDay, n))}
