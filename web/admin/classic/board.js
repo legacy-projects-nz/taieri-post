@@ -74,7 +74,7 @@ var W={
  WH:{name:"Saturday combined run",label:"PCB+RSB",net:"nzp",rest:1,d:{Sat:[[m(8),m(13)]]}},
  RSB:{name:"Roseneath / Sawyers Bay",net:"nzp",rest:1,hard:1,d:{Mon:[[m(12,30),m(15)]],Tue:[[m(12,30),m(17)]],Wed:[[m(12,30),m(15)]],Thu:[[m(12,30),m(17)]],Fri:[[m(12,30),m(15)]],Sat:[[m(8),m(13)]]}},
  PCB:{name:"Port Chalmers / Careys Bay",net:"nzp",rest:1,hard:1,d:{Mon:[[m(8),m(11)]],Tue:[[m(7,30),m(12)]],Wed:[[m(8),m(11)]],Thu:[[m(7,30),m(12)]],Fri:[[m(8),m(11)]],Sat:[[m(8),m(13)]]}},
- TUA:{name:"2nd Rural",net:"nzp",d:{Mon:[[m(5),m(10,45)]],Tue:[[m(5),m(9,45)]],Wed:[[m(5),m(9,45)]],Thu:[[m(5),m(9,45)]],Fri:[[m(5),m(9,45)]]}},
+ TUA:{name:"TUA",net:"nzp",d:{Mon:[[m(5),m(10,45)]],Tue:[[m(5),m(9,45)]],Wed:[[m(5),m(9,45)]],Thu:[[m(5),m(9,45)]],Fri:[[m(5),m(9,45)]]}},
  RAM:{name:"Outram T-RAM",net:"nzp",hard:1,d:{Mon:[[m(13),m(16)]],Tue:[[m(13),m(16)]],Wed:[[m(13),m(16)]],Thu:[[m(13),m(16)]],Fri:[[m(13),m(16)]]}},
  LAW:{name:"Lawrence",net:"nzp",d:{Mon:[[m(9),m(13)]],Tue:[[m(9),m(13)]],Wed:[[m(9),m(13)]],Thu:[[m(9),m(13)]],Fri:[[m(9),m(13)]]}},
  S:{name:"Suburbs",label:"TGE (S)",net:"tge",d:{Mon:[[m(8),m(15,30)]],Tue:[[m(8),m(15,30)]],Wed:[[m(8),m(15,30)]],Thu:[[m(8),m(15,30)]],Fri:[[m(8),m(15,30)]]}},   /* no real mid-day break; out from 8:00 after the 6:30 TGE-depot support (Oct 2026) */

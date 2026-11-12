@@ -1,6 +1,6 @@
 // Reference data for the demo driver profile: a copy of the runs, add-ons, timed tasks and scoring settings (no people, no real shifts)
 export const RUNS = [
-  { code: "TUA", name: "2nd Rural", label: null, network: "nzp", slots: 1, needs_van: true, sort: 10, active: true, windows: { Mon: [["06:30", "10:10"]], Tue: [["06:30", "09:10"]], Wed: [["06:30", "09:10"]], Thu: [["06:30", "09:10"]], Fri: [["06:30", "09:10"]] } },
+  { code: "TUA", name: "TUA", label: null, network: "nzp", slots: 1, needs_van: true, sort: 10, active: true, windows: { Mon: [["06:30", "10:10"]], Tue: [["06:30", "09:10"]], Wed: [["06:30", "09:10"]], Thu: [["06:30", "09:10"]], Fri: [["06:30", "09:10"]] } },
   { code: "DB", name: "Dunedin › Balclutha", label: "D>B", network: "nzp", slots: 1, needs_van: true, sort: 20, active: true, windows: { Mon: [["09:30", "10:30"]], Tue: [["09:30", "10:30"]], Wed: [["10:30", "11:30"]], Thu: [["09:30", "13:30"]], Fri: [["10:30", "11:30"]] } },
   { code: "FLY", name: "Flyer", label: null, network: "nzp", slots: 1, needs_van: true, sort: 30, active: true, windows: { Mon: [["06:45", "09:45"]], Tue: [["06:45", "09:45"]], Wed: [["05:30", "10:30"]], Thu: [["06:00", "10:00"]], Fri: [["08:30", "10:30"]] } },
   { code: "LAW", name: "Lawrence", label: null, network: "nzp", slots: 1, needs_van: true, sort: 40, active: true, windows: { Mon: [["09:15", "13:15"]], Tue: [["09:15", "11:45"]], Wed: [["09:15", "13:15"]], Thu: [["09:15", "11:45"]], Fri: [["09:15", "13:15"]] } },
