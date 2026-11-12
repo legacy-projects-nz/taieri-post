@@ -179,8 +179,8 @@ function renderNow() {
     ${part("Do these first", () => carryCard())}
     ${part("SOD / EOD", () => quickBar(T, n))}
     ${dayDone ? part("Next shift", () => nextShiftCard(nextDay, n)) : part("Today", () => todayCard(T, nextDay, n))}
-    ${part("Today's tasks", () => addonsCard(T, nextDay, n))}
     ${part("Van use", () => vanUseCard())}
+    ${part("Today's tasks", () => addonsCard(T, nextDay, n))}
     ${part("Roster changes", () => rosterChanges(n))}
     ${part("Alerts", () => alertsCard())}
     ${part("Messages", () => messagesCard())}
@@ -229,7 +229,8 @@ function quickBar(T, n) {
     : runs.map(x => { const due = (x.en ?? x.st) + S.C.rules.eodHours * 60; const late = sod && !x.eod && n.min > due;
         return x.eod ? `<div class="qb done"><b>✓ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${fmtTime(x.eod.sent_at)}${x.eod.finish_time ? ` · finished ${fmtT(toMin(x.eod.finish_time))}` : ""}</small></div>`
           : va ? offB(`■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}`, late ? "overdue" : "not posted yet") : `<button class="btn qb ${late ? "warn" : "accent"}" data-eod="${x.shift.id}" ${sod ? "" : "disabled"}><b>■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${!sod ? "after your SOD" : late ? "overdue" : ""}</small></button>`; }).join("");
-  return `<div class="qbar">${sodBtn}${eodBtns}${brkRow(breakBtn(T, sod), hoursBtn(T, sod))}</div>${runBar(T, sod, runs, va, offB)}`;
+  const out = {}; const rb = runBar(T, sod, runs, va, offB, out);   // while sorting, Sort done sits first on the break row, beside the unpaid break
+  return `<div class="qbar">${sodBtn}${eodBtns}${brkRow(out.sort || "", breakBtn(T, sod), hoursBtn(T, sod))}</div>${rb}`;
 }
 /* Stages: a driver's day is its shifts in order, sorts included. The first starts with the SOD; ▶ Start [run] starts the next one
    and ends the one before (so a sort before a run is timed by the tap); ■ EOR ends the run you're on (e.g. a gap before the next one);
@@ -253,7 +254,7 @@ function sortTap(T, x, runStartMs) {
   if (x.shift.deliver_at && st != null) { const d = Date.parse(x.shift.deliver_at); if (d > st) m = (m || 0) + (d - st) / 60000; }
   return m == null ? null : Math.round(m);
 }
-function runBar(T, sod, runs, va, offB) {
+function runBar(T, sod, runs, va, offB, out = {}) {
   if (!runs.length || !sod) return "";
   const segs = T.segs; const all = segs.map((x, i) => ({ x, i }));
   const started = i => stMs(T, i) != null; const ended = (x, i) => !!x.shift.eor_at || !!x.eod || segs.some((y, j) => j > i && started(j));
@@ -270,7 +271,8 @@ function runBar(T, sod, runs, va, offB) {
   const sorB = !nxt ? "" : cur?.x.sort ? sortB("sor", nxt.x.shift.id, `starts ${lab(nxt.x)}`)
     : va ? offB(`▶ Start ${lab(nxt.x)}`, "not started") : `<button class="btn qb" data-runmark="sor" data-shift="${nxt.x.shift.id}"><b>▶ Start ${lab(nxt.x)}</b><small>${cur ? `ends ${lab(cur.x)}` : ""}</small></button>`;
   const dlvB = !so || cur.x.sort ? "" : sortB("dlv", cur.x.shift.id, `starts ${lab(cur.x)}`);
-  const btns = (so ? (cur.x.sort ? [sorB] : [dlvB]) : [eorB, sorB]).filter(Boolean).join("");
+  if (so) { out.sort = cur.x.sort ? sorB : dlvB; return ""; }
+  const btns = [eorB, sorB].filter(Boolean).join("");
   return btns ? `<div class="qbar">${btns}</div>` : "";
 }
 /* the day's stages so far, e.g. "Sort 5:55am–10:04am · DB 10:04am – now" (shown in Today) */
@@ -282,7 +284,7 @@ function stageLine(T) {
   return line;
 }
 /* Unpaid break and + Hours sit side by side on one full-width row (either alone takes the whole row) */
-const brkRow = (a, b) => a || b ? `<div class="brkrow">${a}${b}</div>` : "";
+const brkRow = (...xs) => xs.some(Boolean) ? `<div class="brkrow">${xs.join("")}</div>` : "";
 /* Break: one button between SOD and the last EOD. Tap to start, tap again to end. */
 function breakBtn(T, sod) {
   const runs = T.segs.filter(x => !x.sort); const allEod = runs.length ? runs.every(x => x.eod) : T.segs.some(x => x.eod);
