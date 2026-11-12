@@ -1,7 +1,7 @@
 // Live board: the old Scorecard dashboard, live. Day chips, KPIs, receivers & pick-ups, important points, team scores + labour,
 // add-ons & timings board, hours by day, admin action centre, roster changes not confirmed, drivers grid, posts board + live feed, map.
 import { sb, q, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, toast, pill, first, col, pct, isSort, avg, sum } from "/shared/core.js";
-import { sodStart, scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, ownerBreakHrs, band, fortnightBand, payBand, money, dayShifts, segTimes, addName, meetRule, meetOn } from "/shared/score.js";
+import { sodStart, scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, ownerBreakHrs, band, fortnightBand, payBand, money, dayShifts, segTimes, addName, meetRule, meetOn, XT_KINDS, extraMins } from "/shared/score.js";
 import { S, sheet, opt, nm, fnm, loadAll, render, scoreData, alertRow, fn, teamRange, rangeBar, teamStats } from "/admin/admin.js";
 import { itemKeyFor } from "/admin/detail.js";
 import { moneyCard, wireMoney } from "/admin/money.js";
@@ -34,7 +34,7 @@ export function liveTab() {
     : `<div class="tiles">${tile("Team on-time rate", closed.length ? ok / closed.length * 100 : null, `${ok} of ${closed.length} posts on time`, null, k("rate"))}${tile("Late", String(late.length), "posted after the due time", late.length ? "c-crit" : "c-ok", k("late"))}${tile("Missing", String(miss.length), "never posted", miss.length ? "c-crit" : "c-ok", k("miss"))}${tile("Drivers rostered", String(rostered), "tracked this week", "", k("rostered"))}</div>`;
 
   const cur = monOf(t);
-  return `${sodReqCard()}${nowCard(n)}${weekNav(wk)}${wk > cur ? `<p class="hint" style="margin:0 0 6px">Next week: the planned roster. Nothing is posted yet, so scores fill in as the days come.</p>` : ""}<div class="card">${chips}${kpi}</div>
+  return `${sodReqCard()}${xtCard()}${nowCard(n)}${weekNav(wk)}${wk > cur ? `<p class="hint" style="margin:0 0 6px">Next week: the planned roster. Nothing is posted yet, so scores fill in as the days come.</p>` : ""}<div class="card">${chips}${kpi}</div>
     ${addonBoard(one ? days[0] : t, n)}
     ${moneyCard(one ? days[0] : t)}
     <div class="grid2">${important(scores, n)}${teamAndLabour(scores, team, wk)}</div>
@@ -209,6 +209,7 @@ export function driverDay(drv, d) {
   // team sort shifts (SUP…) count at the time they took (from the taps, else the roster), so they're paid and neutral in the hours tracking
   if (runSegs.length) for (const x of D.segs.filter(y => y.sort)) { const r = effRows.find(e => e.x.preSort === x); if (r?.c.sortIn != null) continue; exp += (r && !r.c.trainDay && r.c.start != null ? r.c.sortTaken : x.min) / 60; }
   if (!runSegs.length) { exp = D.hours; est = !D.segs.some(x => S.eodBy[x.shift.id]); }     // sort-only day
+  const xtra = extraMins(S.extra, drv.id, d); if (xtra) exp += xtra / 60;   // "+ Hours" logged (approved): expected, and inside SOD → EOD
   const complete = sod && (runSegs.length ? eods.length === runSegs.length : D.segs.some(x => S.eodBy[x.shift.id]));
   const anyE = runSegs.length ? eods : D.segs.map(x => S.eodBy[x.shift.id]).filter(Boolean); const lastE = anyE[anyE.length - 1];
   const endOf = e => e.finish_time ? toMin(e.finish_time) : nzNow(new Date(e.sent_at)).min;
@@ -336,6 +337,21 @@ function sodReqCard() {
   return `<div class="card ${pend.length ? "hot" : ""}" id="sodreq"><h2>Start times to sign off<span>${pend.length ? `${pend.length} waiting` : "nothing waiting"} · SOD more than ${S.C.rules.sodReqMins ?? 20} min off the roster</span></h2>
     ${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : ""}${recent.length ? `<details><summary>Recent decisions</summary><div class="list" style="margin-top:8px">${recent.map(row).join("")}</div></details>` : ""}</div>`;
 }
+function xtCard() {
+  const all = (S.extra || []); const pend = all.filter(r => r.status === "pending"); const recent = all.filter(r => r.status !== "pending").slice(0, 12);
+  if (!pend.length && !recent.length) return "";
+  const row = r => `<div class="item ${r.status === "pending" ? "warn" : r.status === "declined" ? "" : "done"}"><div class="row" style="justify-content:space-between"><b>${esc(nm(r.driver))} · ${label(r.day)} · ${esc(XT_KINDS[r.kind]?.name || r.kind)} · ${r.minutes} min</b><span class="meta">${ago(r.created_at)}</span></div>
+    ${r.note ? `<div class="meta">“${esc(r.note)}”</div>` : ""}
+    ${r.status === "pending" ? (S.me.isOwner ? `<div class="row" style="margin-top:6px"><input class="in" data-xreply="${r.id}" placeholder="Reply to ${esc(first(nm(r.driver)))} (optional)" style="flex:2 1 160px"><button class="btn sm" data-xreq="${r.id}" data-ok="1">✓ Approve</button><button class="btn ghost sm" data-xreq="${r.id}" data-ok="0">Decline</button></div>` : `<div class="meta">Waiting for Jeremy</div>`)
+      : `<div class="meta ${r.status === "approved" ? "c-ok" : "c-crit"}">${r.status === "approved" ? (r.decided_by ? `✓ Approved by ${esc(fnm(r.decided_by))}` : "✓ Added") : `✗ Declined${r.decided_by ? ` by ${esc(fnm(r.decided_by))}` : ""}`}${r.reply ? ` · ${esc(r.reply)}` : ""}${S.me.isOwner && !r.decided_by ? ` · <button class="btn ghost sm" data-xreq="${r.id}" data-ok="0">Decline</button>` : ""}</div>`}</div>`;
+  return `<div class="card ${pend.length ? "hot" : ""}" id="xtreq"><h2>Added hours<span>${pend.length ? `${pend.length} to approve` : "nothing waiting"} · logged with ＋ Hours in the driver app</span></h2>
+    ${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : ""}${recent.length ? `<details><summary>Recent</summary><div class="list" style="margin-top:8px">${recent.map(row).join("")}</div></details>` : ""}</div>`;
+}
+async function decideXt(id, ok) {
+  const reply = $(`[data-xreply="${id}"]`)?.value.trim() || null;
+  const { error } = await sb.rpc("extra_time_decide", { p_id: id, p_approve: ok, p_reply: reply }); if (error) return toast(error.message, "err");
+  toast(ok ? "Approved · added to their hours" : "Declined", "ok"); await loadAll(); render();
+}
 async function decideSodReq(id, ok) {
   const reply = $(`[data-sreply="${id}"]`)?.value.trim() || null;
   const { error } = await sb.rpc("sod_request_decide", { p_id: id, p_approve: ok, p_reply: reply }); if (error) return toast(error.message, "err");
@@ -351,6 +367,7 @@ export function wireLive() {
   $$("[data-lwk]").forEach(b => b.onclick = () => { const cur = monOf(today()); const v = b.dataset.lwk; S.liveWk = v === "0" ? cur : v === "next" ? addDays(cur, 7) : addDays(liveWk(), +v * 7); render(); });
   $$("[data-go]").forEach(b => b.onclick = () => { S.tab = b.dataset.go; location.hash = S.tab; render(); });
   $$("[data-sreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideSodReq(b.dataset.sreq, b.dataset.ok === "1"); });
+  $$("[data-xreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideXt(b.dataset.xreq, b.dataset.ok === "1"); });
   $$("[data-dismiss]").forEach(b => b.addEventListener("click", e => e.stopPropagation()));
   $$("[data-dismiss]").forEach(b => b.onclick = async () => { await q(sb.from("marks").upsert({ key: b.dataset.dismiss, status: "exc", reviewed: true, note: "Dismissed on the dashboard", by_person: S.me.id, at: new Date().toISOString() })); });
   $("#imp-undismiss")?.addEventListener("click", async () => { await sb.from("marks").delete().like("key", "imp|%"); });

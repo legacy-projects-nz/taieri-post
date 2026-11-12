@@ -227,6 +227,10 @@ let ADDON_NAMES = {};
 export function setAddonNames(list) { ADDON_NAMES = Object.fromEntries((list || []).filter(a => a?.id && a.name).map(a => [a.id, a.name])); }
 export function addName(k) { return ADDON_NAMES[k] || ({ outram: "Outram Depot", pgg: "PGG", airport: "Airport", milton: "Milton", balclutha: "Balclutha", owaka: "Owaka", rose: "Roseneath receiver", sb: "Sawyers Bay receiver", fish: "Harbour Fish pick-up", pc: "Port Chalmers receiver", digi: "Digi Art pick-up", fonterra: "Fonterra pick-up", waihola: "Waihola Store" })[k] || k; }
 
+/* "+ Hours": approved extra minutes a driver logged for a day (vehicle clean, check, maintenance, admin, Jeremy's requests) */
+export const XT_KINDS = { van_clean: { name: "Vehicle clean", min: 20 }, vehicle_check: { name: "Vehicle check", min: 10 }, vehicle_maint: { name: "Vehicle maintenance" }, admin: { name: "Admin" }, owner_request: { name: "Jeremy's request", approve: true } };
+export function extraMins(list, driver, day) { return (list || []).filter(e => e.driver === driver && e.day === day && e.status === "approved").reduce((a, e) => a + (e.minutes || 0), 0); }
+
 /* ---- Scores for one driver over a date range ---- */
 // Same driver + dates + data snapshot → same answer, so keep it: a render asks for the same scores many times over (team averages,
 // 8-week trends, pay bands). The cache lives on the data object, so it's dropped as soon as fresh data is loaded.
@@ -267,7 +271,8 @@ function scoreForRaw(driver, from, to, D, C) {
     const sod = d.segs.map(x => D.sods.find(s => s.shift_id === x.shift.id)).find(Boolean);
     const rows = runs.map((x, i) => { const eod = D.eods.find(e => e.shift_id === x.shift.id), ov = D.ovs?.find(o => o.shift_id === x.shift.id); const c = effCalc(x, eod, ov, C, D.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? sodStart(sod, d.start, C) : null, brk: ownerBreakHrs(D.breaks, x.shift.id, own) }); if (c) { c.shift = x.shift; c.eod = eod; c.ov = ov; } return c; }).filter(Boolean);
     const live = rows.filter(r => !r.trainDay);
-    if (live.length && live.every(r => r.perf != null && !r.need.length)) { const A = live.reduce((a, r) => a + r.allowed, 0) / 60, T = live.reduce((a, r) => a + r.takenTrk, 0); const v = Math.max(0, Math.min(150, C.rules.effMethod === "tdt" ? (2 - T / A) * 100 : A / T * 100)); effDays.push({ day: d.day, v, est: live.some(r => r.est), rows, allowed: A, taken: T }); }
+    const xm = extraMins(D.extra, driver, d.day);   // "+ Hours" the driver logged (approved): added to the expected time
+    if (live.length && live.every(r => r.perf != null && !r.need.length)) { const A = (live.reduce((a, r) => a + r.allowed, 0) + xm) / 60, T = live.reduce((a, r) => a + r.takenTrk, 0); const v = Math.max(0, Math.min(150, C.rules.effMethod === "tdt" ? (2 - T / A) * 100 : A / T * 100)); effDays.push({ day: d.day, v, est: live.some(r => r.est), rows, allowed: A, taken: T, extra: xm }); }
     else if (d.day <= today()) effDays.push({ day: d.day, pending: true, need: rows.filter(r => r.need.length).map(r => `${r.code}: ${r.need.join(", ")}`).join("; "), rows });
   }
   const scored = effDays.filter(e => !e.pending); const eff = scored.length ? scored.reduce((a, e) => a + e.v, 0) / scored.length : null;

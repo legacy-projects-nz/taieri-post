@@ -3,7 +3,7 @@ import { DEMO, sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, lon
 import { requireUser } from "/shared/auth.js";
 import { VAPID_PUBLIC } from "/shared/config.js";
 import { resetDemo, newRuns } from "/shared/demo.js";
-import { cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, NET, PICKUP_RUNS, LEG_RUNS, effCalc, setEvidence, setAddonNames, meetRule, meetOn, needsFix, sortExp } from "/shared/score.js";
+import { cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, NET, PICKUP_RUNS, LEG_RUNS, effCalc, setEvidence, setAddonNames, meetRule, meetOn, needsFix, sortExp, XT_KINDS, extraMins } from "/shared/score.js";
 
 const app = $("#app");
 const S = { me: null, set: {}, C: null, runs: [], runsBy: {}, vans: {}, addons: [], rules: [], people: {}, shifts: [], sods: [], eods: [], marks: [], entries: [], feed: [], changes: [], acks: [], msgs: [], leave: [], alerts: [], loc: null, gotit: {}, login: {} };
@@ -25,7 +25,7 @@ S.open = {};   // which folded boxes are open this visit (not saved: everything 
   }
   render();
   window.addEventListener("hashchange", async () => { try { await viewAs(); await loadAll(); render(); } catch (e) { reportError("viewas", e); toast("Couldn't load that just now. Try again.", "err"); } });
-  live(["shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons", "breaks", "van_washes", "sod_requests", "hazards", "hazard_acks"], debounce(async () => { await loadAll(); render(true); }, 400), "drv");
+  live(["extra_time", "shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons", "breaks", "van_washes", "sod_requests", "hazards", "hazard_acks"], debounce(async () => { await loadAll(); render(true); }, 400), "drv");
   setInterval(() => render(true), 60000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadAll().then(() => render(true)); } });
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => { });
@@ -72,7 +72,7 @@ async function loadAllNow() {
   const ids = S.shifts.map(s => s.id);
   // second round, all at once (was one after another): SOD/EOD/overrides, pick-ups, access info, van washes, breaks
   const soft = (p, d) => Promise.resolve(p).then(r => r?.error ? d : (r?.data ?? d), () => d);
-  const [sods, eods, ovs, pk, ai, vw, br, sr, hz, ha] = await Promise.all([
+  const [sods, eods, ovs, pk, ai, vw, br, sr, hz, ha, xt] = await Promise.all([
     ids.length ? q(sb.from("sod").select("*").in("shift_id", ids)) : [], ids.length ? q(sb.from("eod").select("*").in("shift_id", ids)) : [],
     !ids.length ? [] : S.viewer?.isStaff ? q(sb.from("eff_overrides").select("*").in("shift_id", ids)) : sb.rpc("my_eff_overrides").then(r => r.data || []),
     soft(sb.from("pickups").select("*").eq("driver", m).gte("day", t.slice(0, 7) + "-01").order("day", { ascending: false }).limit(40), []),
@@ -82,7 +82,9 @@ async function loadAllNow() {
     soft(sb.from("sod_requests").select("*").eq("driver", m).gte("day", from), []),
     soft(sb.from("hazards").select("*").is("resolved_at", null).order("created_at", { ascending: false }).limit(2000), []),
     soft(sb.from("hazard_acks").select("*").eq("driver", m), null),
+    soft(sb.from("extra_time").select("*").eq("driver", m).gte("day", from).order("created_at"), []),
   ]);
+  S.extra = xt || [];
   S.sods = sods; S.eods = eods; S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || []; S.sodReqs = sr || []; S.hazards = hz || []; S.hzAckOn = Array.isArray(ha); S.hzAcks = Object.fromEntries((ha || []).map(a => [a.hazard_id, a.acked_at]));   // confirmations only once the table exists
   setEvidence(S.shifts, S.eods);
   S.days = dayShifts(S.shifts, S.runsBy, m);
@@ -206,7 +208,7 @@ function quickBar(T, n) {
     : runs.map(x => { const due = (x.en ?? x.st) + S.C.rules.eodHours * 60; const late = sod && !x.eod && n.min > due;
         return x.eod ? `<div class="qb done"><b>✓ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${fmtTime(x.eod.sent_at)}${x.eod.finish_time ? ` · finished ${fmtT(toMin(x.eod.finish_time))}` : ""}</small></div>`
           : va ? offB(`■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}`, late ? "overdue" : "not posted yet") : `<button class="btn qb ${late ? "warn" : "accent"}" data-eod="${x.shift.id}" ${sod ? "" : "disabled"}><b>■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${!sod ? "after your SOD" : late ? "overdue" : "end of run"}</small></button>`; }).join("");
-  return `<div class="qbar">${sodBtn}${eodBtns}${breakBtn(T, sod)}</div>${runBar(T, sod, runs, va, offB)}`;
+  return `<div class="qbar">${sodBtn}${eodBtns}${breakBtn(T, sod)}${hoursBtn(T, sod)}</div>${runBar(T, sod, runs, va, offB)}`;
 }
 /* Stages: a driver's day is its shifts in order, sorts included. The first starts with the SOD; ▶ Start [run] starts the next one
    and ends the one before (so a sort before a run is timed by the tap); ■ EOR ends the run you're on (e.g. a gap before the next one);
@@ -266,6 +268,36 @@ function breakBtn(T, sod) {
   if (!sod || allEod) return taken ? `<div class="qb brk off"><b>☕ Unpaid break</b><small>${taken}</small></div>` : "";
   if (S.viewAs) return `<div class="qb brk off"><b>☕ Unpaid break</b><small>${taken || "none taken yet"}</small></div>`;
   return `<button class="btn ghost qb brk" id="brk-start" data-shift="${(runs.find(x => !x.eod) || T.segs[T.segs.length - 1]).shift.id}"><b>☕ Start unpaid break</b><small>${taken || "tap when you stop for an unpaid break"}</small></button>`;
+}
+/* + Hours: extra work logged for the day (vehicle clean 20 min, vehicle check 10, maintenance / admin with a note, or something Jeremy asked for, which he approves) */
+function hoursBtn(T, sod) {
+  const mine = (S.extra || []).filter(e => e.day === T.day); const ok = mine.filter(e => e.status === "approved").reduce((a, e) => a + e.minutes, 0); const pend = mine.filter(e => e.status === "pending").length;
+  const sub = mine.length ? `${ok} min added today${pend ? ` · ${pend} waiting for Jeremy` : ""}` : "vehicle clean, check, admin…";
+  if (S.viewAs) return mine.length ? `<div class="qb brk off"><b>＋ Hours</b><small>${sub}</small></div>` : "";
+  if (!sod) return "";
+  return `<button class="btn ghost qb brk" id="xt-add" data-day="${T.day}" data-shift="${(T.segs.filter(x => !x.sort).find(x => !x.eod) || T.segs[T.segs.length - 1]).shift.id}"><b>＋ Hours</b><small>${sub}</small></button>`;
+}
+function hoursSheet(day, shiftId) {
+  const mine = (S.extra || []).filter(e => e.day === day);
+  const st = e => e.status === "pending" ? pill("waiting for Jeremy", "warn") : e.status === "declined" ? pill("declined", "crit") : pill("added", "ok");
+  const list = mine.length ? `<div class="list" style="margin-bottom:10px">${mine.map(e => `<div class="item"><div class="row" style="justify-content:space-between;align-items:center"><span><b>${esc(XT_KINDS[e.kind]?.name || e.kind)}</b> · ${e.minutes} min ${st(e)}</span>${!e.decided_by ? `<button class="btn ghost sm" data-xtdel="${e.id}">Remove</button>` : ""}</div>${e.note ? `<div class="meta">${esc(e.note)}</div>` : ""}${e.reply ? `<div class="meta">Jeremy: ${esc(e.reply)}</div>` : ""}</div>`).join("")}</div>` : "";
+  const opts = Object.entries(XT_KINDS).map(([k, o], i) => `<label class="chk ${i === 0 ? "on" : ""}"><input type="radio" name="xk" value="${k}" ${i === 0 ? "checked" : ""}>${esc(o.name)}${o.min ? ` · ${o.min} min` : ""}</label>`).join("");
+  sheet(`<h3>＋ Hours · ${label(day)}</h3><p class="hint">Extra work on top of your run. It's added to your expected time, so it doesn't count against your efficiency. Jeremy's requests wait for his OK.</p>${list}
+    <form class="frm" id="xf"><div class="full row" style="flex-wrap:wrap;gap:6px">${opts}</div>
+    <label class="f" id="xmin-w" hidden>Minutes<input class="in" id="xmin" inputmode="numeric" placeholder="e.g. 30"></label>
+    <label class="f full" id="xnote-w" hidden><span id="xnote-l">What did you do?</span><input class="in" id="xnote" placeholder=""></label>
+    <button class="btn full" type="submit">Add</button></form>`, (bg, close) => {
+    const sync = () => { const k = bg.querySelector("input[name=xk]:checked").value; const o = XT_KINDS[k]; bg.querySelectorAll("input[name=xk]").forEach(i => i.parentElement.classList.toggle("on", i.checked));
+      bg.querySelector("#xmin-w").hidden = !!o.min; bg.querySelector("#xnote-w").hidden = !!o.min;
+      bg.querySelector("#xnote-l").textContent = k === "owner_request" ? "What did Jeremy ask you to do?" : "What did you do?"; };
+    bg.querySelectorAll("input[name=xk]").forEach(i => i.onchange = sync); sync();
+    bg.querySelectorAll("[data-xtdel]").forEach(b => b.onclick = async () => { const { error } = await sb.from("extra_time").delete().eq("id", b.dataset.xtdel); if (error) return toast(error.message, "err"); toast("Removed", "ok"); close(); await loadAll(); render(); });
+    bg.querySelector("#xf").onsubmit = async e => { e.preventDefault(); const k = bg.querySelector("input[name=xk]:checked").value; const o = XT_KINDS[k];
+      const minutes = o.min || Math.round(+bg.querySelector("#xmin").value || 0); const note = o.min ? null : bg.querySelector("#xnote").value.trim();
+      if (!minutes || minutes < 1 || minutes > 600) return toast("Put in the minutes (1 to 600)", "err"); if (!o.min && !note) return toast("Add a note about what you did", "err");
+      const { error } = await sb.from("extra_time").insert({ driver: S.me.id, shift_id: shiftId || null, day, kind: k, minutes, note, status: o.approve ? "pending" : "approved" }); if (error) return toast(error.message, "err");
+      toast(o.approve ? `${minutes} min sent to Jeremy to approve` : `${minutes} min added ✓`, "ok"); close(); await loadAll(); render(); };
+  });
 }
 async function startBreak(shiftId) { const { error } = await sb.rpc("break_start", { p_shift: shiftId }); if (error) return toast(error.message, "err"); toast("Unpaid break started ☕", "ok"); await loadAll(); render(); }
 async function endBreak() { const { error } = await sb.rpc("break_end"); if (error) return toast(error.message, "err"); toast("Unpaid break ended ✓", "ok"); await loadAll(); render(); }
@@ -529,7 +561,7 @@ function scoresCard() {
     ${selK && SC[selR] ? `<div class="meta mono" style="text-transform:uppercase">${RG[selR].l} · ${label(RG[selR].from)} – ${label(RG[selR].to)}</div>${scoreDetail(SC[selR], selK)}` : ""}
     ${historyBlock()}</div>`;
 }
-function dataFor() { return { shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, runsBy: S.runsBy, ovs: S.ovs, breaks: S.breaks || [], effBreakFor: S.me.pay_exclude ? [S.me.id] : [] }; }
+function dataFor() { return { extra: S.extra || [], shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, runsBy: S.runsBy, ovs: S.ovs, breaks: S.breaks || [], effBreakFor: S.me.pay_exclude ? [S.me.id] : [] }; }
 function scoreAt(from, to) { return scoreFor(S.me.id, from, to, dataFor(), S.C); }
 function historyBlock() {
   const t = today(); const weeks = Array.from({ length: 6 }, (_, i) => addDays(monOf(t), -7 * i)).map(w => ({ w, s: scoreAt(w, addDays(w, 6)) })).filter(x => x.s.closed || x.s.effDays.length || x.s.accDays.length);
@@ -719,6 +751,7 @@ function wire() {
   $$("[data-confirm]").forEach(b => b.onclick = async () => { await q(sb.from("message_recipients").update({ confirmed_at: new Date().toISOString(), read_at: new Date().toISOString() }).eq("message_id", b.dataset.confirm).eq("person", S.me.id)); toast("Confirmed ✓", "ok"); });
   const unread = S.msgs.filter(m => !m.read_at).map(m => m.message_id); if (unread.length) sb.from("message_recipients").update({ read_at: new Date().toISOString() }).in("message_id", unread).eq("person", S.me.id).then(() => { });
   $("#sod")?.addEventListener("click", e => sendSod(e.currentTarget.dataset.shift));
+  $("#xt-add")?.addEventListener("click", e => hoursSheet(e.currentTarget.dataset.day, e.currentTarget.dataset.shift));
   $("#brk-start")?.addEventListener("click", e => { e.currentTarget.disabled = true; startBreak(e.currentTarget.dataset.shift); });
   $("#brk-end")?.addEventListener("click", e => { e.currentTarget.disabled = true; endBreak(); });
   $("#sod-edit")?.addEventListener("click", e => editSod(e.currentTarget.dataset.shift));
@@ -1004,7 +1037,7 @@ function effDaySheet(day) {
       <div class="scroll"><table class="dt"><tr><th>Part</th><th>Calculation</th><th>Min</th></tr>${r.parts.map(p => `<tr><td>${esc(p[0])}</td><td class="meta">${esc(p[1])}</td><td class="num">${p[2]}</td></tr>`).join("")}<tr><td><b>Expected</b></td><td></td><td class="num"><b>${Math.round(r.allowed)}</b></td></tr>${r.sortTaken ? `<tr><td class="meta">Team sort (${esc(r.sortRun || "SUP")})</td><td class="meta">${fmtT(r.sortFrom)}–${fmtT(r.start)} · paid, not scored · the run is timed from ${fmtT(r.start)}</td><td class="num meta">${Math.round(r.sortTaken)}</td></tr>` : ""}</table></div>
       <div class="meta">Figures: ${["parcels", "stops", "trays", "sort_min", "pickups", "pickup_parcels"].filter(k => (r.ov?.[k] ?? r.eod?.[k]) != null || r.guess.includes(k)).map(k => `${({ parcels: r.net === "tge" ? "delivery total" : "parcels", stops: r.net === "tge" ? "jobs" : "stops", trays: "trays", sort_min: "sorting min", pickups: "pick-up stops", pickup_parcels: "pick-up parcels" })[k]} ${r.ov?.[k] ?? r.eod?.[k] ?? (r.figs?.[k === "pickup_parcels" ? "pup" : k]?.v ?? "?")} (${src(r, k)})`).join(" · ") || "none yet"}</div>
       ${!r.eod && day <= today() && !S.viewAs ? `<button class="btn accent sm" data-eodv="${r.shift.id}">Post the EOD for ${esc(r.code)}</button>` : ""}</div>`).join("");
-  sheet(`<h3>Efficiency · ${label(day, true)}</h3><p class="meta">${e.pending ? `<span class="c-warn">Waiting on: ${esc(e.need || "EOD")}</span>` : e.manual ? `Set by Jeremy at ${Math.round(e.v)}% for the day` : `${e.taken.toFixed(1)} h actual vs ${e.est ? "≈" : ""}${e.allowed.toFixed(1)} h expected → <b class="c-${col(Math.min(100, e.v))}">${Math.round(e.v)}%</b>${e.est ? " (a best guess filled a missing figure)" : ""}`}</p>
+  sheet(`<h3>Efficiency · ${label(day, true)}</h3><p class="meta">${e.pending ? `<span class="c-warn">Waiting on: ${esc(e.need || "EOD")}</span>` : e.manual ? `Set by Jeremy at ${Math.round(e.v)}% for the day` : `${e.taken.toFixed(1)} h actual vs ${e.est ? "≈" : ""}${e.allowed.toFixed(1)} h expected → <b class="c-${col(Math.min(100, e.v))}">${Math.round(e.v)}%</b>${e.est ? " (a best guess filled a missing figure)" : ""}${e.extra ? ` · includes ${e.extra} min added hours` : ""}`}</p>
     <p class="hint">${R.effMethod === "tdt" ? "Score = (2 − actual ÷ expected) × 100." : "Score = expected ÷ actual."} Expected = base time + per parcel + per stop + sorting + pick-ups + legs, from the run formula.</p>${runs}
     <div class="row"><button class="btn ghost sm" data-dayv="${day}">The whole day</button></div>`, null, { wide: true });
 }
