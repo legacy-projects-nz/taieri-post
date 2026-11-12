@@ -86,8 +86,6 @@ async function loadAllNow() {
   ]);
   // Van use: people Jeremy picks (settings.van_use) see who's on which van for RAM, TUA and Flyer, today and the next few days
   const vu = vanUse(set);
-  // Team roster (read-only): everyone's published shifts this week and next (unpublished weeks are hidden by the database)
-  S.roster = await soft(sb.from("shifts").select("id,day,run,driver,trainee,van,start_at,end_at").gte("day", monOf(t)).lte("day", addDays(monOf(t), 13)), []);
   S.vanUse = vu ? await soft(sb.from("shifts").select("id,day,run,driver,trainee,van,start_at").in("run", vu.runs).gte("day", t).lte("day", addDays(t, 6)).order("day"), []) : null;
   S.extra = xt || [];
   S.sods = sods; S.eods = eods; S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || []; S.sodReqs = sr || []; S.hazards = hz || []; S.hzAckOn = Array.isArray(ha); S.hzAcks = Object.fromEntries((ha || []).map(a => [a.hazard_id, a.acked_at]));   // confirmations only once the table exists
@@ -176,7 +174,7 @@ function renderNow() {
   const tRuns = T ? T.segs.filter(x => !x.sort) : []; const dayDone = !!T && (tRuns.length ? tRuns.every(x => x.eod) : T.segs.some(x => x.eod)); S.dayDone = dayDone;
   app.innerHTML = `<div class="wrap">
     ${demoBar()}${viewBar()}
-    <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
+    <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><a class="btn ghost sm" href="/admin/#runboard" style="text-decoration:none;margin-bottom:6px;display:inline-flex">Run Board</a><br><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
     ${S.loadErr ? `<p class="hint" style="margin:0 0 8px;color:var(--crit)">No connection. Showing what loaded at ${fmtT(nzNow(new Date(S.loadedAt)).min)}. Trying again on its own.</p>` : ""}
     ${part("Do these first", () => carryCard())}
     ${part("SOD / EOD", () => quickBar(T, n))}
@@ -194,7 +192,6 @@ function renderNow() {
     ${pair(part("My van", () => vanCard(T, null)), part("My shifts", () => shiftsCard(t)))}
     ${pair(part("To fix", () => toFixCard(n)), part("Notes from Jeremy", () => fromJeremy()))}
     ${pair(part("Leave", () => leaveCard()), part("My details", () => detailsCard()))}
-    ${part("Team roster", () => rosterCard(t))}
     ${part("Calendar", () => calendarCard(t))}
     ${part("More", () => moreCard())}
     ${part("Passwords & logins", () => accessCard())}
@@ -510,20 +507,6 @@ function vanInner(src) {
     return `<div><button class="plate clk" data-vanv="${esc(p)}" style="background:none;cursor:pointer" title="Tap for this van's history">${esc(p)}</button>${v.model ? ` <span class="meta">${esc(v.model)}</span>` : ""}<dl class="kv" style="margin-top:8px;grid-template-columns:56px 1fr"><dt>WOF</dt><dd>${v.wof_due ? label(v.wof_due, true) + " " : ""}${pill(w[1], w[0] === "unknown" ? "grey" : w[0])}</dd><dt>Rego</dt><dd>${v.rego_due ? label(v.rego_due, true) + " " : ""}${pill(r[1], r[0] === "unknown" ? "grey" : r[0])}</dd><dt>RUCs</dt><dd>${esc(rtxt)} ${pill(ruc[1], ruc[0] === "unknown" ? "grey" : ruc[0])}</dd></dl></div>`; }).join("")}
 `;
 }
-/* ---------- Team roster: the whole published roster, view only (drivers can't change anything here) ---------- */
-function rosterCard(t) {
-  const wk = S.rosterWk || 0; const mon = addDays(monOf(t), wk * 7); const days = [0, 1, 2, 3, 4, 5, 6].map(i => addDays(mon, i));
-  const sh = (S.roster || []).filter(s => s.day >= days[0] && s.day <= days[6]);
-  const used = days.filter(d => sh.some(s => s.day === d));
-  const runs = [...new Set(sh.map(s => s.run))].sort((a, b) => (S.runsBy[a]?.sort ?? 999) - (S.runsBy[b]?.sort ?? 999));
-  const nm = id => id ? esc(first(S.people[id]?.name || id)) : "";
-  const cell = (r, d) => sh.filter(s => s.run === r && s.day === d).map(s => { const mine = s.driver === S.me.id || s.trainee === S.me.id;
-    return `<div${mine ? ` style="font-weight:800;color:var(--accent)"` : ""}>${nm(s.driver) || `<span class="meta">—</span>`}${s.trainee ? `<span class="meta"> +${nm(s.trainee)}</span>` : ""}</div>`; }).join("");
-  const tabs = `<div class="row" style="gap:6px;margin-bottom:8px">${[["This week", 0], ["Next week", 1]].map(([l, v]) => `<button class="btn sm ${wk === v ? "" : "ghost"}" data-rwk="${v}" style="flex:0 0 auto">${l}</button>`).join("")}<span class="meta" style="align-self:center">View only</span></div>`;
-  const body = !used.length ? `<p class="hint">${wk ? "Next week's roster isn't out yet." : "No roster out for this week."}</p>`
-    : `<div class="scroll"><table class="dt" style="font-size:13px"><tr><th>Run</th>${used.map(d => `<th${d === t ? ` style="color:var(--accent)"` : ""}>${esc(dayName(d))}<div class="meta">${new Date(d + "T12:00:00Z").getUTCDate()}</div></th>`).join("")}</tr>${runs.map(r => `<tr><td><b>${esc(S.runsBy[r]?.label || r)}</b></td>${used.map(d => `<td>${cell(r, d)}</td>`).join("")}</tr>`).join("")}</table></div>`;
-  return `<div class="card" id="roster"><h2>Team roster<span>${label(mon)}</span></h2>${tabs}${body}</div>`;
-}
 function shiftsCard(t) {
   const mon = monOf(t); const nextMon = addDays(mon, 7);
   const trOf = d => (S.trainee || []).filter(s => s.day === d);
@@ -795,7 +778,6 @@ function moreCard() {
 /* ================= wiring ================= */
 function wire() {
   $("#signout")?.addEventListener("click", signOut);
-  $$("[data-rwk]").forEach(b => b.addEventListener("click", () => { S.rosterWk = +b.dataset.rwk; S.open["roster"] = true; render(); }));
   $("#demo-reset")?.addEventListener("click", async () => { resetDemo(); S.open = {}; S.scSel = null; await loadAll(); render(); toast("Demo reset ↺", "ok"); });
   $("#demo-new")?.addEventListener("click", async () => { newRuns(); S.open = {}; S.scSel = null; await loadAll(); render(); toast("New runs 🎲", "ok"); });
   $("#view-as")?.addEventListener("click", async () => { await loadGps(); const list = S.drivers.filter(d => d.id !== S.viewer.id);

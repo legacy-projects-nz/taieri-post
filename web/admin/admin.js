@@ -22,7 +22,7 @@ export const fn = async (name, body) => { const { data, error } = await sb.funct
 
 (async () => {
   try { S.me = await requireUser(app, { staff: true }); } catch { return; }
-  if (!S.me.isStaff) { app.innerHTML = `<div class="wrap"><div class="card"><h2>Drivers' page is at the main link</h2><p><a href="/">Open the driver portal</a></p></div></div>`; return; }
+  if (!S.me.isStaff) { S.ro = true; S.tab = "runboard"; }   // drivers: the Run Board only, view only (the database blocks any change)
   errCtx({ app: "owner", person: S.me.id });
   // first load: if the connection drops, say so and keep trying instead of sitting on "Loading…"
   for (let i = 0; ; i++) {
@@ -49,6 +49,7 @@ export function loadAll(opts = {}) {
   return _inflight;
 }
 async function loadAllNow() {
+  if (S.ro) return loadReadOnly();
   const t = today(); const wk = S.week; const mt = monOf(t); // ISO dates compare as strings (Math.min/max gave NaN, so weeks more than ~2 weeks out never loaded)
   let from = addDays(wk < mt ? wk : mt, -63); const to = addDays(wk > mt ? wk : mt, 20);
   if (S.tsRange === "custom" && S.tsFrom && S.tsFrom < from) from = S.tsFrom;   // dashboard dates further back than usual
@@ -97,6 +98,19 @@ async function loadAllNow() {
 
 const TABS = [["live", "Live", "scorecard"], ["runboard", "Run Board", "roster"], ["classic", "Run Board (classic)", "roster"], ["scorecard", "Scorecard", "scorecard"], ["fix", "Fix posts", "scorecard"], ["routes", "Routes", "alerts"], ["allowances", "Allowances", "roster"], ["pickups", "Pick-ups", "roster"], ["hazards", "Hazards", "roster"], ["messages", "Messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"], ["pay", "Penalties & pay", "people"]];
 /* tabs that live behind the ☰ button at the end of the tab bar */
+/* drivers' view-only Run Board: just what the board needs, from tables drivers may read (published weeks only) */
+async function loadReadOnly() {
+  const t = today(); const wk = S.week; const mt = monOf(t); const from = addDays(wk < mt ? wk : mt, -7), to = addDays(wk > mt ? wk : mt, 13);
+  const soft = (p, d) => Promise.resolve(p).then(r => r?.error ? d : (r?.data ?? d), () => d);
+  const [set, runs, vans, addons, rules, people, shifts, skills, leave, sods] = await Promise.all([
+    loadSettings(), q(sb.from("runs").select("*").order("sort")), q(sb.from("vans").select("*").order("plate")), q(sb.from("addons").select("*")), soft(sb.from("timing_rules").select("*"), []),
+    q(sb.from("people_public").select("id,name,role,active").order("name")), q(sb.from("shifts").select("*").gte("day", from).lte("day", to)),
+    soft(sb.from("run_skills").select("*"), []), soft(sb.from("leave_requests").select("*"), []), soft(sb.from("sod").select("*"), []),
+  ]);
+  Object.assign(S, { set, runs, vans, addons, rules, people, shifts, skills, leave, sods, eods: [], items: [], acks: [], sent: [], notes: [], msgs: [], recips: [], alerts: [], entries: [], marks: [], feed: [], ovs: [], locs: [], vchk: [], washes: [], breaks: [], sodReqs: [], hazards: [], hzAcks: [], extra: [], login: {} });
+  setAddonNames(addons); S.C = cfg(set); S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vansBy = Object.fromEntries(vans.map(v => [v.plate, v])); S.peopleBy = Object.fromEntries(people.map(p => [p.id, p]));
+  S.drivers = people.filter(p => p.active); S.sodBy = Object.fromEntries(S.sods.map(x => [x.shift_id, x])); S.eodBy = {};
+}
 const MENU_TABS = ["classic", "allowances", "fleet", "timing", "pay"];
 /* collapsible boxes: on every tab, every box after the first starts collapsed; tap its heading to open. Open/closed is kept while the page is open.
    "Shift right now" and "Add-ons right now" (ids rightnow*) can be collapsed too, wherever they sit, but start open. */
@@ -118,11 +132,11 @@ function folds() {
 }
 export function render(soft = false) {
   if (soft && (document.activeElement?.matches("input,textarea,select") || $(".sheet-bg"))) return;
-  const n = nzNow(); const tabs = TABS.filter(([, , a]) => S.me.can(a));
+  const n = nzNow(); const tabs = S.ro ? [["runboard", "Run Board"]] : TABS.filter(([, , a]) => S.me.can(a));
   if (!tabs.some(([k]) => k === S.tab)) S.tab = tabs[0][0];
   const badge = { hazards: hazardBadge(), live: S.alerts.filter(a => !a.resolved_at).length + (S.me.isOwner ? (S.sodReqs || []).filter(r => r.status === "pending").length + (S.extra || []).filter(r => r.status === "pending").length : 0), leave: S.leave.filter(l => l.status === "pending").length, runboard: S.items.filter(i => i.roster_changes.status === "awaiting_approval").length, fix: S.me.can("scorecard") ? fixCount() : 0, alerts: S.alerts.filter(a => !a.resolved_at).length };
   app.innerHTML = `<div class="wrap">
-    <div class="top"><div><div class="brand">Taieri Ops</div><h1>${({ live: "Live board", runboard: "Run Board", classic: "Run Board (classic)", scorecard: "Driver Scorecard", fix: "Fix posts", routes: "Routes", allowances: "Back-up & on-call allowances", pickups: "Pick-ups to invoice", hazards: "Hazard register", alerts: "Alerts & timings", messages: "Messages", leave: "Leave", fleet: "Fleet", timing: "Timing rules", people: "People & settings", pay: "Penalties & pay" })[S.tab]}</h1></div>
+    <div class="top"><div><div class="brand">${S.ro ? `Taieri Post · view only · <a href="/" style="color:inherit">back to my app</a>` : "Taieri Ops"}</div><h1>${({ live: "Live board", runboard: "Run Board", classic: "Run Board (classic)", scorecard: "Driver Scorecard", fix: "Fix posts", routes: "Routes", allowances: "Back-up & on-call allowances", pickups: "Pick-ups to invoice", hazards: "Hazard register", alerts: "Alerts & timings", messages: "Messages", leave: "Leave", fleet: "Fleet", timing: "Timing rules", people: "People & settings", pay: "Penalties & pay" })[S.tab]}</h1></div>
       <div class="upd">${S.me.can("scorecard") ? `<span class="row" style="gap:6px;justify-content:flex-end;margin-bottom:6px"><a class="btn ghost sm" href="/" style="flex:0 0 auto;text-decoration:none">Driver portals</a><button class="btn ghost sm" id="quick-err" style="flex:0 0 auto">+ Record</button></span>` : ""}<span class="dot live"></span>live · ${fmtT(n.min)}<br>${esc(first(S.me.name))} · <button class="linkbtn" id="signout">sign out</button></div></div>
     <nav class="nav">${tabs.filter(([k]) => !MENU_TABS.includes(k)).map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? "on" : ""}">${l}${badge[k] ? `<span class="b ${k === "runboard" ? "warn" : ""}">${badge[k]}</span>` : ""}</button>`).join("")}${tabs.some(([k]) => MENU_TABS.includes(k)) ? `<button id="nav-menu" class="${MENU_TABS.includes(S.tab) ? "on" : ""}" aria-label="More pages" title="More">☰${MENU_TABS.includes(S.tab) ? ` ${tabs.find(([k]) => k === S.tab)?.[1] || ""}` : ""}</button>` : ""}</nav>
     <div id="view">${(() => { try { return ({ live: liveTab2, runboard: runBoardTab, classic: classicTab, scorecard: scorecardTab, fix: fixTab, routes: routesTab, allowances: allowancesTab, pickups: pickupsTab, hazards: hazardsTab, alerts: alertsTab, messages: messagesTab, leave: leaveTab, fleet: fleetTab, timing: timingTab, people: peopleTab, pay: payTab })[S.tab](); } catch (e) { reportError("view:" + S.tab, e); return `<div class="card"><h2>This page hit a problem</h2><p class="hint">It couldn't be shown just now and the error has been logged. The other tabs still work.</p><button class="btn ghost sm" onclick="location.reload()">Reload</button></div>`; } })()}</div>
