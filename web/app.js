@@ -84,6 +84,9 @@ async function loadAllNow() {
     soft(sb.from("hazard_acks").select("*").eq("driver", m), null),
     soft(sb.from("extra_time").select("*").eq("driver", m).gte("day", from).order("created_at"), []),
   ]);
+  // Van use: people Jeremy picks (settings.van_use) see who's on which van for RAM, TUA and Flyer, today and the next few days
+  const vu = vanUse(set);
+  S.vanUse = vu ? await soft(sb.from("shifts").select("id,day,run,driver,trainee,van,start_at").in("run", vu.runs).gte("day", t).lte("day", addDays(t, 6)).order("day"), []) : null;
   S.extra = xt || [];
   S.sods = sods; S.eods = eods; S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || []; S.sodReqs = sr || []; S.hazards = hz || []; S.hzAckOn = Array.isArray(ha); S.hzAcks = Object.fromEntries((ha || []).map(a => [a.hazard_id, a.acked_at]));   // confirmations only once the table exists
   setEvidence(S.shifts, S.eods);
@@ -177,6 +180,7 @@ function renderNow() {
     ${part("SOD / EOD", () => quickBar(T, n))}
     ${dayDone ? part("Next shift", () => nextShiftCard(nextDay, n)) : part("Today", () => todayCard(T, nextDay, n))}
     ${part("Today's tasks", () => addonsCard(T, nextDay, n))}
+    ${part("Van use", () => vanUseCard())}
     ${part("Roster changes", () => rosterChanges(n))}
     ${part("Alerts", () => alertsCard())}
     ${part("Messages", () => messagesCard())}
@@ -473,6 +477,20 @@ function nextShiftCard(N, n) {   // one box: shift, tasks, vehicle, split by gre
   return `<div class="card nextc" id="nextshift" data-fold-open="${S.dayDone ? 1 : 0}"><h2>Next shift<span>${N.day === addDays(today(), 1) ? "Tomorrow" : label(N.day)} · ${fmtT(N.start)}–${fmtT(N.end)}</span></h2>
     <section class="ns"><div class="bigrow">${vanChips(N)}</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}</section>
     <section class="ns"><h3 class="sub">Vehicle</h3>${vanInner(N)}</section>${buSection(n)}</div>`;
+}
+/* ---------- Van use: who is on which van for RAM, TUA and Flyer (shown only to people ticked in the owner portal) ---------- */
+const VAN_USE_RUNS = ["RAM", "TUA", "FLY"];
+function vanUse(set) { const v = set?.van_use; const id = S.me?.id; return v && (v.people || []).includes(id) ? { runs: v.runs?.length ? v.runs : VAN_USE_RUNS } : null; }
+function vanUseCard() {
+  if (!S.vanUse) return "";
+  const runs = vanUse(S.set)?.runs || VAN_USE_RUNS; const t = today();
+  const days = [...new Set(S.vanUse.map(s => s.day))].sort().slice(0, 3); if (!days.includes(t)) days.unshift(t); const shown = days.slice(0, 3);
+  const nm = id => id ? esc(first(S.people[id]?.name || id)) : `<span class="c-crit">unassigned</span>`;
+  const rl = c => esc(S.runsBy[c]?.label || S.runsBy[c]?.name || c);
+  const block = d => { const rows = runs.map(r => { const ss = S.vanUse.filter(s => s.day === d && s.run === r); if (!ss.length) return ""; return ss.map(s => { const v = s.van ? S.vans[s.van] : null;
+      return `<tr><td><b>${rl(r)}</b>${s.start_at ? `<div class="meta">${fmtT(toMin(s.start_at))}</div>` : ""}</td><td>${nm(s.driver)}${s.trainee ? `<div class="meta">+ ${nm(s.trainee)}</div>` : ""}</td><td>${s.van ? `<button class="plate clk" data-vanv="${esc(s.van)}" style="background:none;cursor:pointer">${esc(s.van)}</button>${v?.name || v?.model ? `<div class="meta">${esc(v.name || v.model)}</div>` : ""}` : `<span class="c-crit">no van</span>`}</td></tr>`; }).join(""); }).join("");
+    return `<div class="meta mono" style="margin:8px 0 4px">${d === t ? "TODAY" : esc(label(d)).toUpperCase()}</div>${rows ? `<table class="dt"><tr><th>Run</th><th>Driver</th><th>Van</th></tr>${rows}</table>` : `<p class="hint" style="margin:0">Nothing rostered.</p>`}`; };
+  return `<div class="card" id="vanuse"><h2>Van use<span>${runs.map(rl).join(" · ")}</span></h2>${shown.map(block).join("")}</div>`;
 }
 function vanCard(T, N) {
   const src = T && T.segs.some(x => x.shift.van) ? T : N && N.segs.some(x => x.shift.van) ? N : null; if (!src) return "";
