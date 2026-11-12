@@ -249,11 +249,16 @@ function runBar(T, sod, runs, va, offB) {
   const sorB = !nxt ? "" : cur?.x.sort ? sortB("sor", nxt.x.shift.id, `starts ${lab(nxt.x)}`)
     : va ? offB(`▶ Start ${lab(nxt.x)}`, "not started") : `<button class="btn qb" data-runmark="sor" data-shift="${nxt.x.shift.id}"><b>▶ Start ${lab(nxt.x)}</b><small>${cur ? `ends ${lab(cur.x)}` : ""}</small></button>`;
   const dlvB = !so || cur.x.sort ? "" : sortB("dlv", cur.x.shift.id, `starts ${lab(cur.x)}`);
+  const btns = (so ? (cur.x.sort ? [sorB] : [dlvB]) : [eorB, sorB]).filter(Boolean).join("");
+  return btns ? `<div class="qbar">${btns}</div>` : "";
+}
+/* the day's stages so far, e.g. "Sort 5:55am–10:04am · DB 10:04am – now" (shown in Today) */
+function stageLine(T) {
+  const segs = T.segs; const all = segs.map((x, i) => ({ x, i }));
   const tm = ms => fmtTime(new Date(ms).toISOString());
   const line = segs.length < 2 && !segs[0].shift.deliver_at ? "" : all.map(({ x, i }) => { const s0 = stMs(T, i); if (s0 == null) return ""; const e = x.shift.eor_at ? Date.parse(x.shift.eor_at) : (segs.slice(i + 1).map((_, k) => stMs(T, i + 1 + k)).find(v => v != null) ?? null);
     return `<b>${x.sort ? "Sort" : esc(x.shift.run)}</b> ${tm(s0)}${x.shift.deliver_at ? ` (${NO_SORT.includes(x.shift.run) ? "on the road" : "delivering"} ${tm(Date.parse(x.shift.deliver_at))})` : ""}${e ? `–${tm(e)}` : x.eod ? " ✓" : " – now"}`; }).filter(Boolean).join(" · ");
-  const btns = (so ? (cur.x.sort ? [sorB] : [dlvB]) : [eorB, sorB]).filter(Boolean).join("");
-  return `${btns ? `<div class="qbar">${btns}</div>` : ""}${line ? `<p class="meta" style="margin:2px 0 6px;text-align:center">${line}</p>` : ""}`;
+  return line;
 }
 /* Unpaid break and + Hours sit side by side on one full-width row (either alone takes the whole row) */
 const brkRow = (a, b) => a || b ? `<div class="brkrow">${a}${b}</div>` : "";
@@ -419,8 +424,8 @@ function todayCard(T, N, n) {
         const nm = x => x.sort ? (S.runsBy[x.shift.run]?.label || "Sort") : x.shift.run;
         return `<div class="card today tdmini" id="today-mini" role="button" tabindex="0" aria-expanded="false" title="Tap for the full day">
           <div class="tdr1"><b>Today</b><span class="big">${fmtT((left[0] || T.segs[0]).st)}–${fmtT(T.end)}</span>${vanChips(T)}<i class="fchev" aria-hidden="true"></i></div>
-          <div class="tdr2 meta">Now <b>${esc(nm(cur))}</b> till ${fmtT(cur.en)}${nxt ? ` · next <b>${esc(nm(nxt))}</b> ${fmtT(nxt.st)}` : ""}${S.locOn ? " · 📍" : ""}</div></div>`; }
-      return `<div class="card today${sodSeg ? " " : ""}" ${sodSeg ? `id="today-full"` : ""}><h2>Today<span>${label(T.day)}${sodSeg ? ` <button class="btn ghost sm" id="today-less" type="button" style="min-height:28px;padding:2px 10px">Less ▴</button>` : ""}</span></h2><div class="big bigrow"><span>${fmtT((left[0] || T.segs[0]).st)}–${fmtT(T.end)}</span>${vanChips(T)}</div>
+          <div class="tdr2 meta">${stageLine(T) || `Now <b>${esc(nm(cur))}</b> till ${fmtT(cur.en)}${nxt ? ` · next <b>${esc(nm(nxt))}</b> ${fmtT(nxt.st)}` : ""}`}${S.locOn ? " · 📍" : ""}</div></div>`; }
+      return `<div class="card today${sodSeg ? " " : ""}" ${sodSeg ? `id="today-full"` : ""}><h2>Today<span>${label(T.day)}${sodSeg ? ` <button class="btn ghost sm" id="today-less" type="button" style="min-height:28px;padding:2px 10px">Less ▴</button>` : ""}</span></h2><div class="big bigrow"><span>${fmtT((left[0] || T.segs[0]).st)}–${fmtT(T.end)}</span>${vanChips(T)}</div>${stageLine(T) ? `<p class="meta" style="margin:0">${stageLine(T)}</p>` : ""}
         ${sodBtn}${(left.length ? left : T.segs).map(x => segRow(x, T.day, n, true, false)).join("")}
 </div>`;
     }
