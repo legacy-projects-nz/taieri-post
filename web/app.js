@@ -284,7 +284,7 @@ function hoursSheet(day, shiftId) {
   const st = e => e.status === "pending" ? pill("waiting for Jeremy", "warn") : e.status === "declined" ? pill("declined", "crit") : pill("added", "ok");
   const list = mine.length ? `<div class="list" style="margin-bottom:10px">${mine.map(e => `<div class="item"><div class="row" style="justify-content:space-between;align-items:center"><span><b>${esc(XT_KINDS[e.kind]?.name || e.kind)}</b> · ${e.minutes} min ${st(e)}</span>${!e.decided_by ? `<button class="btn ghost sm" data-xtdel="${e.id}">Remove</button>` : ""}</div>${e.note ? `<div class="meta">${esc(e.note)}</div>` : ""}${e.reply ? `<div class="meta">Jeremy: ${esc(e.reply)}</div>` : ""}</div>`).join("")}</div>` : "";
   const opts = Object.entries(XT_KINDS).map(([k, o], i) => `<label class="chk ${i === 0 ? "on" : ""}"><input type="radio" name="xk" value="${k}" ${i === 0 ? "checked" : ""}>${esc(o.name)}${o.min ? ` · ${o.min} min` : ""}</label>`).join("");
-  sheet(`<h3>＋ Hours · ${label(day)}</h3><p class="hint">Extra work on top of your run. It's added to your expected time, so it doesn't count against your efficiency. Jeremy's requests wait for his OK.</p>${list}
+  sheet(`<h3>＋ Hours · ${label(day)}</h3><p class="hint">Added to your expected time. Jeremy's requests need his OK.</p>${list}
     <form class="frm" id="xf"><div class="full row" style="flex-wrap:wrap;gap:6px">${opts}</div>
     <label class="f" id="xmin-w" hidden>Minutes<input class="in" id="xmin" inputmode="numeric" placeholder="e.g. 30"></label>
     <label class="f full" id="xnote-w" hidden><span id="xnote-l">What did you do?</span><input class="in" id="xnote" placeholder=""></label>
@@ -339,7 +339,7 @@ function fromJeremy() {
 }
 function reviewSheet(id) {
   const e = S.entries.find(x => x.id === id); if (!e) return;
-  sheet(`<h3>Ask Jeremy to review this</h3><p><b>${esc(e.title)}</b> · ${label(e.day)}</p><form class="frm" id="rv"><label class="f full">What should he look at? (optional)<textarea class="in" id="rv-note" rows="3" placeholder="e.g. That parcel was signed for by the neighbour — photo on my scanner"></textarea></label><button class="btn" type="submit">Send review request</button></form><p class="hint">Jeremy gets this as an alert and will either keep the note or remove it. You'll see the result here.</p>`, (bg, close) => {
+  sheet(`<h3>Ask Jeremy to review this</h3><p><b>${esc(e.title)}</b> · ${label(e.day)}</p><form class="frm" id="rv"><label class="f full">What should he look at? (optional)<textarea class="in" id="rv-note" rows="3" placeholder="e.g. That parcel was signed for by the neighbour — photo on my scanner"></textarea></label><button class="btn" type="submit">Send review request</button></form><p class="hint">Jeremy will keep or remove it.</p>`, (bg, close) => {
     bg.querySelector("#rv").onsubmit = async ev => { ev.preventDefault(); const { error } = await sb.rpc("entry_review", { p_id: id, p_note: bg.querySelector("#rv-note").value }); if (error) return toast(error.message, "err"); close(); toast("Review request sent", "ok"); await loadAll(); render(); };
   });
 }
@@ -364,7 +364,7 @@ const VAN_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="tr
 const vanChips = D => [...new Set(D.segs.map(x => x.shift.van).filter(Boolean))].map(p => `<span class="tag van">${VAN_SVG}${esc(p)}</span>`).join("");
 function segRow(x, day, n, isToday, tasks = true) {
   const code = x.shift.run; const r = S.runsBy[code];
-  if (!tasks) { const act = isToday ? segActions(x, day, n) : ""; return `<div class="seg clk" data-dayv="${day}" title="Tap for the full day"><div class="tm">${fmtT(x.st)}–${fmtT(x.en)}</div><div class="rn">${x.sort ? `Sort: ${esc(r?.name || r?.label || "Sort")}` : `${esc(code)}: ${esc(runName(code))}`}${x.shift.trainee ? ` <span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : ""}${act}</div></div>`; }
+  if (!tasks) { const act = isToday ? segActions(x, day, n) : ""; const one = (S.days[day]?.segs.length || 0) < 2; return `<div class="seg clk" data-dayv="${day}" title="Tap for the full day">${one ? "" : `<div class="tm">${fmtT(x.st)}–${fmtT(x.en)}</div>`}<div class="rn">${x.sort ? `Sort: ${esc(r?.name || r?.label || "Sort")}` : `${esc(code)}: ${esc(runName(code))}`}${x.shift.trainee ? ` <span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : ""}${act}</div></div>`; }
   const tags = [x.shift.van ? `<span class="tag van"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 6.5A1.5 1.5 0 0 1 4.5 5H14l4.2 4.2H20a1 1 0 0 1 1 1V16a1 1 0 0 1-1 1h-1.3a2.5 2.5 0 0 1-4.9 0H9.7a2.5 2.5 0 0 1-4.9 0H4a1 1 0 0 1-1-1V6.5Zm10.6.5H5v4h12.2L13.6 7ZM7.25 18a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Zm9.5 0a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Z"/></svg>${esc(x.shift.van)}</span>` : "", x.shift.trainee ? `<span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : "", ...(tasks ? (x.shift.addons || []).map(a => `<span class="tag">+ ${esc(addName(a))}</span>`) : [])].join("");
   const tw = x.sort || !tasks ? "" : timingRows(x, day, isToday ? n.min : null);
   const act = isToday ? segActions(x, day, n) : "";
@@ -412,14 +412,14 @@ function todayCard(T, N, n) {
     const sodSeg = T.segs.find(x => x.sod); const allEod = T.segs.filter(x => !x.sort).length ? T.segs.filter(x => !x.sort).every(x => x.eod) : T.segs.some(x => x.eod);
     if (left.length || (!allEod && sodSeg)) {
       const sodBtn = !sodSeg ? ""
-        : `<div class="row"><div class="meta c-ok">✓ SOD ${fmtTime(sodSeg.sod.sent_at)}${sodSeg.sod.van ? ` · ${esc(sodSeg.sod.van)}` : ""}${sodSeg.sod.edited_at ? " (edited)" : ""}</div>${allEod ? "" : `<button class="btn ghost sm" id="sod-edit" data-shift="${sodSeg.shift.id}">Edit SOD</button>`}</div>${sodReqLine(T)}`;
+        : `${allEod ? "" : `<div class="row"><button class="btn ghost sm" id="sod-edit" data-shift="${sodSeg.shift.id}" style="flex:0 0 auto">Edit SOD</button></div>`}${sodReqLine(T)}`;
       const sortOnly = !T.segs.some(x => !x.sort) && sodSeg && !allEod;
       // once the day has started (SOD in), Today shrinks to two rows; tap to see the full day again
       if (sodSeg && !S.todayFull) { const cur = left[0] || T.segs[T.segs.length - 1]; const nxt = left[1];
         const nm = x => x.sort ? (S.runsBy[x.shift.run]?.label || "Sort") : x.shift.run;
         return `<div class="card today tdmini" id="today-mini" role="button" tabindex="0" aria-expanded="false" title="Tap for the full day">
           <div class="tdr1"><b>Today</b><span class="big">${fmtT((left[0] || T.segs[0]).st)}–${fmtT(T.end)}</span>${vanChips(T)}<i class="fchev" aria-hidden="true"></i></div>
-          <div class="tdr2 meta"><span class="c-ok">✓ SOD ${fmtTime(sodSeg.sod.sent_at)}</span> · now <b>${esc(nm(cur))}</b> till ${fmtT(cur.en)}${nxt ? ` · next <b>${esc(nm(nxt))}</b> ${fmtT(nxt.st)}` : ""}${S.locOn ? " · 📍" : ""}</div></div>`; }
+          <div class="tdr2 meta">Now <b>${esc(nm(cur))}</b> till ${fmtT(cur.en)}${nxt ? ` · next <b>${esc(nm(nxt))}</b> ${fmtT(nxt.st)}` : ""}${S.locOn ? " · 📍" : ""}</div></div>`; }
       return `<div class="card today${sodSeg ? " " : ""}" ${sodSeg ? `id="today-full"` : ""}><h2>Today<span>${label(T.day)}${sodSeg ? ` <button class="btn ghost sm" id="today-less" type="button" style="min-height:28px;padding:2px 10px">Less ▴</button>` : ""}</span></h2><div class="big bigrow"><span>${fmtT((left[0] || T.segs[0]).st)}–${fmtT(T.end)}</span>${vanChips(T)}</div>
         ${sodBtn}${(left.length ? left : T.segs).map(x => segRow(x, T.day, n, true, false)).join("")}
 </div>`;
@@ -439,9 +439,9 @@ function buSection(n) {
     const kind = works ? "Back-up" : "On-call";
     const what = works
       ? (x.bu_kind === "committed"
-        ? `Committed. Be ready for add-on hours before or after your shift${x.bu_block ? `, up to ${x.bu_block} hours` : ""}. Allowance if you're not needed; paid for hours worked if you are.`
-        : `Non-compulsory. You may be offered extra hours before or after your shift. Yes or no is your call; paid for hours worked.`) + (works && (S.days[x.day].start >= 720) ? " Your shift starts after midday, so check your phone 6:30 to 7:30am in case you're needed in the morning." : "")
-      : `Check your phone between 6:30 and 7:30am and confirm you're available. Any call-in comes between 6:30 and 8am; after that you're free. Allowance if you're not needed; if called in, paid for the time worked (2 hour minimum).`;
+        ? `Committed: extra hours before or after your shift${x.bu_block ? `, up to ${x.bu_block}h` : ""}. Allowance if not needed.`
+        : `Optional extra hours before or after your shift. Your call.`) + (works && (S.days[x.day].start >= 720) ? " Check your phone 6:30–7:30am." : "")
+      : `Check your phone 6:30–7:30am and confirm. Call-ins by 8am. Allowance if not needed; 2h minimum if called.`;
     return `<div class="bu"><div class="meta"><b>${kind}</b> · ${dayTag(x.day)}</div><div class="hint" style="margin:2px 0 10px">${what}</div></div>`;
   }).join("");
   return `<section class="ns"><h3 class="sub">Back-up and on-call</h3>${rows}</section>`;
@@ -523,7 +523,7 @@ function tasksCard(D, n, next, bare = false) {
       const meet = t.meetEdit && !isDone && D.day >= n.date && (!S.viewAs || S.viewer?.isStaff) ? `<label class="meta" style="display:flex;flex-direction:column;gap:2px;flex:0 0 112px">Milton time<input class="in" type="time" step="300" style="min-height:40px" value="${esc(t.meetVal)}" data-meet="${x.shift.id}" aria-label="Milton drop-off time"></label>` : "";
       const when = cls === "over" ? `✗ ${fmtT(t.closes)}` : cls === "soon" ? `${t.closes - n.min} min` : t.time === "any time" ? "" : t.time;
       return `<div class="tk tk1 ${cls}"><div class="tkt"><span class="t">${esc(t.short || tkShort(t.key, t.title))}</span>${when ? `<span class="tkw">${esc(when)}</span>` : ""}${t.code ? `<span class="tkc">🔑 ${esc(t.code)}</span>` : ""}</div>${meet}${btn}</div>`; };
-    return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${fmtT(x.st)} – ${fmtT(x.en)}${items.length && isT ? ` · ${nDone}/${items.length} done` : ""}</span></div>
+    return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${items.length && isT ? `${nDone}/${items.length} done` : ""}</span></div>
       ${items.length ? (() => { const isDone = t => !!(t.doneAt || t.planned); const todo = items.filter(t => !isDone(t)), fin = items.filter(isDone);
         // done ones shrink into half-height tiles with a short name; tap a tile to undo (pick-up tiles open the pick-up editor instead)
         const tile = t => { const pu = puAreaOf(t.key); const can = isT && t.key && !t.planned && (!S.viewAs || S.viewer?.isStaff);
@@ -574,10 +574,10 @@ function scoreDetail(sc, k) {
   const R = S.C.rules; const tbl = (head, rows) => rows.length ? `<div class="scroll"><table class="dt"><tr>${head.map(x => `<th>${x}</th>`).join("")}</tr>${rows.join("")}</table></div>` : "";
   let body = "";
   if (k === "admin") { const rows = sc.items.filter(i => !["due", "wait"].includes(i.st)).sort((a, b) => a.day.localeCompare(b.day)).map(i => `<tr class="clk" data-postv="${esc(i.key)}"><td>${label(i.day)}</td><td>${esc(i.label)}<div class="meta">${itemNote(i)}</div></td><td>${pill(STATE_LABEL[i.st], i.st === "ok" || i.st === "wait" ? "ok" : i.st === "miss" || i.st === "late" ? "crit" : i.st === "exc" ? "accent" : ["due", "over", "lsub"].includes(i.st) ? "grey" : "warn")}</td></tr>`);
-    body = `<p class="hint">Starts at 100%. Each late or missing post takes off ${R.perEvent}%. It never drops below ${R.adminFloor}%. Tap a post to see what was sent and when it was due.</p>${tbl(["Day", "Post", "Result"], rows) || `<p class="empty">No posts counted for these days. Posts count from ${label(R.adminStart)}.</p>`}${sc.adj ? `<p class="meta">Adjustments from Jeremy: ${sc.entries.filter(e => e.admin_pts).map(e => `${label(e.day)} ${e.admin_pts > 0 ? "+" : ""}${e.admin_pts} (${esc(e.title)})`).join(", ")}</p>` : ""}`; }
+    body = `<p class="hint">Starts at 100%. −${R.perEvent}% per late or missing post, floor ${R.adminFloor}%.</p>${tbl(["Day", "Post", "Result"], rows) || `<p class="empty">No posts counted for these days. Posts count from ${label(R.adminStart)}.</p>`}${sc.adj ? `<p class="meta">Adjustments from Jeremy: ${sc.entries.filter(e => e.admin_pts).map(e => `${label(e.day)} ${e.admin_pts > 0 ? "+" : ""}${e.admin_pts} (${esc(e.title)})`).join(", ")}</p>` : ""}`; }
   if (k === "eff") { const rows = sc.effDays.filter(e => !e.pending).map(e => `<tr class="clk" data-effv="${e.day}"><td>${label(e.day)}</td><td>${e.manual ? "set by Jeremy" : e.rows.map(r => r.code).join(" + ")}</td><td class="num">${e.allowed ? (e.est ? "≈" : "") + e.allowed.toFixed(1) + " h" : ""}</td><td class="num">${e.taken ? e.taken.toFixed(1) + " h" : ""}</td><td class="c-${col(Math.min(100, e.v))}">${Math.round(e.v)}%${e.est ? " est" : ""}</td></tr>`);
     const pend = sc.effDays.filter(e => e.pending);
-    body = `<p class="hint">Expected hours (sorting plus the run, worked out from your EOD figures) divided by the hours you actually took. 100% means right on the expected time. Tap a day to see the working.</p>${tbl(["Day", "Run", "Expected", "Actual", "Score"], rows) || `<p class="empty">No finished runs with full figures on these days.</p>`}${pend.length ? `<p class="meta">Waiting on figures: ${pend.map(e => `<button class="linkbtn" data-effv="${e.day}">${label(e.day)} ${esc(e.need || "EOD")}</button>`).join(" · ")}</p>` : ""}${sc.effDays.some(e => e.est) ? `<p class="meta">≈ means a best guess was used for a missing EOD figure.</p>` : ""}`; }
+    body = `<p class="hint">Expected hours ÷ actual hours. 100% = on time. Tap a day for the working.</p>${tbl(["Day", "Run", "Expected", "Actual", "Score"], rows) || `<p class="empty">No finished runs with full figures on these days.</p>`}${pend.length ? `<p class="meta">Waiting on figures: ${pend.map(e => `<button class="linkbtn" data-effv="${e.day}">${label(e.day)} ${esc(e.need || "EOD")}</button>`).join(" · ")}</p>` : ""}${sc.effDays.some(e => e.est) ? `<p class="meta">≈ means a best guess was used for a missing EOD figure.</p>` : ""}`; }
   if (k === "acc") { const rows = sc.accDays.map(a => `<tr class="clk" data-accv="${a.day}|${esc(a.code)}"><td>${label(a.day)}</td><td>${esc(a.code)}</td><td class="num">${a.items}</td><td class="num">${a.compliant}</td><td class="c-${col(a.v)}">${a.v == null ? "—" : a.v.toFixed(1) + "%"}</td></tr>`);
     body = `<p class="hint">From NZ Post's daily report: items scanned correctly ÷ items for delivery. Each mistake in the Driver Mistakes Record takes off ${R.mistakePct}%.</p>${tbl(["Day", "Run", "Items", "Correct", "%"], rows) || `<p class="empty">No NZ Post report figures for your runs on these days.</p>`}${sc.nMist ? `<p class="meta">Mistakes: ${sc.mistakes.map(m => `<button class="linkbtn" data-entryv="${m.id}">${label(m.day)} ${esc(m.title)}</button>`).join(" · ")}</p>` : `<p class="meta">No mistakes logged. 👍</p>`}`; }
   if (k === "safe") { const rows = sc.entries.filter(e => e.safety_pct != null).map(e => `<tr class="clk" data-entryv="${e.id}"><td>${label(e.day)}</td><td class="num">${e.safety_pct}%</td><td>${esc(e.title)}</td></tr>`); body = `<p class="hint">Stays at 100% unless Jeremy records a safety issue.</p>${tbl(["Day", "Score", "Note"], rows) || `<p class="meta">Nothing recorded. 👍</p>`}`; }
@@ -718,7 +718,7 @@ function accessCard() {
     <p class="hint" style="margin:6px 0 0">Keep these for work only. Don't share them outside the team.</p></div>`;
 }
 function editAccess() {
-  sheet(`<h3>Passwords &amp; logins</h3><form class="frm" id="acf"><label class="f full">What drivers see<textarea class="in" id="ac-body" rows="10" placeholder="e.g. Scanner PIN, shared logins, key-box codes">${esc(S.access?.body || "")}</textarea></label><button class="btn full" type="submit">Save</button></form><p class="hint">Every driver and staff member can see this box once signed in. Only add shared work logins, never your own personal passwords.</p>`, (bg, close) => {
+  sheet(`<h3>Passwords &amp; logins</h3><form class="frm" id="acf"><label class="f full">What drivers see<textarea class="in" id="ac-body" rows="10" placeholder="e.g. Scanner PIN, shared logins, key-box codes">${esc(S.access?.body || "")}</textarea></label><button class="btn full" type="submit">Save</button></form><p class="hint">Everyone can see this. Shared work logins only.</p>`, (bg, close) => {
     bg.querySelector("#acf").addEventListener("submit", async e => { e.preventDefault(); const body = bg.querySelector("#ac-body").value; const { error } = await sb.from("access_info").upsert({ id: 1, body, updated_at: new Date().toISOString(), updated_by: S.viewer.id }); if (error) return toast(error.message, "err"); S.access = { body }; close(); toast("Saved", "ok"); render(); });
   });
 }
@@ -849,7 +849,7 @@ async function sendSod(shiftId, lateMode = false) {
   const runs = D.segs.filter(x => !x.sort).map(x => x.shift.run); const van = D.segs.map(x => x.shift.van).find(Boolean) || null;
   const runId = runs.map(r => S.C.runCodes[r] || r).join(" + ");
   if (lateMode) { // late: ask for the actual start time
-    sheet(`<h3>Post your SOD for ${label(shift.day)}</h3><p class="hint">This one is late, so it counts as late on your Admin score, but a late post is better than a missing one.</p>
+    sheet(`<h3>Post your SOD for ${label(shift.day)}</h3><p class="hint">Late, but late beats missing.</p>
       <label class="f">When did you start?<input class="in" type="time" id="st" value="${fmt24s(D.start)}"></label><label class="f">Van<select class="in" id="van">${opt([["", "—"], ...Object.keys(S.vans).map(p => [p, p])], van)}</select></label><label class="f">Note (optional)<input class="in" id="note" placeholder="e.g. forgot to post"></label><button class="btn" id="go">Send SOD</button>`, (bg, close) => {
       bg.querySelector("#go").onclick = async () => { const t = bg.querySelector("#st").value; const note = bg.querySelector("#note").value || null; const { error } = await sb.from("sod").insert({ shift_id: shiftId, driver: S.me.id, van: bg.querySelector("#van").value || null, run_id: runId, note, sent_at: nzToIso(shift.day, t) }); if (error) return toast(error.message, "err");
         const off = toMin(t) - D.start; if (Math.abs(off) > reqMins()) await sendSodReq(shiftId, D, toMin(t), note);
@@ -890,7 +890,7 @@ function sodReqLine(T) {
 function fmt24s(min) { return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`; }
 function editSod(shiftId) {
   const sod = S.sods.find(s => s.shift_id === shiftId);
-  sheet(`<h3>Edit your SOD</h3><p class="hint">Sent ${fmtTs(sod.sent_at)}. You can change the van, start km and note until your EOD goes in. The time it was sent stays.</p>
+  sheet(`<h3>Edit your SOD</h3><p class="hint">Sent ${fmtTs(sod.sent_at)}. Editable until your EOD.</p>
     <label class="f">Van<select class="in" id="van">${opt([["", "—"], ...Object.keys(S.vans).map(p => [p, p])], sod.van || "")}</select></label><label class="f">Start km (optional)<input class="in" id="km" inputmode="numeric" value="${sod.start_km ?? ""}"></label><label class="f">Note<input class="in" id="note" value="${esc(sod.note || "")}"></label><button class="btn" id="go">Save</button>`, (bg, close) => {
     bg.querySelector("#go").onclick = async () => { const { error } = await sb.from("sod").update({ van: bg.querySelector("#van").value || null, start_km: +bg.querySelector("#km").value || null, note: bg.querySelector("#note").value || null, edited_at: new Date().toISOString() }).eq("shift_id", shiftId); if (error) return toast(error.message, "err"); close(); toast("SOD updated", "ok"); await loadAll(); render(); };
   });
@@ -968,7 +968,7 @@ function eodForm(shiftId, sortOnly, edit = false) {
 }
 function leaveForm() {
   const t = today();
-  sheet(`<h3>Leave request</h3><p class="hint">Within a minute you'll get an email confirming it's been received. Nothing is approved until Jeremy reviews it; you'll get a second email saying yes or no.</p>
+  sheet(`<h3>Leave request</h3><p class="hint">Jeremy will email you yes or no.</p>
     <form class="frm" id="lf"><label class="f full">Type of leave<select class="in" id="type">${opt(Object.entries(LEAVE_T), "annual")}</select></label><label class="f">First day off<input class="in" type="date" id="from" min="${t}" required></label><label class="f">Last day off<input class="in" type="date" id="to" min="${t}" required></label>
     <div class="full"><div class="meta mono" style="margin-bottom:6px">HOW MUCH OF THE DAY</div><div class="seg-btns" id="part"><button type="button" data-p="full" class="on">Full day</button><button type="button" data-p="AM">Morning off</button><button type="button" data-p="PM">Afternoon off</button></div></div>
     <label class="f full">Note for Jeremy (optional)<textarea class="in" id="notes" rows="3" placeholder="e.g. Family wedding in Christchurch. Happy to swap Saturday."></textarea></label><button class="btn full" type="submit">Send request</button></form>`, (bg, close) => {
@@ -1146,7 +1146,7 @@ function leaveSheet(l) {
   sheet(`<h3>${esc(LEAVE_T[l.type] || l.type)}</h3><p class="meta">${label(l.date_from, true)}${l.date_to !== l.date_from ? ` – ${label(l.date_to, true)}` : ""}${l.part !== "full" ? ` · ${l.part === "AM" ? "morning off" : "afternoon off"}` : ""} · asked ${fmtTs(l.created_at)}</p>
     <dl class="kv"><dt>Status</dt><dd>${pill(l.status, l.status === "approved" ? "ok" : l.status === "declined" ? "crit" : l.status === "pending" ? "warn" : "grey")}${l.decided_at ? ` <span class="meta">${fmtTs(l.decided_at)}</span>` : ""}</dd>${l.notes ? `<dt>Your note</dt><dd>${esc(l.notes)}</dd>` : ""}${l.reply ? `<dt>Reply</dt><dd>${esc(l.reply)}</dd>` : ""}<dt>Received email</dt><dd>${l.acked_email_at ? "sent " + fmtTs(l.acked_email_at) : "on its way"}</dd></dl>
     ${clash.length ? `<p class="meta">${l.status === "approved" ? "You're still showing on the roster for" : "You're currently rostered on"} ${clash.map(d => `<button class="linkbtn" data-dayv="${d}">${label(d)}</button>`).join(", ")}${l.status === "approved" ? " — check with Jeremy." : "."}</p>` : ""}
-    <p class="hint">${l.status === "pending" ? "Jeremy will say yes or no by email. Nothing is approved until then." : l.status === "approved" ? "It's on the roster as leave. Enjoy the time off." : l.status === "declined" ? "If you'd like to talk about it, give Jeremy a call." : ""}</p>`);
+    <p class="hint">${l.status === "pending" ? "Waiting for Jeremy." : l.status === "approved" ? "On the roster." : l.status === "declined" ? "Call Jeremy to talk about it." : ""}</p>`);
 }
 function msgSheet(m) {
   sheet(`<h3>Message from ${esc(first(S.people[m.messages.sender]?.name || "Jeremy"))}</h3><p class="meta">${fmtTs(m.messages.created_at)}${m.read_at ? ` · read ${fmtTs(m.read_at)}` : ""}${m.confirmed_at ? ` · <span class="c-ok">✓ confirmed ${fmtTs(m.confirmed_at)}</span>` : ""}</p><pre class="msg" style="font-family:var(--fd);font-size:15px">${esc(m.messages.body)}</pre>
