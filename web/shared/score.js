@@ -145,8 +145,14 @@ export const evidence = () => EVID;
 /* ---- Efficiency ---- */
 /** Breaks are unpaid from this moment (9 Nov 2026) — they come off paid hours and efficiency time from then on. */
 export const UNPAID_BREAKS_FROM = Date.parse("2026-11-09T01:48:00Z");
-/** Hours of finished unpaid breaks on one shift, taken off efficiency time for everyone. all = also count breaks before 9 Nov (the owner, Jeremy, always had his taken off). */
-export function ownerBreakHrs(breaks, shiftId, all = false) { return (breaks || []).filter(b => b.shift_id === shiftId && b.ended_at && (all || Date.parse(b.started_at) >= UNPAID_BREAKS_FROM)).reduce((a, b) => a + Math.max(0, (Date.parse(b.ended_at) - Date.parse(b.started_at)) / 3600e3), 0); }
+/** A driver's finished unpaid breaks on a shift's day, as NZ-minute windows [from, to]. effCalc takes off only the part of each break
+ *  that falls inside the run (from run start to finish) and the part inside the sort before it (off the sort time).
+ *  all = also count breaks before 9 Nov (the owner, Jeremy, always had his taken off). */
+export function ownerBreakHrs(breaks, shift, all = false) {
+  return (breaks || []).filter(b => b.driver === shift.driver && b.ended_at && (all || Date.parse(b.started_at) >= UNPAID_BREAKS_FROM) && nzNow(new Date(b.started_at)).date === shift.day)
+    .map(b => { const s = nzNow(new Date(b.started_at)), e = nzNow(new Date(b.ended_at)); return [s.min + (Date.parse(b.started_at) % 60000) / 60000, e.date === s.date ? e.min + (Date.parse(b.ended_at) % 60000) / 60000 : 1440]; });
+}
+const overlap = (wins, f, t) => f == null || t == null || t <= f ? 0 : (wins || []).reduce((a, [s, e]) => a + Math.max(0, Math.min(e, t) - Math.max(s, f)), 0);
 export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   const code = seg.shift.run, model = C.effSimple[code]; if (!model) return null;
   const net = model.net || NET(code); const g = []; const parts = []; const ev = evidenceFor(code, seg.shift.day);
@@ -168,7 +174,7 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   // after a team sort shift the run starts when the sort ends: the ▶ Start tap, else the sort's end tap, else its start (SOD / tap / roster) + its rostered length
   const preSt = pre ? (ctx.sodMin ?? (pre.shift.sor_at ? nzNow(new Date(pre.shift.sor_at)).min : pre.st)) : null;
   const start = ov?.start_at ? toMin(ov.start_at) : pre ? (sorM ?? (pre.shift.eor_at ? nzNow(new Date(pre.shift.eor_at)).min : preSt + (pre.min ?? Math.max(0, (pre.en ?? pre.st) - pre.st)))) : ctx.sodMin ?? sorM ?? seg.st;
-  const sortTaken = pre && start != null && preSt != null ? Math.max(0, start - preSt) : 0;   // minutes on the team sort (paid, not scored)
+  const sortTaken = pre && start != null && preSt != null ? Math.max(0, start - preSt - overlap(ctx.brk, preSt, start)) : 0;   // minutes on the team sort (paid, not scored), less any unpaid break inside it
   // Load and go: after a team sort (or on a run that comes pre-loaded, like RAM) the run gets a set time to load the van and go.
   // TUA is already loaded (0), Flyer / RAM / NZ Post runs 15 min, TGE 30 min. Change in settings → rules.loadGo { CODE: min, default: min }.
   // PCB is loaded inside the West Harbour sort; RSB has its own sort-and-load time below
@@ -208,7 +214,7 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   const tSt = sortIn != null && preSt != null ? preSt : start;
   const taken = (tSt != null && endT != null && endT > tSt) ? (endT - tSt) / 60 : null;
   let takenTrk = taken; if (ov?.train_day) takenTrk = 0; else if (ov?.train_min && taken) takenTrk = Math.max(0.01, taken - ov.train_min / 60);
-  const brkH = ctx.brk || 0; if (brkH && takenTrk) takenTrk = Math.max(0.01, takenTrk - brkH);   // owner's unpaid breaks
+  const brkH = Array.isArray(ctx.brk) ? overlap(ctx.brk, tSt, endT) / 60 : (ctx.brk || 0); if (brkH && takenTrk) takenTrk = Math.max(0.01, takenTrk - brkH);   // owner's unpaid breaks
   const need = []; if (!eod) need.push("EOD"); else { if (start != null && endT != null && endT <= start) need.push("Times (SOD is after the EOD finish)"); for (const k of ["parcels", "stops"]) if ((model[k === "parcels" ? "parcel" : "stop"] || 0) > 0 && eod[k] == null && ov?.[k] == null) need.push(k === "parcels" ? (net === "tge" ? "Delivery total" : "Total parcels") : (net === "tge" ? "Jobs" : "Stops")); if (net === "tge" && !pre && sortMin == null) need.push("Sorting time"); if (!eod.finish_time) need.push("Finish time"); }
   let perf = null; if (taken && takenTrk !== 0) perf = C.rules.effMethod === "tdt" ? (2 - takenTrk / (allowed / 60)) * 100 : (allowed / 60) / takenTrk * 100; if (perf != null) perf = Math.max(0, Math.min(150, perf));
   return { code, net, allowed, parts, sortTaken, sortIn, sortFrom: pre ? preSt : null, sortRun: pre?.shift.run || null, taken, takenTrk, brk: brkH, perf, need, est: g.length > 0, guess: g, trainDay: !!ov?.train_day, start, end: endT, model, evid: ev ? ev.scope : null, evN: ev?.n || 0, noEod: !eod, figs: { parcels, stops, trays, pickups, pup } };
@@ -269,7 +275,7 @@ function scoreForRaw(driver, from, to, D, C) {
     const runs = d.segs.filter(x => !x.sort); if (!runs.length) continue;
     const sortRost = d.segs.filter(x => x.sort).reduce((a, x) => a + x.min, 0);   // sort minutes not already covered by a run
     const sod = d.segs.map(x => D.sods.find(s => s.shift_id === x.shift.id)).find(Boolean);
-    const rows = runs.map((x, i) => { const eod = D.eods.find(e => e.shift_id === x.shift.id), ov = D.ovs?.find(o => o.shift_id === x.shift.id); const c = effCalc(x, eod, ov, C, D.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? sodStart(sod, d.start, C) : null, brk: ownerBreakHrs(D.breaks, x.shift.id, own) }); if (c) { c.shift = x.shift; c.eod = eod; c.ov = ov; } return c; }).filter(Boolean);
+    const rows = runs.map((x, i) => { const eod = D.eods.find(e => e.shift_id === x.shift.id), ov = D.ovs?.find(o => o.shift_id === x.shift.id); const c = effCalc(x, eod, ov, C, D.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? sodStart(sod, d.start, C) : null, brk: ownerBreakHrs(D.breaks, x.shift, own) }); if (c) { c.shift = x.shift; c.eod = eod; c.ov = ov; } return c; }).filter(Boolean);
     const live = rows.filter(r => !r.trainDay);
     const xm = extraMins(D.extra, driver, d.day);   // "+ Hours" the driver logged (approved): added to the expected time
     if (live.length && live.every(r => r.perf != null && !r.need.length)) { const A = (live.reduce((a, r) => a + r.allowed, 0) + xm) / 60, T = live.reduce((a, r) => a + r.takenTrk, 0); const v = Math.max(0, Math.min(150, C.rules.effMethod === "tdt" ? (2 - T / A) * 100 : A / T * 100)); effDays.push({ day: d.day, v, est: live.some(r => r.est), rows, allowed: A, taken: T, extra: xm }); }

@@ -203,7 +203,7 @@ export function driverDay(drv, d) {
   const runSegs = D.segs.filter(x => !x.sort); const sod = D.segs.map(x => S.sodBy[x.shift.id]).find(Boolean); const eods = runSegs.map(x => S.eodBy[x.shift.id]).filter(Boolean);
   const sortRost = D.segs.filter(x => x.sort).reduce((a, x) => a + x.min, 0);   // sort minutes not already covered by a run (no hour counted twice)
   let exp = 0, est = false, train = 0; const effRows = [];
-  runSegs.forEach((x, i) => { const ov = S.ovs.find(o => o.shift_id === x.shift.id); const eod = S.eodBy[x.shift.id]; const c = effCalc(x, eod, ov, S.C, S.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? sodStart(sod, D.start, S.C) : null, brk: ownerBreakHrs(S.breaks, x.shift.id, !!drv.pay_exclude) });
+  runSegs.forEach((x, i) => { const ov = S.ovs.find(o => o.shift_id === x.shift.id); const eod = S.eodBy[x.shift.id]; const c = effCalc(x, eod, ov, S.C, S.runsBy, { sortRost: i === 0 ? sortRost : 0, sodMin: i === 0 && sod ? sodStart(sod, D.start, S.C) : null, brk: ownerBreakHrs(S.breaks, x.shift, !!drv.pay_exclude) });
     if (!c) { exp += x.min / 60; est = true; return; }                       // no formula for this run yet → rostered length, flagged as an estimate
     effRows.push({ d, drv, x, eod, ov, c }); if (c.trainDay) { train += c.taken || 0; return; } exp += c.allowed / 60; if (!eod || c.est) est = true; if (ov?.train_min) train += ov.train_min / 60; });
   // team sort shifts (SUP…) count at the time they took (from the taps, else the roster), so they're paid and neutral in the hours tracking

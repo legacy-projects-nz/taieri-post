@@ -23,7 +23,7 @@ export function sortRows(day) {
       let act = st != null && en != null && en > st ? en - st : null, how = act != null ? "taps" : null;
       if (act == null && typed != null) { act = +typed; how = "typed on EOD"; }
       // the delivery side of the same day: the run that follows this sort, on its own expected and actual (from the efficiency formula)
-      let run = null; if (nx) { try { const c = effCalc(nx, e, S.ovs?.find(o => o.shift_id === nx.shift.id), S.C, S.runsBy, { sodMin: D.segs.indexOf(nx) === 0 && sod ? sodStart(sod, D.start, S.C) : (i === 0 && sod ? sodStart(sod, D.start, S.C) : null), brk: ownerBreakHrs(S.breaks, nx.shift.id, !!S.peopleBy?.[drv]?.pay_exclude) }); if (c) run = { exp: c.allowed, act: c.takenTrk != null && e ? c.takenTrk * 60 : null, est: c.est }; } catch { /* leave the delivery columns blank */ } }
+      let run = null; if (nx) { try { const c = effCalc(nx, e, S.ovs?.find(o => o.shift_id === nx.shift.id), S.C, S.runsBy, { sodMin: D.segs.indexOf(nx) === 0 && sod ? sodStart(sod, D.start, S.C) : (i === 0 && sod ? sodStart(sod, D.start, S.C) : null), brk: ownerBreakHrs(S.breaks, nx.shift, !!S.peopleBy?.[drv]?.pay_exclude) }); if (c) run = { exp: c.allowed, act: c.takenTrk != null && e ? c.takenTrk * 60 : null, est: c.est }; } catch { /* leave the delivery columns blank */ } }
       rows.push({ day, drv, code: x.shift.run, x, nx, exp, act, how, st, en, run }); }); }
   // who is the team sorter on each sort that day: the earliest start
   const C = COVERS(); const lead = {}; for (const r of rows) if (C[r.code] && (!lead[r.code] || r.x.st < lead[r.code].x.st)) lead[r.code] = r;
