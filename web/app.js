@@ -479,7 +479,7 @@ function tasksCard(D, n, next, bare = false) {
     for (const r of rulesFor(x, D.day)) { const key = r.done_key || r.addon || null; if (r.addon) covered.add(r.addon); const gp = !!key?.startsWith("tw_") && /game plan/i.test(r.name); const planned = gp && Object.keys(plan).length > 0;
       const meetEdit = code === "DB" && key === "milton";   // D>B driver sets the day's Milton drop-off time; it goes to the Lawrence driver
       items.push({ key, title: r.name, short: r.short, code: r.code, desc: meetEdit ? `${r.note || ""} Different time? Change it here and the Lawrence driver gets it straight away.`.trim() : r.note || (key && !key.startsWith("tw_") ? (S.addons.find(a => a.id === key)?.name || "") : ""), time: winTxt(r), opens: toMin(r.opens), closes: toMin(r.closes), doneAt: key ? done[key] : null, planned, meetEdit, meetVal: String(x.shift.milton_at || r.closes || "").slice(0, 5) }); }
-    for (const id of x.shift.addons || []) { if (covered.has(id) || id.startsWith("tw_")) continue; const o = S.addons.find(a => a.id === id); if (!o) continue;
+    for (const id of x.shift.addons || []) { if (covered.has(id)) continue; const o = S.addons.find(a => a.id === id); if (!o) continue;   // tw_ tasks without a timed rule (e.g. NZQA pick up) show here too
       items.push({ key: id, title: o.name, desc: plan[id] ? `planned ${fmtT(toMin(plan[id]))}` : o.minutes ? `${o.minutes} min allowed on the run` : "add-on on this run", time: "any time", opens: null, closes: null, doneAt: done[id], planned: false }); }
     const nDone = items.filter(t => t.doneAt || t.planned).length;
     const row = t => { const isDone = !!(t.doneAt || t.planned); let cls = "", st = "";
