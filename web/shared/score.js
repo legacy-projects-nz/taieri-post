@@ -25,9 +25,12 @@ export const LEG_RUNS = { TUA: ["outram", "pgg", "airport"], FLY: ["airport", "m
 export function cfg(settings) { const o = {}; for (const k of Object.keys(DEF)) o[k] = { ...DEF[k], ...(settings[k] || {}) }; o.runCodes = settings.runCodes || {}; o.holidays = settings.holidays || {}; o.bands = settings.bands || {}; return o; }
 
 /* ---- Start-time sign-off: a SOD more than rules.sodReqMins (20) before the rostered start counts from the rostered start
-   until Jeremy approves the early start (approving moves the roster, so the SOD is no longer early). From rules.sodReqStart on. ---- */
+   until Jeremy/admin approves the early start (approving moves the roster, so the SOD is no longer early). From rules.sodReqStart on.
+   A start time edited at sign-off (sod.start_at) is used as-is. ---- */
 export function sodStart(sod, dayStart, C) {
-  if (!sod) return null; const m = nzNow(new Date(sod.sent_at)).min; const R = C?.rules || {};
+  if (!sod) return null; const R = C?.rules || {};
+  if (sod.start_at) return toMin(sod.start_at);   // start time set by Jeremy/admin at sign-off
+  const m = nzNow(new Date(sod.sent_at)).min;
   if (dayStart == null || nzNow(new Date(sod.sent_at)).date < (R.sodReqStart ?? "2026-11-11")) return m;
   return m < dayStart - (R.sodReqMins ?? 20) ? dayStart : m;
 }

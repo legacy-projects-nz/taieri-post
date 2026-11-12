@@ -323,18 +323,22 @@ function feed(t) {
 }
 
 /* ---- Start-time sign-off: SODs posted more than 20 min before or after the rostered start. Approving moves that driver's
-   run times for the day by the same amount (start and end); declining leaves the roster as it was. Only Jeremy (owner) decides. ---- */
+   run times for the day by the same amount (start and end); declining leaves the roster as it was. Jeremy (owner) and admins decide,
+   and can edit the time started first (that time is then used for hours, and the run times move to match). ---- */
+const canSign = () => S.me.isOwner || S.me.role === "admin";
+const t24 = t => String(t || "").slice(0, 5);
 const minsOff = m => { const a = Math.abs(m); return a >= 60 ? `${Math.floor(a / 60)} h${a % 60 ? ` ${a % 60} min` : ""}` : `${a} min`; };
 function sodReqCard() {
   const all = S.sodReqs || []; const pend = all.filter(r => r.status === "pending"); const recent = all.filter(r => r.status !== "pending").slice(0, 8);
   if (!pend.length && !recent.length) return "";
-  const what = r => `${r.kind === "early" ? "Started early" : "Started late"} · SOD ${fmtT(toMin(r.started))}, rostered ${fmtT(toMin(r.rostered))} (${minsOff(r.delta_min)} ${r.kind === "early" ? "early" : "late"})`;
+  const what = r => `${r.kind === "early" ? "Started early" : "Started late"} · ${r.sod_at ? `SOD ${fmtT(toMin(r.sod_at))}, start set to ${fmtT(toMin(r.started))}` : `SOD ${fmtT(toMin(r.started))}`}, rostered ${fmtT(toMin(r.rostered))} (${minsOff(r.delta_min)} ${r.kind === "early" ? "early" : "late"})`;
   const moves = r => (r.moves || []).map(m => { const sh = S.shifts.find(s => s.id === m.shift_id); return sh ? `${esc(sh.run)} → ${fmtT(toMin(m.start_at))}${m.end_at ? `–${fmtT(toMin(m.end_at))}` : ""}` : ""; }).filter(Boolean).join(" · ");
   const row = r => `<div class="item ${r.status === "pending" ? "warn" : r.status === "approved" ? "done" : ""}"><div class="row" style="justify-content:space-between"><b>${esc(nm(r.driver))} · ${label(r.day)}</b><span class="meta">${ago(r.created_at)}</span></div>
     <div>${what(r)}</div>${r.note ? `<div class="meta">“${esc(r.note)}”</div>` : `<div class="meta">No note</div>`}
     ${r.status === "pending" ? `<div class="meta">If approved, run times become: ${moves(r) || "—"}${r.kind === "early" ? ` · until then hours count from ${fmtT(toMin(r.rostered))}` : ""}</div>
-      ${S.me.isOwner ? `<div class="row" style="margin-top:6px"><input class="in" data-sreply="${r.id}" placeholder="Reply to ${esc(first(nm(r.driver)))} (optional)" style="flex:2 1 160px"><button class="btn sm" data-sreq="${r.id}" data-ok="1">✓ Approve</button><button class="btn ghost sm" data-sreq="${r.id}" data-ok="0">Decline</button></div>` : `<div class="meta">Waiting for Jeremy</div>`}`
-      : `<div class="meta ${r.status === "approved" ? "c-ok" : "c-crit"}">${r.status === "approved" ? "✓ Approved · run times moved" : "✗ Declined · roster unchanged"}${r.decided_by ? ` by ${esc(fnm(r.decided_by))}` : ""}${r.reply ? ` · ${esc(r.reply)}` : ""}</div>`}</div>`;
+      ${canSign() ? `<div class="row" style="margin-top:6px"><label class="meta" style="display:flex;align-items:center;gap:4px">Started <input class="in" type="time" data-sstart="${r.id}" value="${t24(r.started)}" style="width:110px"></label><input class="in" data-sreply="${r.id}" placeholder="Reply to ${esc(first(nm(r.driver)))} (optional)" style="flex:2 1 160px"><button class="btn sm" data-sreq="${r.id}" data-ok="1">✓ Approve</button><button class="btn ghost sm" data-sreq="${r.id}" data-ok="0">Decline</button></div>` : `<div class="meta">Waiting for Jeremy or admin</div>`}`
+      : `<div class="meta ${r.status === "approved" ? "c-ok" : "c-crit"}">${r.status === "approved" ? "✓ Approved · run times moved" : "✗ Declined · roster unchanged"}${r.decided_by ? ` by ${esc(fnm(r.decided_by))}` : ""}${r.reply ? ` · ${esc(r.reply)}` : ""}</div>
+      ${r.status === "approved" && canSign() ? `<div class="row" style="margin-top:6px"><label class="meta" style="display:flex;align-items:center;gap:4px">Edit start <input class="in" type="time" data-sstart="${r.id}" value="${t24(r.started)}" style="width:110px"></label><button class="btn ghost sm" data-sreq="${r.id}" data-ok="1">Save start</button></div>` : ""}`}</div>`;
   return `<div class="card ${pend.length ? "hot" : ""}" id="sodreq"><h2>Start times to sign off<span>${pend.length ? `${pend.length} waiting` : "nothing waiting"} · SOD more than ${S.C.rules.sodReqMins ?? 20} min off the roster</span></h2>
     ${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : ""}${recent.length ? `<details><summary>Recent decisions</summary><div class="list" style="margin-top:8px">${recent.map(row).join("")}</div></details>` : ""}</div>`;
 }
@@ -355,7 +359,8 @@ async function decideXt(id, ok) {
 }
 async function decideSodReq(id, ok) {
   const reply = $(`[data-sreply="${id}"]`)?.value.trim() || null;
-  const { error } = await sb.rpc("sod_request_decide", { p_id: id, p_approve: ok, p_reply: reply }); if (error) return toast(error.message, "err");
+  const st = $(`[data-sstart="${id}"]`)?.value || null; if (st === "") { await loadAll(); render(); return toast("Enter the time started", "err"); }
+  const { error } = await sb.rpc("sod_request_decide", { p_id: id, p_approve: ok, p_reply: reply, p_started: st ? st + ":00" : null }); if (error) { await loadAll(); render(); return toast(error.message, "err"); }
   fn("notify", { type: "sod_request_decided", id }).catch(() => { });
   toast(ok ? "Approved · run times updated" : "Declined", "ok"); await loadAll(); render();
 }
