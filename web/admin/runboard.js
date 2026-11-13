@@ -196,7 +196,7 @@ function slotSheet(day, run, slot) {
     <label class="f full" id="bbw">Add-on hours block<select class="in" id="bb">${opt([["5", "Up to 5 hours: $10 if not needed"], ["10", "Over 5, up to 10 hours: $20 if not needed"]], String(s?.bu_block || 5))}</select></label>
     <p class="hint full">Back-up hours are add-ons before or after their normal shift, inside 6am–5pm. If you need them, they're paid for hours worked and the allowance isn't added on top.</p>` : ""}
     <label class="f full">Note<input class="in" id="note" value="${esc(s?.note || "")}"></label>
-    <div class="row full"><button class="btn" type="submit">Save</button>${s ? `<button class="btn ghost" type="button" id="rm">Clear slot</button>` : ""}</div></form><p class="hint">${isPublished(day) ? `Saves to the roster straight away. Drivers are told when you press "Push changes".` : `Saves to the roster straight away. Drivers won't see this week until you press "Approve roster".`}</p>`, (bg, close) => {
+    <div class="row full"><button class="btn" type="submit">Save</button>${s ? `<button class="btn ghost" type="button" id="rm">Clear slot</button>` : ""}${s?.driver && run !== "BU" ? `<button class="btn warn" type="button" id="sick">🤒 Mark ${esc(nm(s.driver))} sick</button>` : ""}</div></form><p class="hint">${isPublished(day) ? `Saves to the roster straight away. Drivers are told when you press "Push changes".` : `Saves to the roster straight away. Drivers won't see this week until you press "Approve roster".`}</p>`, (bg, close) => {
     bg.querySelectorAll("#budrv button").forEach(b => b.onclick = () => { const was = bg.querySelector("#drv").value === b.dataset.d; bg.querySelector("#drv").value = was ? "" : b.dataset.d;
       bg.querySelectorAll("#budrv button").forEach(x => x.classList.toggle("ghost", x !== b || was));
       if (!was) { if (b.dataset.s) { bg.querySelector("#st").value = b.dataset.s; bg.querySelector("#en").value = b.dataset.e; } const bb = bg.querySelector("#bb"); if (bb) bb.value = +b.dataset.m <= BU_SHORT ? "5" : "10"; } });
@@ -208,6 +208,7 @@ function slotSheet(day, run, slot) {
       if (run === "BU") { row.bu_kind = g("bk").value; row.bu_block = row.bu_kind === "committed" ? +g("bb").value : null; }
       if (row.trainee && row.trainee === drv) row.trainee = null;
       const { error } = await sb.from("shifts").upsert(row, { onConflict: "day,run,slot" }); if (error) return toast(error.message, "err"); close(); toast("Saved", "ok"); await loadAll(); render(true); };
+    bg.querySelector("#sick")?.addEventListener("click", () => { close(); sickSheet(s.driver, day); });
     bg.querySelector("#rm")?.addEventListener("click", async () => { const { error } = await sb.from("shifts").delete().eq("id", s.id); if (error) return toast(error.message, "err"); close(); toast("Slot cleared", "ok"); await loadAll(); render(true); });
   });
 }
