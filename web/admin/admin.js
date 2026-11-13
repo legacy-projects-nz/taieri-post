@@ -11,7 +11,7 @@ import { routesTab, wireRoutes } from "/admin/routes.js";
 import { allowancesTab, wireAllowances } from "/admin/allowances.js";
 import { pickupsTab, wirePickups } from "/admin/pickups.js";
 import { sickDefault, paidPill, SIX_MONTHS_NOTE } from "/admin/sick.js";
-import { liveTab as liveTab2, wireLive as wireLive2 } from "/admin/live.js";
+import { liveTab as liveTab2, wireLive as wireLive2, sickHours } from "/admin/live.js";
 import { bind } from "/admin/detail.js";
 import { errorCard } from "/admin/errorcard.js";
 import { hazardsTab, wireHazards, hazardBadge } from "/admin/hazards.js";
@@ -62,7 +62,7 @@ async function loadAllNow() {
     q(sb.from("roster_sent").select("*")),
     q(sb.from("messages").select("*").order("created_at", { ascending: false }).limit(60)),
     q(sb.from("message_recipients").select("*")),
-    q(sb.from("leave_requests").select("*").order("created_at", { ascending: false }).limit(100)),
+    q(sb.from("leave_requests").select("*").order("created_at", { ascending: false }).limit(1000)),
     q(sb.from("alerts").select("*").order("created_at", { ascending: false }).limit(200)),
     q(sb.from("entries").select("*").order("day", { ascending: false }).limit(3000)),
     q(sb.from("marks").select("*")),
@@ -289,13 +289,26 @@ function wireMessages() {
 
 /* ================= LEAVE ================= */
 const LEAVE_T = { annual: "Annual leave", sick: "Sick leave", unpaid: "Unpaid leave", bereave: "Bereavement leave", dayoff: "Day off request", other: "Other" };
+/* Sick leave record: every approved sick day, by person, for the last 12 months */
+function sickRecord() {
+  const from = addDays(today(), -365); const days = [];
+  for (const l of S.leave) { if (l.type !== "sick" || l.status !== "approved" || l.date_to < from) continue;
+    for (let d = l.date_from < from ? from : l.date_from; d <= l.date_to; d = addDays(d, 1)) days.push({ l, d, h: l.paid ? sickHours(S.peopleBy[l.driver] || { id: l.driver }, d, l) : 0 }); }
+  const by = {}; for (const x of days) (by[x.l.driver] ??= []).push(x);
+  const rows = Object.entries(by).sort((a, b) => nm(a[0]).localeCompare(nm(b[0])));
+  const h1 = v => (Math.round(v * 10) / 10).toString();
+  return `<div class="card"><h2>Sick leave record<span>last 12 months · ${days.length} day${days.length === 1 ? "" : "s"}</span></h2>${rows.length ? `<div class="list">${rows.map(([drv, L]) => { const pd = L.filter(x => x.l.paid), up = L.filter(x => x.l.paid === false); L.sort((a, b) => b.d.localeCompare(a.d));
+    return `<details class="item"><summary class="row" style="justify-content:space-between"><b>${esc(nm(drv))}</b><span class="meta">${L.length} day${L.length === 1 ? "" : "s"} · ${pd.length} paid (${h1(pd.reduce((t, x) => t + (+x.h || 0), 0))} h) · ${up.length} unpaid</span></summary><ul style="margin:6px 0 0;padding-left:18px" class="meta">${L.map(x => `<li>${label(x.d, true)} · ${x.l.paid ? `paid ${h1(+x.h || 0)} h` : x.l.paid === false ? "unpaid" : "paid?"}${x.l.notes && !/^Entered by/.test(x.l.notes) ? ` · ${esc(x.l.notes)}` : ""}</li>`).join("")}</ul></details>`; }).join("")}</div>` : `<p class="empty">No sick days in the last 12 months</p>`}<p class="hint">Every sick day marked on the Run Board or added here is kept. ${SIX_MONTHS_NOTE}</p></div>`;
+}
+
 function leaveTab() {
   const pend = S.leave.filter(l => l.status === "pending"), rest = S.leave.filter(l => l.status !== "pending");
   const row = l => `<div class="item clk ${l.status === "pending" ? "warn" : l.status === "approved" ? "ok done" : l.status === "declined" ? "crit done" : "done"}" data-leaveof="${l.id}"><div class="row" style="justify-content:space-between"><b>${esc(nm(l.driver))} · ${esc(LEAVE_T[l.type] || l.type)}</b><span class="row" style="gap:4px">${paidPill(l)}${S.me.isOwner && l.status === "approved" && (l.type === "sick" || l.paid != null) ? `<button class="btn ghost sm" data-paidflip="${l.id}" title="Switch paid / unpaid">${l.paid ? "Make unpaid" : "Make paid"}</button>` : ""}${pill(l.status, l.status === "approved" ? "ok" : l.status === "declined" ? "crit" : l.status === "pending" ? "warn" : "grey")}</span></div>
     <div class="meta mono">${label(l.date_from, true)}${l.date_to !== l.date_from ? ` – ${label(l.date_to, true)}` : ""}${l.part !== "full" ? ` · ${l.part === "AM" ? "morning off" : "afternoon off"}` : ""} · asked ${fmtTs(l.created_at)}${l.acked_email_at ? " · received email sent" : ""}</div>${l.notes ? `<div>${esc(l.notes)}</div>` : ""}
     ${l.status === "pending" ? `<div class="row"><input class="in" placeholder="Reply to the driver (optional)" data-reply="${l.id}" style="flex:1 1 200px"><button class="btn sm" data-decide="approved" data-id="${l.id}">Approve</button><button class="btn sm crit" data-decide="declined" data-id="${l.id}">Decline</button></div>` : l.reply ? `<div class="meta">Reply: ${esc(l.reply)}${l.decided_by ? ` · by ${esc(fnm(l.decided_by))}` : ""}</div>` : ""}</div>`;
   return `<div class="card"><h2>Waiting<span>${pend.length}</span></h2>${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : `<p class="empty">✓ Nothing waiting</p>`}<p class="hint">Approving sends the driver an email and a notification, and blocks them on the Run Board for those days.</p></div>
-    <div class="card"><h2>Add leave by hand</h2><form id="lf" class="frm"><label class="f">Driver<select class="in" id="l-drv">${opt(S.drivers.map(d => [d.id, d.name]))}</select></label><label class="f">Type<select class="in" id="l-type">${opt(Object.entries(LEAVE_T))}</select></label><label class="f">From<input class="in" type="date" id="l-from" required></label><label class="f">To<input class="in" type="date" id="l-to" required></label><label class="f">Paid?<select class="in" id="l-paid"><option value="auto">Auto (6-month rule for sick)</option><option value="true">Paid</option><option value="false">Unpaid</option></select></label><p class="hint full" id="l-why" style="margin:0">${SIX_MONTHS_NOTE} Tip: on the Run Board, press and hold a shift to mark someone sick.</p><label class="f full">Note<input class="in" id="l-note" placeholder="e.g. told me by text"></label><button class="btn full" type="submit">Add as approved</button></form></div>
+    <div class="card"><h2>Add leave by hand</h2><form id="lf" class="frm"><label class="f">Driver<select class="in" id="l-drv">${opt(S.drivers.map(d => [d.id, d.name]))}</select></label><label class="f">Type<select class="in" id="l-type">${opt(Object.entries(LEAVE_T))}</select></label><label class="f">From<input class="in" type="date" id="l-from" required></label><label class="f">To<input class="in" type="date" id="l-to" required></label><label class="f">Paid?<select class="in" id="l-paid"><option value="auto">Auto (6-month rule for sick)</option><option value="true">Paid</option><option value="false">Unpaid</option></select></label><p class="hint full" id="l-why" style="margin:0">${SIX_MONTHS_NOTE} Tip: on the Run Board, tap a shift and press Mark sick.</p><label class="f full">Note<input class="in" id="l-note" placeholder="e.g. told me by text"></label><button class="btn full" type="submit">Add as approved</button></form></div>
+    ${sickRecord()}
     <div class="card"><h2>History<span>${rest.length}</span></h2><div class="list">${rest.slice(0, 40).map(row).join("") || `<p class="empty">Nothing yet</p>`}</div></div>`;
 }
 function wireLeave() {
