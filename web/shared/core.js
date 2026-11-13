@@ -125,3 +125,7 @@ export async function enablePush(personId, vapidPublic) {
   return { ok: true };
 }
 export async function pushState() { if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "unsupported"; const reg = await navigator.serviceWorker.getRegistration(); const sub = reg && await reg.pushManager.getSubscription(); return sub ? "on" : (Notification.permission === "denied" ? "denied" : "off"); }
+
+// Only shift and van changes need the driver to confirm; add-on/note-only changes go straight onto their portal.
+export function needsConfirm(i) { const a = i?.after || null, b = i?.before || null; if (!a?.driver || !b?.driver) return true;
+  return ["driver", "trainee", "van", "start_at", "end_at", "bu_kind", "bu_block"].some(k => (a[k] ?? null) !== (b[k] ?? null)); }

@@ -1,7 +1,7 @@
 // Run Board tab: the week grid IS the roster. Two steps for drivers:
 //  1. "Approve roster" publishes the week to the driver app (silent: no email, no Got it) — until then drivers can't see that week at all (RLS week_published()).
 //  2. "Push changes" (edits made after approval) emails + alerts the affected drivers, who tap Got it.
-import { sb, q, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmt24, fmtTs, fmtTime, ago, esc, $, $$, toast, pill, first, isSort, hours } from "/shared/core.js";
+import { needsConfirm, sb, q, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmt24, fmtTs, fmtTime, ago, esc, $, $$, toast, pill, first, isSort, hours } from "/shared/core.js";
 import { addName, segTimes } from "/shared/score.js";
 import { S, sheet, opt, nm, fnm, weekBar, wireWeek, loadAll, render, fn } from "/admin/admin.js";
 import { sickSheet, onLongPress } from "/admin/sick.js";
@@ -227,7 +227,7 @@ function sendSheet() {
   });
 }
 async function afterSend(changeId, items, pend) {
-  const acks = []; for (const i of items) for (const d of i.affects) acks.push({ item_id: i.id, driver: d });
+  const now_ = new Date().toISOString(); const acks = []; for (const i of items) for (const d of i.affects) acks.push({ item_id: i.id, driver: d, ...(needsConfirm(i) ? {} : { confirmed_at: now_ }) });   // add-on-only changes apply straight to the portal
   if (acks.length) await q(sb.from("change_acks").upsert(acks, { onConflict: "item_id,driver" }));
   await q(sb.from("roster_sent").upsert(pend.map(p => ({ shift_key: p.k, snapshot: p.after || { driver: null }, sent_at: new Date().toISOString() })), { onConflict: "shift_key" }));
   fn("notify", { type: "roster_change", change_id: changeId }).catch(e => console.warn(e));

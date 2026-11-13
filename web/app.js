@@ -1,5 +1,5 @@
 // Taieri Post · driver app
-import { DEMO, sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, longLabel, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, enablePush, pushState, nzToIso, settings as loadSettings, signOut, errCtx, reportError } from "/shared/core.js";
+import { needsConfirm, DEMO, sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, longLabel, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, enablePush, pushState, nzToIso, settings as loadSettings, signOut, errCtx, reportError } from "/shared/core.js";
 import { requireUser } from "/shared/auth.js";
 import { VAPID_PUBLIC } from "/shared/config.js";
 import { resetDemo, newRuns } from "/shared/demo.js";
@@ -345,8 +345,8 @@ function rosterChanges(n) {
   const ackBy = Object.fromEntries(S.acks.map(a => [a.item_id, a]));
   const live_ = S.changes.filter(i => !linePast(i, n)).sort((a, b) => (b.roster_changes.sent_at || "").localeCompare(a.roster_changes.sent_at || ""));
   const settled = i => ackBy[i.id]?.confirmed_at || ackBy[i.id]?.dismissed_at;   // confirmed by the driver or by Jeremy, or dismissed: no button
-  const fresh = live_.filter(i => !settled(i) && !S.gotit[i.id]);
-  const tapped = live_.filter(i => !settled(i) && S.gotit[i.id]);
+  const fresh = live_.filter(i => needsConfirm(i) && !settled(i) && !S.gotit[i.id]);
+  const tapped = live_.filter(i => needsConfirm(i) && !settled(i) && S.gotit[i.id]);
   if (!fresh.length && !tapped.length) return "";   // all confirmed or cleared: the box goes away
   const grp = list => { const by = {}; for (const i of list) (by[i.change_id] ??= { at: i.roster_changes.sent_at, items: [] }).items.push(i); return Object.values(by); };
   return `<div class="card ${fresh.length ? "hot" : ""}" id="rc"><h2>Roster changes<span>${fresh.length ? `${fresh.length} to confirm` : "Got it sent"}</span></h2>

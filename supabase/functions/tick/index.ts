@@ -1,5 +1,9 @@
 // tick: runs every minute (pg_cron → pg_net). Raises alerts, resolves them when fixed, chases by push/email, sends "leave received" emails.
 import { admin, nz, toMin, fmtT, label, longLabel, addDays, dow, esc, first, secrets, settings, sendEmail, wrap, push, staffWith, json } from "./lib.ts";
+// Only shift and van changes need the driver to confirm; add-on/note-only changes go straight onto their portal.
+function needsConfirm(i: any) { const a = i?.after || null, b = i?.before || null; if (!a?.driver || !b?.driver) return true;
+  return ["driver", "trainee", "van", "start_at", "end_at", "bu_kind", "bu_block"].some(k => (a[k] ?? null) !== (b[k] ?? null)); }
+
 
 const LEAVE_T: Record<string, string> = { annual: "Annual leave", sick: "Sick leave", unpaid: "Unpaid leave", bereave: "Bereavement leave", dayoff: "Day off request", other: "Other" };
 
@@ -82,7 +86,7 @@ Deno.serve(async (req) => {
     }
   }
   // roster changes not confirmed, run starting within the hour
-  for (const i of items || []) { const st = toMin(i.after?.start_at) ?? (() => { const w = runsBy[i.run]?.windows?.[["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][dow(i.day)]]; return w ? toMin(w[0][0]) : null; })(); if (st == null) continue;
+  for (const i of items || []) { if (!needsConfirm(i)) continue; const st = toMin(i.after?.start_at) ?? (() => { const w = runsBy[i.run]?.windows?.[["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][dow(i.day)]]; return w ? toMin(w[0][0]) : null; })(); if (st == null) continue;
     const minsTo = (i.day === t ? 0 : 1440) + st - now.min; if (minsTo > 90 || minsTo < -30) continue;
     for (const d of i.affects) { const a = (acks || []).find(x => x.item_id === i.id && x.driver === d); if (a?.confirmed_at || a?.dismissed_at) continue;
       raise({ kind: "change_unconfirmed", driver: d, title: `${first(ppl[d]?.name)} hasn't confirmed a roster change`, body: `${i.summary} · run starts ${fmtT(st)}`, dedupe_key: `change_unconfirmed|${i.id}|${d}`, _push: { to: [d], title: "Please confirm your roster change", body: i.summary } }); }

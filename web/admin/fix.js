@@ -1,6 +1,6 @@
 // Fix posts tab: everything that was missed, late or left undone, in one place. Every item gets the same four outcomes
 // (Done / Late / Not done / Excuse), one at a time or for a whole box. The buttons and what they do live in settle.js.
-import { sb, q, nzNow, today, addDays, dayName, dow, monOf, label, toMin, fmtT, fmt24, nzToIso, esc, $, $$, toast, first, ago } from "/shared/core.js";
+import { needsConfirm, sb, q, nzNow, today, addDays, dayName, dow, monOf, label, toMin, fmtT, fmt24, nzToIso, esc, $, $$, toast, first, ago } from "/shared/core.js";
 import { scoreFor, itemNote, STATE_LABEL, needsFix } from "/shared/score.js";
 import { S, sheet, nm, weekBar, wireWeek, loadAll, render, scoreData, alertsTab, wireAlerts } from "/admin/admin.js";
 import { chip, eodEdit } from "/admin/scorecard.js";
@@ -55,13 +55,13 @@ function addSection() {
 /* ---------- 3. Roster changes a driver hasn't confirmed ---------- */
 function chgTodo() {
   const dec = decided("chg|"); const ack = {}; for (const a of S.acks || []) (ack[a.item_id] ??= {})[a.driver] = a; const by = {};
-  for (const i of S.items || []) { if (i.roster_changes?.status !== "sent") continue;
+  for (const i of S.items || []) { if (i.roster_changes?.status !== "sent" || !needsConfirm(i)) continue;
     for (const d of i.affects || []) { const a = ack[i.id]?.[d]; if (a?.confirmed_at || a?.dismissed_at || dec.has(`chg|${i.id}|${d}`)) continue; (by[d] ??= []).push(i); } }
   return Object.entries(by).map(([d, L]) => ({ d, L })).sort((a, b) => nm(a.d).localeCompare(nm(b.d)));
 }
 function chgSection() {
   const L = chgTodo();
-  return `<div class="card"><h2>Roster changes not confirmed<span>${L.length || "all clear"}</span></h2><p class="hint">${HINT} <b>Done</b> and <b>Late</b> confirm the changes for the driver; <b>Not done</b> leaves them for the driver to confirm.</p>${allBar(L.length)}
+  return `<div class="card"><h2>Shift &amp; van changes not confirmed<span>${L.length || "all clear"}</span></h2><p class="hint">${HINT} <b>Done</b> and <b>Late</b> confirm the changes for the driver; <b>Not done</b> leaves them for the driver to confirm.</p>${allBar(L.length)}
     ${L.length ? `<div class="list">${L.map(({ d, L }) => `<div class="item warn"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(nm(d))}</b><span class="meta"> ${L.length} change${L.length > 1 ? "s" : ""} · sent ${ago(L[0].roster_changes.sent_at)}</span></span>${btnRow(actBtns("chg", `data-drv="${esc(d)}" data-items="${L.map(i => i.id).join(",")}"`))}</div><ul style="margin:4px 0;padding-left:18px" class="meta">${L.slice(0, 6).map(i => `<li>${label(i.day)} · ${esc(i.summary || "")}</li>`).join("")}${L.length > 6 ? `<li>+${L.length - 6} more</li>` : ""}</ul></div>`).join("")}</div>` : `<p class="empty">✓ Nothing to fix.</p>`}</div>`;
 }
 

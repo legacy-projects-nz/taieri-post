@@ -1,6 +1,10 @@
 // notify: emails and push notifications triggered from the portals (roster changes, leave decisions, messages, scorecard emails)
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import { admin, nz, toMin, fmtT, label, longLabel, esc, first, secrets, settings, sendEmail, wrap, push, json } from "./lib.ts";
+// Only shift and van changes need the driver to confirm; add-on/note-only changes go straight onto their portal.
+function needsConfirm(i: any) { const a = i?.after || null, b = i?.before || null; if (!a?.driver || !b?.driver) return true;
+  return ["driver", "trainee", "van", "start_at", "end_at", "bu_kind", "bu_block"].some(k => (a[k] ?? null) !== (b[k] ?? null)); }
+
 
 const LEAVE_T: Record<string, string> = { annual: "Annual leave", sick: "Sick leave", unpaid: "Unpaid leave", bereave: "Bereavement leave", dayoff: "Day off request", other: "Other" };
 const SITE = "https://taieri-post.onrender.com";
@@ -21,7 +25,7 @@ Deno.serve(async (req) => {
     if (!can("roster")) return json({ error: "no" }, 403);
     const { data: items } = await sb.from("roster_change_items").select("*, roster_changes!inner(*)").eq("change_id", body.change_id); if (!items?.length) return json({ error: "no items" }, 404);
     if (items[0].roster_changes.status !== "sent") return json({ error: "not sent" }, 400);
-    const by: Record<string, string[]> = {}; for (const i of items) for (const d of i.affects) (by[d] ??= []).push(i.summary);
+    const by: Record<string, string[]> = {}; for (const i of items) { if (!needsConfirm(i)) continue; for (const d of i.affects) (by[d] ??= []).push(i.summary); }
     const reason = items[0].roster_changes.reason; let sent = 0;
     for (const [d, lines] of Object.entries(by)) { const p = people[d]; if (!p) continue;
       await push(sb, sec, set, [d], { title: `Roster change${lines.length > 1 ? "s" : ""} – please confirm`, body: lines[0] + (lines.length > 1 ? ` (+${lines.length - 1} more)` : ""), url: "/", tag: "rc-" + body.change_id });
