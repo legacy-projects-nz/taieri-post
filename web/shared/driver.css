@@ -89,6 +89,7 @@ hr.gl{display:none}
 /* Today's tasks: blue = to do (including once its window opens), red = 15 min or less to its end time or overdue, green = done */
 .tk.pend,.tk.soon,.tk.over{background:var(--soft);border:1px solid var(--line);border-left:5px solid var(--accent)}
 .tk.pend .w{color:var(--ink2)}
+.tk.late{background:var(--warn-fill);border:1px solid var(--warn);border-left:5px solid var(--warn)}.tk.late .w,.tk.tk1.late .tkw{color:var(--warn);font-weight:800}
 .tk.soon,.tk.over{background:var(--crit-fill);border-color:var(--crit);border-left-color:var(--crit)}.tk.soon .w,.tk.over .w{color:var(--crit);font-weight:800}
 .tk.ok{background:var(--ok-fill);border:1px solid var(--ok);border-left:5px solid var(--ok)}.tk.ok .w{color:var(--ok)}
 
