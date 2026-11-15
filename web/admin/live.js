@@ -36,6 +36,7 @@ export function liveTab() {
 
   const cur = monOf(t);
   return `<div class="top4">${sodReqCard()}${xtCard()}${nowCard(n)}</div>${weekNav(wk)}${wk > cur ? `<p class="hint" style="margin:0 0 6px">Next week: the planned roster. Nothing is posted yet, so scores fill in as the days come.</p>` : ""}<div class="card">${chips}${kpi}</div>
+    ${availCard(one ? days[0] : t, n)}
     ${addonBoard(one ? days[0] : t, n)}
     ${moneyCard(one ? days[0] : t)}
     <div class="grid2">${important(scores, n)}${teamAndLabour(scores, team, wk)}</div>
@@ -45,6 +46,24 @@ export function liveTab() {
     ${driversGrid(scores, wk)}
     <div class="card"><h2>${one ? `Posts for ${label(days[0])}` : "Posts by driver and day"}<span>tap a chip to review</span></h2>${postsBoard(selScores, days, t)}</div>
     <div class="grid2"><div class="card"><h2>Live feed<span>today</span></h2>${feed(t)}</div><div class="card"><h2>Where everyone is<span>between SOD and EOD · app open</span></h2><div class="map" id="map"></div><p class="hint">Dots update every couple of minutes while a driver's app is on screen. Grey = older than 10 minutes.</p></div></div>`;
+}
+
+/* ---- Available · vans not in use and drivers free on the day (gaps of an hour or more, vans 5am–6pm, drivers 6am–5pm).
+   Drivers who are never on call (Jeremy, James S, Jack, Pat, Peter) and anyone on approved leave are left out. ---- */
+const AV_SKIP = new Set(["J", "JA", "CH", "dmudmfw51", "dmudma1p1", "dmuf17o3o"]);
+function gaps(busy, from, to, min = 60) { const b = busy.filter(x => x[1] > from && x[0] < to).sort((x, y) => x[0] - y[0]); const out = []; let c = from;
+  for (const [a, e] of b) { if (a - c >= min) out.push([c, a]); c = Math.max(c, e); } if (to - c >= min) out.push([c, to]); return out; }
+const hrs = m => { const h = m / 60; return (Math.round(h * 2) / 2).toString().replace(/\.0$/, "") + "h"; };
+function availCard(day, n) {
+  const sh = S.shifts.filter(s => s.day === day && s.driver && s.run !== "BU").map(s => ({ s, ...segTimes(s, S.runsBy) })).filter(x => x.st != null);
+  const isT = day === n.date, nowM = isT ? n.min : 0; const live = w => w.map(([a, e]) => [Math.max(a, nowM), e]).filter(([a, e]) => e - a >= 60);
+  const vans = (S.vans || []).filter(v => v.active && v.plate !== "OTHER").map(v => { const busy = sh.filter(x => x.s.van === v.plate).map(x => [x.st, x.en ?? x.st]); const w = live(gaps(busy, 300, 1080)); return { v, w, unused: !busy.length }; }).filter(x => x.w.length);
+  const off = id => (S.leave || []).some(l => l.driver === id && l.status === "approved" && day >= l.date_from && day <= l.date_to);
+  const drv = S.drivers.filter(d => d.role === "driver" && !AV_SKIP.has(d.id) && !off(d.id)).map(d => { const busy = sh.filter(x => x.s.driver === d.id).map(x => [x.st, x.en ?? x.st]); const w = live(gaps(busy, 360, 1020)); return { d, w, off: !busy.length }; }).filter(x => x.w.length).sort((a, b) => b.w.reduce((t, [x, y]) => t + y - x, 0) - a.w.reduce((t, [x, y]) => t + y - x, 0));
+  const win = w => w.map(([a, e]) => `${fmtT(a)}–${fmtT(e)} <span class="meta">(${hrs(e - a)})</span>`).join(", ");
+  return `<div class="card" id="avail" style="max-width:760px"><h2><i class="ico">🚐</i>Available ${isT ? "now" : label(day)}<span>${vans.length} van${vans.length === 1 ? "" : "s"} · ${drv.length} driver${drv.length === 1 ? "" : "s"} free${isT ? " from now" : ""} · gaps of 1h+</span></h2>
+    <div class="grid2" style="gap:10px;font-size:13px"><div><div class="meta mono" style="margin-bottom:4px">VEHICLES</div>${vans.length ? vans.map(x => `<div class="row" style="justify-content:space-between;gap:6px;padding:2px 0"><b>${esc(x.v.plate)}</b><span style="text-align:right">${x.unused ? `<span class="c-ok">not used${isT && nowM > 300 ? " · free" : ""}</span>` : win(x.w)}</span></div>`).join("") : `<p class="empty">All in use.</p>`}</div>
+    <div><div class="meta mono" style="margin-bottom:4px">DRIVERS</div>${drv.length ? drv.map(x => `<div class="row" style="justify-content:space-between;gap:6px;padding:2px 0"><b>${esc(nm(x.d.id))}</b><span style="text-align:right">${x.off ? `<span class="c-ok">not rostered</span> · ` : ""}${win(x.w)}</span></div>`).join("") : `<p class="empty">Nobody free.</p>`}</div></div></div>`;
 }
 
 /* ---- Right now · the start view: only who is due on shift at this moment (on shift = green, late = red with minutes) and only the
