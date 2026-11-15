@@ -54,7 +54,8 @@ async function loadAllNow() {
   let from = addDays(wk < mt ? wk : mt, -63); let to = addDays(wk > mt ? wk : mt, 20);
   if (S.tsRange === "custom" && S.tsFrom && S.tsFrom < from) from = S.tsFrom;
   if (S.cmpFrom && S.cmpFrom < from) from = S.cmpFrom;
-  if (S.labR?.to && S.labR.to > to) to = S.labR.to;   // Labour: next fortnight   // Scorecard › Efficiency / Sorting drill-down further back   // dashboard dates further back than usual
+  if (S.labR?.to && S.labR.to > to) to = S.labR.to;   // Labour: next fortnight
+  if (S.avDay && S.avDay > to) to = S.avDay;   // Live › Available: a day further ahead   // Scorecard › Efficiency / Sorting drill-down further back   // dashboard dates further back than usual
   const [set, runs, vans, addons, rules, people, shifts, items, acks, sent, msgs, recips, leave, alerts, entries, marks, feed, ovs, locs, skills, notes, vchk] = await Promise.all([
     loadSettings(), q(sb.from("runs").select("*").order("sort")), q(sb.from("vans").select("*").order("plate")), q(sb.from("addons").select("*")), q(sb.from("timing_rules").select("*")),
     q(sb.from("people").select("*").order("name")),

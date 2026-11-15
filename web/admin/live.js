@@ -36,7 +36,7 @@ export function liveTab() {
 
   const cur = monOf(t);
   return `<div class="top4">${sodReqCard()}${xtCard()}${nowCard(n)}</div>${weekNav(wk)}${wk > cur ? `<p class="hint" style="margin:0 0 6px">Next week: the planned roster. Nothing is posted yet, so scores fill in as the days come.</p>` : ""}<div class="card">${chips}${kpi}</div>
-    ${availCard(one ? days[0] : t, n)}
+    ${availCard(S.avDay || (one ? days[0] : t), n)}
     ${addonBoard(one ? days[0] : t, n)}
     ${moneyCard(one ? days[0] : t)}
     <div class="grid2">${important(scores, n)}${teamAndLabour(scores, team, wk)}</div>
@@ -56,12 +56,15 @@ function gaps(busy, from, to, min = 60) { const b = busy.filter(x => x[1] > from
 const hrs = m => { const h = m / 60; return (Math.round(h * 2) / 2).toString().replace(/\.0$/, "") + "h"; };
 function availCard(day, n) {
   const sh = S.shifts.filter(s => s.day === day && s.driver && s.run !== "BU").map(s => ({ s, ...segTimes(s, S.runsBy) })).filter(x => x.st != null);
-  const isT = day === n.date, nowM = isT ? n.min : 0; const live = w => w.map(([a, e]) => [Math.max(a, nowM), e]).filter(([a, e]) => e - a >= 60);
+  const isT = day === n.date; const fT = toMin(S.avFrom), tT = toMin(S.avTo); const nowM = Math.max(isT && fT == null ? n.min : 0, fT ?? 0); const endM = tT ?? 1440;
+  const live = w => w.map(([a, e]) => [Math.max(a, nowM), Math.min(e, endM)]).filter(([a, e]) => e - a >= 60);
   const vans = (S.vans || []).filter(v => v.active && v.plate !== "OTHER").map(v => { const busy = sh.filter(x => x.s.van === v.plate).map(x => [x.st, x.en ?? x.st]); const w = live(gaps(busy, 300, 1080)); return { v, w, unused: !busy.length }; }).filter(x => x.w.length);
   const off = id => (S.leave || []).some(l => l.driver === id && l.status === "approved" && day >= l.date_from && day <= l.date_to);
   const drv = S.drivers.filter(d => d.role === "driver" && !AV_SKIP.has(d.id) && !off(d.id)).map(d => { const busy = sh.filter(x => x.s.driver === d.id).map(x => [x.st, x.en ?? x.st]); const w = live(gaps(busy, 360, 1020)); return { d, w, off: !busy.length }; }).filter(x => x.w.length).sort((a, b) => b.w.reduce((t, [x, y]) => t + y - x, 0) - a.w.reduce((t, [x, y]) => t + y - x, 0));
   const win = w => w.map(([a, e]) => `${fmtT(a)}–${fmtT(e)} <span class="meta">(${hrs(e - a)})</span>`).join(", ");
-  return `<div class="card" id="avail" style="max-width:760px"><h2><i class="ico">🚐</i>Available ${isT ? "now" : label(day)}<span>${vans.length} van${vans.length === 1 ? "" : "s"} · ${drv.length} driver${drv.length === 1 ? "" : "s"} free${isT ? " from now" : ""} · gaps of 1h+</span></h2>
+  const when = fT != null || tT != null ? ` · ${fmtT(fT ?? (isT ? n.min : 300))}–${fmtT(tT ?? 1080)}` : isT ? " from now" : "";
+  return `<div class="card" id="avail" style="max-width:760px"><h2><i class="ico">🚐</i>Available ${isT && fT == null ? "now" : label(day)}<span>${vans.length} van${vans.length === 1 ? "" : "s"} · ${drv.length} driver${drv.length === 1 ? "" : "s"} free${when} · gaps of 1h+</span></h2>
+    <div class="row" style="gap:6px;align-items:flex-end;flex-wrap:wrap"><label class="f" style="flex:0 1 150px">Day<input class="in" type="date" id="av-day" value="${day}"></label><label class="f" style="flex:0 1 110px">From<input class="in" type="time" id="av-from" value="${S.avFrom || ""}"></label><label class="f" style="flex:0 1 110px">To<input class="in" type="time" id="av-to" value="${S.avTo || ""}"></label><button class="btn sm" id="av-go" style="flex:0 0 auto">Show</button><button class="btn ghost sm" id="av-now" style="flex:0 0 auto">Now</button></div>
     <div class="grid2" style="gap:10px;font-size:13px"><div><div class="meta mono" style="margin-bottom:4px">VEHICLES</div>${vans.length ? vans.map(x => `<div class="row" style="justify-content:space-between;gap:6px;padding:2px 0"><b>${esc(x.v.plate)}</b><span style="text-align:right">${x.unused ? `<span class="c-ok">not used${isT && nowM > 300 ? " · free" : ""}</span>` : win(x.w)}</span></div>`).join("") : `<p class="empty">All in use.</p>`}</div>
     <div><div class="meta mono" style="margin-bottom:4px">DRIVERS</div>${drv.length ? drv.map(x => `<div class="row" style="justify-content:space-between;gap:6px;padding:2px 0"><b>${esc(nm(x.d.id))}</b><span style="text-align:right">${x.off ? `<span class="c-ok">not rostered</span> · ` : ""}${win(x.w)}</span></div>`).join("") : `<p class="empty">Nobody free.</p>`}</div></div></div>`;
 }
@@ -385,6 +388,9 @@ async function decideSodReq(id, ok) {
 
 /* ---- wiring ---- */
 export function wireLive() {
+  $("#av-go")?.addEventListener("click", async () => { const d = $("#av-day").value || null; S.avFrom = $("#av-from").value || null; S.avTo = $("#av-to").value || null; S.avDay = d;
+    if (d && !S.shifts.some(s => s.day === d)) { if (!S.cmpFrom || d < S.cmpFrom) S.cmpFrom = d; await loadAll(); } render(); });
+  $("#av-now")?.addEventListener("click", () => { S.avDay = S.avFrom = S.avTo = null; render(); });
   { const ds = sel(); wireMoney(ds.length === 1 ? ds[0] : today()); }
   $$("[data-day]").forEach(b => b.onclick = () => { const d = b.dataset.day; const cur = sel(); S.daySel = cur.includes(d) ? (cur.length > 1 ? cur.filter(x => x !== d) : cur) : [...cur, d].sort(); render(); });
   $$("[data-days]").forEach(b => b.onclick = () => { const today_ = b.dataset.days === "today"; if (today_) S.liveWk = monOf(today()); const wk = liveWk(); S.daySel = today_ ? [today()] : DAYS.map((_, i) => addDays(wk, i)); S.daySelWk = wk; render(); });
