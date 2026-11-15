@@ -255,4 +255,6 @@ button.qb:disabled{opacity:.4}
 .top4>.card>h2>span{order:3;flex:1 0 100%;margin-left:0;white-space:normal;overflow:visible}
 .top4>.card>h2>.fchev{margin-left:auto}
 .top4>.card>.list{max-height:420px;overflow:auto}
-.top4>.card.fold.shut>h2>span:has(button){display:block}
+.card>h2>.ico{font-style:normal;margin-right:8px;flex:0 0 auto}
+.top4>.card.fold.shut>h2{flex-wrap:nowrap;white-space:nowrap;align-items:center}
+.top4>.card.fold.shut>h2>span{display:none}

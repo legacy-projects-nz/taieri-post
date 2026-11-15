@@ -52,7 +52,7 @@ export function liveTab() {
 const minsTxt = m => m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min` : `${m} min`;
 function nowCard(n) {
   const t = n.date, now = n.min, R = S.C.rules; const grace = R.sodGrace ?? 15;
-  if (S.C.holidays[t]) return `<div class="card" id="rightnow"><h2>Right now · ${fmtT(now)}<span>${label(t)}</span></h2><p class="empty">Public holiday · no runs today.</p></div>`;
+  if (S.C.holidays[t]) return `<div class="card" id="rightnow"><h2><i class="ico">👥</i>Right now · ${fmtT(now)}<span>${label(t)}</span></h2><p class="empty">Public holiday · no runs today.</p></div>`;
   const off = id => (S.leave || []).some(l => l.driver === id && l.status === "approved" && t >= l.date_from && t <= l.date_to);
   const todays = S.shifts.filter(s => s.day === t && s.driver && s.run !== "BU" && !off(s.driver));
   const byDrv = {}; for (const s of todays) (byDrv[s.driver] ??= []).push(s);
@@ -97,9 +97,9 @@ function nowCard(n) {
   const nLate = ppl.filter(p => p.lv === "crit").length, nOver = due.filter(d => d.lv === "crit").length;
   const pRow = p => `<div class="item clk ${p.lv}" data-personof="${esc(p.id)}" title="Tap for ${esc(first(nm(p.id)))}'s sheet"><div class="row" style="justify-content:space-between;align-items:baseline"><b>${esc(nm(p.id))}</b><b class="c-${p.lv === "crit" ? "crit" : p.lv === "warn" ? "warn" : "ok"}">${p.lv === "ok" ? "● " : ""}${esc(p.st)}</b></div><div class="m">${esc(p.what)} · ${fmtT(p.D.start)}–${fmtT(p.D.end)} · ${esc(p.sub)}</div></div>`;
   const dRow = d => `<div class="item clk ${d.lv}" data-task="${d.s.id}"${d.rule ? ` data-rule="${esc(d.rule)}"` : ""} title="Tap for the plan, history and the driver's day"><div class="row" style="justify-content:space-between;align-items:baseline"><b>${esc(d.name)}</b><span class="meta">${esc(d.s.run)} · ${esc(fnm(d.s.driver))}</span></div><div class="m ${d.lv === "crit" ? "c-crit" : ""}">${esc(d.txt)}</div></div>`;
-  return `<div class="card ${nLate ? "hot" : ""}" id="rightnow"><h2>Shift right now · ${fmtT(now)}<span>${ppl.length} on${nLate ? ` · <b class="c-crit">${nLate} late for shift</b>` : " · ✓ nobody late"} · updates every minute</span></h2>
+  return `<div class="card ${nLate ? "hot" : ""}" id="rightnow"><h2><i class="ico">👥</i>Shift right now · ${fmtT(now)}<span>${ppl.length} on${nLate ? ` · <b class="c-crit">${nLate} late for shift</b>` : " · ✓ nobody late"} · updates every minute</span></h2>
     ${ppl.length ? `<div class="list">${ppl.map(pRow).join("")}</div>` : `<p class="empty">Nobody due on shift right now.</p>`}</div>
-  <div class="card ${nOver ? "hot" : ""}" id="rightnow-addons"><h2>Add-ons right now · ${fmtT(now)}<span>${due.length} due${nOver ? ` · <b class="c-crit">${nOver} overdue</b>` : " · ✓ nothing overdue"} · updates every minute</span></h2>
+  <div class="card ${nOver ? "hot" : ""}" id="rightnow-addons"><h2><i class="ico">✅</i>Add-ons right now · ${fmtT(now)}<span>${due.length} due${nOver ? ` · <b class="c-crit">${nOver} overdue</b>` : " · ✓ nothing overdue"} · updates every minute</span></h2>
     ${due.length ? `<div class="list">${due.map(dRow).join("")}</div>` : `<p class="empty">✓ Nothing due or overdue.</p>`}</div>`;
 }
 
@@ -338,7 +338,7 @@ function sodReqCard() {
       ${canSign() ? `<div class="row" style="margin-top:6px"><label class="meta" style="display:flex;align-items:center;gap:4px">Started <input class="in" type="time" data-sstart="${r.id}" value="${t24(r.started)}" style="width:110px"></label><input class="in" data-sreply="${r.id}" placeholder="Reply to ${esc(first(nm(r.driver)))} (optional)" style="flex:2 1 160px"><button class="btn sm" data-sreq="${r.id}" data-ok="1">✓ Approve</button><button class="btn ghost sm" data-sreq="${r.id}" data-ok="0">Decline</button></div>` : `<div class="meta">Waiting for Jeremy or admin</div>`}`
       : `<div class="meta ${r.status === "approved" ? "c-ok" : "c-crit"}">${r.status === "approved" ? "✓ Approved · run times moved" : "✗ Declined · roster unchanged"}${r.decided_by ? ` by ${esc(fnm(r.decided_by))}` : ""}${r.reply ? ` · ${esc(r.reply)}` : ""}</div>
       ${r.status === "approved" && canSign() ? `<div class="row" style="margin-top:6px"><label class="meta" style="display:flex;align-items:center;gap:4px">Edit start <input class="in" type="time" data-sstart="${r.id}" value="${t24(r.started)}" style="width:110px"></label><button class="btn ghost sm" data-sreq="${r.id}" data-ok="1">Save start</button></div>` : ""}`}</div>`;
-  return `<div class="card ${pend.length ? "hot" : ""}" id="sodreq"><h2>Start times to sign off<span>${pend.length ? `${pend.length} waiting` : "nothing waiting"} · SOD more than ${S.C.rules.sodReqMins ?? 20} min off the roster</span></h2>
+  return `<div class="card ${pend.length ? "hot" : ""}" id="sodreq"><h2><i class="ico">⏱</i>Start times to sign off<span>${pend.length ? `${pend.length} waiting` : "nothing waiting"} · SOD more than ${S.C.rules.sodReqMins ?? 20} min off the roster</span></h2>
     ${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : `<p class="empty">✓ Nothing to sign off.</p>`}${recent.length ? `<details><summary>Recent decisions</summary><div class="list" style="margin-top:8px">${recent.map(row).join("")}</div></details>` : ""}</div>`;
 }
 function xtCard() {
@@ -347,7 +347,7 @@ function xtCard() {
     ${r.note ? `<div class="meta">“${esc(r.note)}”</div>` : ""}
     ${r.status === "pending" ? (S.me.isOwner ? `<div class="row" style="margin-top:6px"><input class="in" data-xreply="${r.id}" placeholder="Reply to ${esc(first(nm(r.driver)))} (optional)" style="flex:2 1 160px"><button class="btn sm" data-xreq="${r.id}" data-ok="1">✓ Approve</button><button class="btn ghost sm" data-xreq="${r.id}" data-ok="0">Decline</button></div>` : `<div class="meta">Waiting for Jeremy</div>`)
       : `<div class="meta ${r.status === "approved" ? "c-ok" : "c-crit"}">${r.status === "approved" ? (r.decided_by ? `✓ Approved by ${esc(fnm(r.decided_by))}` : "✓ Added") : `✗ Declined${r.decided_by ? ` by ${esc(fnm(r.decided_by))}` : ""}`}${r.reply ? ` · ${esc(r.reply)}` : ""}${S.me.isOwner && !r.decided_by ? ` · <button class="btn ghost sm" data-xreq="${r.id}" data-ok="0">Decline</button>` : ""}</div>`}</div>`;
-  return `<div class="card ${pend.length ? "hot" : ""}" id="xtreq"><h2>Added hours<span>${pend.length ? `${pend.length} to approve` : "nothing waiting"} · logged with ＋ Hours in the driver app</span></h2>
+  return `<div class="card ${pend.length ? "hot" : ""}" id="xtreq"><h2><i class="ico">＋</i>Added hours<span>${pend.length ? `${pend.length} to approve` : "nothing waiting"} · logged with ＋ Hours in the driver app</span></h2>
     ${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : `<p class="empty">✓ Nothing to approve.</p>`}${recent.length ? `<details><summary>Recent</summary><div class="list" style="margin-top:8px">${recent.map(row).join("")}</div></details>` : ""}</div>`;
 }
 async function decideXt(id, ok) {
