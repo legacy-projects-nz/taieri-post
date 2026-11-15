@@ -6,9 +6,9 @@
 //   Working, committed, 6 to 10 h    -> back-up allowance     $20  (if not needed)
 //   Working, AM shift, non-compulsory     -> no allowance (paid for hours worked only)
 // Called in = paid for hours worked (timesheet), no allowance on top. Declined = no allowance.
-import { sb, q, today, addDays, label, fmtT, esc, $$, toast } from "/shared/core.js";
+import { sb, q, today, addDays, label, fmtT, esc, $$, toast, monOf } from "/shared/core.js";
 import { segTimes, fortnight } from "/shared/score.js";
-import { S, nm, weekBar, wireWeek, render } from "/admin/admin.js";
+import { S, nm, render, loadAll } from "/admin/admin.js";
 
 export const AMT = { phone: 5, block5: 10, block10: 20 };
 const st = { outcomes: {}, week: null, loading: false };
@@ -25,64 +25,56 @@ export function lineFor(bu, shifts, runsBy) {
 }
 
 async function loadOutcomes() {
-  const wk = S.week; if (st.week === wk && !st.loading) return;
-  st.loading = true; st.week = wk;
-  const F = fortnight(wk), from = F.from < wk ? F.from : wk, to = F.to > addDays(wk, 6) ? F.to : addDays(wk, 6);
-  const { data, error } = await sb.from("allowance_outcomes").select("*").gte("day", from).lte("day", to);
+  const F = fortnight(S.week); if (st.week === F.from && !st.loading) return;
+  st.loading = true; st.week = F.from;
+  const { data, error } = await sb.from("allowance_outcomes").select("*").gte("day", F.from).lte("day", F.to);
   st.loading = false; if (error) { toast(error.message, "err"); return; }
   st.outcomes = Object.fromEntries((data || []).map(o => [o.day + "|" + o.driver, o]));
   render(true);
 }
 
-function lines(wk = S.week, end = addDays(S.week, 6)) {
-  return S.shifts.filter(x => x.run === "BU" && x.driver && x.day >= wk && x.day <= end).sort((a, b) => a.day < b.day ? -1 : a.day > b.day ? 1 : nm(a.driver).localeCompare(nm(b.driver)))
+function lines(from, to) {
+  return S.shifts.filter(x => x.run === "BU" && x.driver && x.day >= from && x.day <= to).sort((a, b) => a.day < b.day ? -1 : a.day > b.day ? 1 : nm(a.driver).localeCompare(nm(b.driver)))
     .map(bu => ({ bu, ...lineFor(bu, S.shifts, S.runsBy), out: st.outcomes[bu.day + "|" + bu.driver] }));
 }
 
+const OUT = { not_needed: "Not needed", called_in: "Called in", declined: "Declined" };
+
+// The board covers the whole pay fortnight. Every line is decided automatically once its back-up window ends;
+// the fortnight's totals go to Alejandro in the pay email on the Monday after it closes. Tap a line only to override.
 export function allowancesTab() {
   loadOutcomes();
-  const L = lines(), t = today();
-  const owed = l => l.out?.outcome === "not_needed" ? l.amt : 0;
-  const tot = {}; L.forEach(l => { tot[l.bu.driver] = (tot[l.bu.driver] || 0) + owed(l); });
-  const grand = Object.values(tot).reduce((a, b) => a + b, 0);
-  const row = l => { const d = l.bu.day, o = l.out?.outcome; const needs = !o && d <= t && l.amt > 0;
-    return `<div class="row" style="align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)">
-      <div style="flex:1 1 210px"><b>${esc(nm(l.bu.driver))}</b><div class="meta">${label(d)} · ${esc(l.kind)}</div><div class="meta">${esc(l.why)}</div></div>
-      <div style="flex:0 0 70px;text-align:right"><b>${l.amt ? "$" + l.amt : "—"}</b>${o === "not_needed" && l.amt ? `<div class="meta c-ok">owed</div>` : ""}${l.out?.note === "auto" ? `<div class="meta">auto</div>` : ""}</div>
-      <div class="row" style="flex:1 1 260px;gap:6px">${[["not_needed", "Not needed"], ["called_in", "Called in"], ["declined", "Declined"]].map(([k, t2]) => `<button class="btn sm ${o === k ? "" : "ghost"}" data-al="${k}" data-day="${d}" data-drv="${esc(l.bu.driver)}">${t2}</button>`).join("")}${o ? `<button class="btn ghost sm" data-al="" data-day="${d}" data-drv="${esc(l.bu.driver)}" title="Clear">✕</button>` : ""}</div>
-      ${needs ? `<span class="meta c-warn" style="flex:0 0 auto">needs a decision</span>` : ""}</div>`; };
-  return `${weekBar()}
-  ${fortnightCard()}
-  <div class="card"><h2>Allowances<span>back-up and on-call, owed this week: <b>$${grand}</b></span></h2>
-    <p class="hint">One line for every Back up slot on the Run Board. <b>Not needed</b> = the allowance is owed. <b>Called in</b> = paid for the hours worked (check the timesheet), no allowance on top. <b>Declined</b> = no allowance. Phone window $5, committed back-up $10 (up to 5 h) or $20 (over 5 up to 10 h). Non-compulsory back-up in the morning has no allowance. Each line fills itself in once the back-up window is over: <b>Called in</b> if a run was moved onto them (change sent after 5pm the day before, or on the day), otherwise <b>Not needed</b>. Marked “auto” until you tap a different answer.</p>
-    ${L.length ? L.map(row).join("") : `<div class="empty">No back-up or on-call slots on the Run Board this week.</div>`}
-    ${Object.keys(tot).length ? `<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:10px"><div class="meta mono" style="margin-bottom:6px">OWED THIS WEEK, BY PERSON</div>${Object.entries(tot).map(([d, v]) => `<div class="row" style="justify-content:space-between"><span>${esc(nm(d))}</span><b>$${v}</b></div>`).join("")}</div>` : ""}
-  </div>`;
-}
-
-// Pay-fortnight summary: every back-up line in the fortnight containing the week shown, per person.
-function fortnightCard() {
-  const F = fortnight(S.week), t = today();
-  const L = lines(F.from, F.to); if (!L.length) return "";
+  const F = fortnight(S.week), t = today(), L = lines(F.from, F.to);
   const P = {};
-  L.forEach(l => { const o = l.out?.outcome, p = P[l.bu.driver] ||= { n: 0, owed: 0, nn: 0, ci: 0, de: 0, open: 0 };
-    p.n++; if (o === "not_needed") { p.nn++; p.owed += l.amt; } else if (o === "called_in") p.ci++; else if (o === "declined") p.de++; else if (l.bu.day <= t && l.amt > 0) p.open++; });
+  L.forEach(l => { const o = l.out?.outcome, p = P[l.bu.driver] ||= { n: 0, owed: 0, nn: 0, ci: 0, de: 0, wait: 0 };
+    p.n++; if (o === "not_needed") { p.nn++; p.owed += l.amt; } else if (o === "called_in") p.ci++; else if (o === "declined") p.de++; else p.wait++; });
   const rows = Object.entries(P).sort((a, b) => nm(a[0]).localeCompare(nm(b[0])));
   const sum = k => rows.reduce((a, [, p]) => a + p[k], 0);
-  const cell = (v, cls = "") => `<td style="text-align:right;padding:6px 8px" class="${cls}">${v}</td>`;
-  return `<div class="card"><h2>Pay fortnight<span>${label(F.from)} – ${label(F.to)} · owed: <b>$${sum("owed")}</b></span></h2>
-    <table style="width:100%;border-collapse:collapse"><thead><tr class="meta"><th style="text-align:left;padding:6px 8px">Person</th><th style="text-align:right;padding:6px 8px">Slots</th><th style="text-align:right;padding:6px 8px">Not needed</th><th style="text-align:right;padding:6px 8px">Called in</th><th style="text-align:right;padding:6px 8px">Declined</th><th style="text-align:right;padding:6px 8px">Undecided</th><th style="text-align:right;padding:6px 8px">Owed</th></tr></thead>
-    <tbody>${rows.map(([d, p]) => `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 8px">${esc(nm(d))}</td>${cell(p.n)}${cell(p.nn)}${cell(p.ci)}${cell(p.de)}${cell(p.open, p.open ? "c-warn" : "c-ok")}${cell(`<b>$${p.owed}</b>`)}</tr>`).join("")}
-    <tr style="border-top:2px solid var(--line)"><td style="padding:6px 8px"><b>Total</b></td>${cell(sum("n"))}${cell(sum("nn"))}${cell(sum("ci"))}${cell(sum("de"))}${cell(sum("open"), sum("open") ? "c-warn" : "c-ok")}${cell(`<b>$${sum("owed")}</b>`)}</tr></tbody></table></div>`;
+  const c = (v, cls = "") => `<td style="text-align:right;padding:6px 8px" class="${cls}">${v}</td>`;
+  const closed = F.to < t;
+  const line = l => { const d = l.bu.day, o = l.out?.outcome, auto = l.out?.note === "auto";
+    return `<div class="row" style="align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)">
+      <div style="flex:1 1 210px"><b>${esc(nm(l.bu.driver))}</b> <span class="meta">${label(d)}</span><div class="meta">${esc(l.kind)}</div></div>
+      <div style="flex:0 0 110px"><b class="${o === "not_needed" ? "c-ok" : o ? "" : "c-grey"}">${o ? OUT[o] : d > t ? "Upcoming" : "Pending"}</b><div class="meta">${o ? (auto ? "auto" : "set by hand") : "decides itself after the window"}</div></div>
+      <div style="flex:0 0 60px;text-align:right"><b>${o === "not_needed" && l.amt ? "$" + l.amt : "—"}</b></div>
+      <details style="flex:0 0 auto"><summary class="meta" style="cursor:pointer">change</summary><div class="row" style="gap:6px;margin-top:6px">${Object.entries(OUT).map(([k, t2]) => `<button class="btn sm ${o === k && !auto ? "" : "ghost"}" data-al="${k}" data-day="${d}" data-drv="${esc(l.bu.driver)}">${t2}</button>`).join("")}${o && !auto ? `<button class="btn ghost sm" data-al="" data-day="${d}" data-drv="${esc(l.bu.driver)}" title="Back to automatic">Auto</button>` : ""}</div></details></div>`; };
+  return `<div class="wkbar"><button class="ar" data-fn="-1">‹</button><b>${label(F.from)} – ${label(F.to)}</b><button class="ar" data-fn="1">›</button><button class="btn ghost sm" data-fn="0">This fortnight</button></div>
+  <div class="card"><h2>Pay fortnight<span>${closed ? "closed" : "in progress"} · owed: <b>$${sum("owed")}</b></span></h2>
+    ${rows.length ? `<table style="width:100%;border-collapse:collapse"><thead><tr class="meta"><th style="text-align:left;padding:6px 8px">Person</th><th style="text-align:right;padding:6px 8px">Slots</th><th style="text-align:right;padding:6px 8px">Not needed</th><th style="text-align:right;padding:6px 8px">Called in</th><th style="text-align:right;padding:6px 8px">Declined</th><th style="text-align:right;padding:6px 8px">Pending</th><th style="text-align:right;padding:6px 8px">Owed</th></tr></thead>
+    <tbody>${rows.map(([d, p]) => `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 8px">${esc(nm(d))}</td>${c(p.n)}${c(p.nn)}${c(p.ci)}${c(p.de)}${c(p.wait, "c-grey")}${c(`<b>$${p.owed}</b>`)}</tr>`).join("")}
+    <tr style="border-top:2px solid var(--line)"><td style="padding:6px 8px"><b>Total</b></td>${c(sum("n"))}${c(sum("nn"))}${c(sum("ci"))}${c(sum("de"))}${c(sum("wait"), "c-grey")}${c(`<b>$${sum("owed")}</b>`)}</tr></tbody></table>` : `<div class="empty">No back-up or on-call slots on the Run Board this fortnight.</div>`}
+    <p class="hint">Automatic: each line decides itself once its back-up window ends (<b>Called in</b> if a run was moved onto them by a change sent after 5pm the day before or on the day, otherwise <b>Not needed</b> = allowance owed). The totals go to Alejandro in the pay email on the Monday after the fortnight closes. Use “change” only to override.</p></div>
+  <div class="card"><h2>Lines<span>${L.length}</span></h2>${L.map(line).join("")}</div>`;
 }
 
 export function wireAllowances() {
-  wireWeek();
+  $$("[data-fn]").forEach(b => b.onclick = async () => { const d = +b.dataset.fn; S.week = d === 0 ? monOf(today()) : addDays(fortnight(S.week).from, d * 14); await loadAll(); render(); });
   $$("[data-al]").forEach(b => b.onclick = async () => {
     const day = b.dataset.day, driver = b.dataset.drv, k = b.dataset.al;
-    const r = k ? await sb.from("allowance_outcomes").upsert({ day, driver, outcome: k, note: null, decided_by: S.me?.id || null, decided_at: new Date().toISOString() }) : await sb.from("allowance_outcomes").delete().match({ day, driver });
+    const r = k ? await sb.from("allowance_outcomes").upsert({ day, driver, outcome: k, note: null, decided_by: S.me?.id || null, decided_at: new Date().toISOString() })
+                : await sb.from("allowance_outcomes").update({ note: "auto", decided_by: null }).match({ day, driver });
     if (r.error) return toast(r.error.message, "err");
-    if (k) st.outcomes[day + "|" + driver] = { day, driver, outcome: k, note: null }; else delete st.outcomes[day + "|" + driver];
-    render(true);
+    if (k) st.outcomes[day + "|" + driver] = { day, driver, outcome: k, note: null }; else if (st.outcomes[day + "|" + driver]) st.outcomes[day + "|" + driver].note = "auto";
+    await sb.rpc("auto_allowances"); st.week = null; loadOutcomes();
   });
 }
