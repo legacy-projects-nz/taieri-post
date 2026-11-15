@@ -52,7 +52,8 @@ async function loadAllNow() {
   if (S.ro) return loadReadOnly();
   const t = today(); const wk = S.week; const mt = monOf(t); // ISO dates compare as strings (Math.min/max gave NaN, so weeks more than ~2 weeks out never loaded)
   let from = addDays(wk < mt ? wk : mt, -63); const to = addDays(wk > mt ? wk : mt, 20);
-  if (S.tsRange === "custom" && S.tsFrom && S.tsFrom < from) from = S.tsFrom;   // dashboard dates further back than usual
+  if (S.tsRange === "custom" && S.tsFrom && S.tsFrom < from) from = S.tsFrom;
+  if (S.cmpFrom && S.cmpFrom < from) from = S.cmpFrom;   // Scorecard › Efficiency / Sorting drill-down further back   // dashboard dates further back than usual
   const [set, runs, vans, addons, rules, people, shifts, items, acks, sent, msgs, recips, leave, alerts, entries, marks, feed, ovs, locs, skills, notes, vchk] = await Promise.all([
     loadSettings(), q(sb.from("runs").select("*").order("sort")), q(sb.from("vans").select("*").order("plate")), q(sb.from("addons").select("*")), q(sb.from("timing_rules").select("*")),
     q(sb.from("people").select("*").order("name")),

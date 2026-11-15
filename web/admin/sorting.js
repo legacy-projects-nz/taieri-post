@@ -4,7 +4,8 @@
 // Once a sorter has 3+ tracked days, their minutes-per-parcel gives a volume-based expected time to firm the rostered one up.
 import { nzNow, today, addDays, label, fmtT, esc } from "/shared/core.js";
 import { sodStart, dayShifts, effCalc, ownerBreakHrs } from "/shared/score.js";
-import { S, nm, weekBar } from "/admin/admin.js";
+import { S, nm, fnm, weekBar } from "/admin/admin.js";
+import { cmpDays, cmpHas, cmpBar, cmpWeeks } from "/admin/compare.js";
 
 const COVERS = () => ({ SUP: ["RAM", "TUA", "FLY"], SUP3: ["PCB", "RSB"], ...(S.C.rules.sortCovers || {}) });
 const at = ts => ts ? nzNow(new Date(ts)).min : null;
@@ -40,8 +41,27 @@ function rates() { const t = today(), since = addDays(t, -56); const acc = {};
     o.n++; o.act += r.act; o.exp += r.exp; o.parcels += r.parcels; r.runsOn.forEach(c => o.runs.add(c)); }
   for (const o of Object.values(acc)) o.rate = o.act / o.parcels; return acc; }
 
+/* Compare sorters over the picked range: average sort time against expected, and minutes per parcel (only days where the sort
+   was recorded and every run it covered has its EOD in, so the parcel count is complete). Week-by-week averages underneath. */
+function sAgg(L) { const rec = L.filter(r => r.act != null), full = rec.filter(r => r.full && r.parcels);
+  return { n: L.length, rec: rec.length, act: rec.length ? rec.reduce((a, r) => a + r.act, 0) / rec.length : null, exp: rec.length ? rec.reduce((a, r) => a + r.exp, 0) / rec.length : null,
+    parcels: full.reduce((a, r) => a + r.parcels, 0), ppd: full.length ? full.reduce((a, r) => a + r.parcels, 0) / full.length : null, mpp: full.length ? full.reduce((a, r) => a + r.act, 0) / full.reduce((a, r) => a + r.parcels, 0) : null, nFull: full.length }; }
+function sortCompare(rows) {
+  const by = {}; for (const r of rows) (by[r.drv] ??= []).push(r); const ids = Object.keys(by).sort((a, b) => (sAgg(by[a]).mpp ?? 99) - (sAgg(by[b]).mpp ?? 99));
+  if (!rows.length) return `<div class="card"><h2>Compare sorters</h2><p class="empty">No sort shifts in this range.</p></div>`;
+  const cls = (a, e) => a == null || !e ? "" : a <= e * 1.1 ? "c-ok" : a <= e * 1.25 ? "c-warn" : "c-crit"; const mp = v => v == null ? "" : v.toFixed(2);
+  const T = sAgg(rows); const wks = cmpWeeks(); const sorts = [...new Set(rows.map(r => r.code))];
+  const line = (name, a, extra = "") => `<tr><td>${name}</td><td class="num">${a.n}</td><td class="num">${a.rec}</td><td class="num">${hm(a.exp)}</td><td class="num ${cls(a.act, a.exp)}"><b>${hm(a.act)}</b></td><td class="num ${cls(a.act, a.exp)}">${a.act != null ? (a.act - a.exp > 0 ? "+" : "") + Math.round(a.act - a.exp) + "m" : ""}</td><td class="num">${a.ppd != null ? Math.round(a.ppd) : ""}</td><td class="num"><b>${mp(a.mpp)}</b></td><td class="num meta">${a.mpp != null ? Math.round(60 / a.mpp) : ""}</td>${extra}</tr>`;
+  return `<div class="card"><h2>Compare sorters<span>${ids.length} sorter${ids.length > 1 ? "s" : ""} · ${T.rec} of ${T.n} sorts recorded · fastest per parcel first</span></h2>
+    <div class="scroll"><table class="dt"><tr><th>Sorter</th><th>Sorts</th><th>Recorded</th><th>Avg expected</th><th>Avg actual</th><th>Avg +/−</th><th>Avg parcels</th><th>Min / parcel</th><th>Parcels / hour</th>${sorts.map(c => `<th>${esc(c)} min/parcel</th>`).join("")}</tr>
+    ${ids.map(id => line(`<b>${esc(nm(id))}</b>`, sAgg(by[id]), sorts.map(c => `<td class="num">${mp(sAgg(by[id].filter(r => r.code === c)).mpp)}</td>`).join(""))).join("")}
+    ${line(`<span class="meta">Everyone shown</span>`, T, sorts.map(c => `<td class="num meta">${mp(sAgg(rows.filter(r => r.code === c)).mpp)}</td>`).join(""))}</table></div>
+    <h3 style="margin:12px 0 4px;font-size:15px">Week averages</h3><div class="scroll"><table class="dt"><tr><th>Week of</th>${ids.map(id => `<th>${esc(fnm(id))}<div class="meta">avg sort · min/parcel</div></th>`).join("")}<th>Everyone<div class="meta">avg sort · min/parcel</div></th></tr>
+    ${wks.map(w => { const inW = r => r.day >= w && r.day <= addDays(w, 6); const c = a => a.rec ? `${hm(a.act)} · ${mp(a.mpp) || "—"}` : ""; return `<tr><td>${label(w).slice(0, 6)}</td>${ids.map(id => `<td class="num">${c(sAgg(by[id].filter(inW)))}</td>`).join("")}<td class="num meta">${c(sAgg(rows.filter(inW)))}</td></tr>`; }).join("")}</table></div>
+    <p class="hint" style="margin:0">Min / parcel = total sort minutes ÷ total parcels, only on days the sort was recorded and every run it sorted for has its EOD in. Lower is faster. The team sorter's parcels are all the runs that sort covers, so compare sorters on the same sort (the per-sort columns).</p></div>`;
+}
 export function sortingView() {
-  const days = Array.from({ length: 7 }, (_, i) => addDays(S.week, i)); const R = rates(); const rows = days.flatMap(sortRows).sort((a, b) => a.day.localeCompare(b.day) || a.x.st - b.x.st);
+  const days = cmpDays(); const R = rates(); const all = days.flatMap(sortRows); const pool = [...new Set(all.map(r => r.drv))]; const rows = all.filter(r => cmpHas(r.drv)).sort((a, b) => a.day.localeCompare(b.day) || a.x.st - b.x.st);
   const cls = (a, e) => a == null || !e ? "" : a <= e * 1.1 ? "c-ok" : a <= e * 1.25 ? "c-warn" : "c-crit";
   const tot = { exp: 0, act: 0 }; for (const r of rows) if (r.act != null) { tot.exp += r.exp; tot.act += r.act; }
   const body = rows.map(r => { const k = R[r.drv + "|" + r.code + "|" + (r.team ? "team" : "own")]; const vol = k && k.n >= 3 && r.full ? k.rate * r.parcels : null; const d = r.act != null ? r.act - r.exp : null;
@@ -52,7 +72,7 @@ export function sortingView() {
       <td class="num">${r.act != null && r.full && r.parcels ? (r.act / r.parcels).toFixed(2) : ""}</td><td class="num meta" title="This sorter's average minutes per parcel × the day's parcels">${vol != null ? hm(vol) : ""}</td>
       <td class="meta" style="border-left:1px solid var(--line, #333)">${r.nx ? esc(r.nx.shift.run) : ""}</td><td class="num">${r.run ? (r.run.est ? "≈" : "") + hm(r.run.exp) : ""}</td><td class="num ${r.run ? cls(r.run.act, r.run.exp) : ""}">${r.run?.act != null ? hm(r.run.act) : ""}</td></tr>`; }).join("");
   const sum = Object.values(R).sort((a, b) => nm(a.drv).localeCompare(nm(b.drv))).map(o => `<tr><td><b>${esc(nm(o.drv))}</b></td><td>${esc(o.code)}${o.team ? ` <span class="meta">team</span>` : ""}</td><td class="meta">${esc([...o.runs].join(" + "))}</td><td class="num">${o.n}</td><td class="num">${hm(o.exp / o.n)}</td><td class="num ${cls(o.act, o.exp)}">${hm(o.act / o.n)}</td><td class="num">${Math.round(o.parcels / o.n)}</td><td class="num">${o.rate.toFixed(2)}</td><td class="num">${o.n >= 3 ? hm(o.rate * o.parcels / o.n) : `<span class="meta">needs ${3 - o.n} more</span>`}</td></tr>`).join("");
-  return `<div class="card"><h2>Sorting times<span>week of ${label(S.week)} · ${tot.act ? `${hm(tot.act)} actual vs ${hm(tot.exp)} expected on the sorts recorded` : "nothing recorded yet"}</span></h2>
+  return `${cmpBar(pool)}${sortCompare(rows)}<div class="card"><h2>Sorting times<span>${days.length === 7 && days[0] === S.week ? `week of ${label(S.week)}` : `${label(days[0])} – ${label(days[days.length - 1])}`} · ${tot.act ? `${hm(tot.act)} actual vs ${hm(tot.exp)} expected on the sorts recorded` : "nothing recorded yet"}</span></h2>
     <p class="hint">Expected is the rostered sort. Actual runs from the driver's SOD to their <b>▶ Start</b> tap (* = the minutes typed on the EOD instead). Parcels and trays are the EOD totals of the runs that sort covered: the team sorter (earliest on that sort) gets all of them, anyone else gets their own run. Green = within 10% of expected, orange within 25%, red over. A driver who sorts and delivers has two expected times: the sort on the left, and their run on the right (the same figures as the Efficiency page).</p>
     <div class="scroll"><table class="dt"><tr><th>Day</th><th>Sorter</th><th>Sort</th><th>For runs</th><th>Expected</th><th>Actual</th><th>+/−</th><th>Parcels</th><th>Trays</th><th>Min / parcel</th><th>By volume</th><th>Then run</th><th>Run expected</th><th>Run actual</th></tr>${body || `<tr><td colspan="14" class="meta">No sort shifts this week.</td></tr>`}</table></div></div>
     <div class="card"><h2>Firming up the expected times<span>last 8 weeks · days with the sort recorded and every covered run's EOD in</span></h2>
