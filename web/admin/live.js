@@ -35,7 +35,7 @@ export function liveTab() {
     : `<div class="tiles">${tile("Team on-time rate", closed.length ? ok / closed.length * 100 : null, `${ok} of ${closed.length} posts on time`, null, k("rate"))}${tile("Late", String(late.length), "posted after the due time", late.length ? "c-crit" : "c-ok", k("late"))}${tile("Missing", String(miss.length), "never posted", miss.length ? "c-crit" : "c-ok", k("miss"))}${tile("Drivers rostered", String(rostered), "tracked this week", "", k("rostered"))}</div>`;
 
   const cur = monOf(t);
-  return `${sodReqCard()}${xtCard()}${nowCard(n)}${weekNav(wk)}${wk > cur ? `<p class="hint" style="margin:0 0 6px">Next week: the planned roster. Nothing is posted yet, so scores fill in as the days come.</p>` : ""}<div class="card">${chips}${kpi}</div>
+  return `<div class="top4">${sodReqCard()}${xtCard()}${nowCard(n)}</div>${weekNav(wk)}${wk > cur ? `<p class="hint" style="margin:0 0 6px">Next week: the planned roster. Nothing is posted yet, so scores fill in as the days come.</p>` : ""}<div class="card">${chips}${kpi}</div>
     ${addonBoard(one ? days[0] : t, n)}
     ${moneyCard(one ? days[0] : t)}
     <div class="grid2">${important(scores, n)}${teamAndLabour(scores, team, wk)}</div>
@@ -330,7 +330,6 @@ const t24 = t => String(t || "").slice(0, 5);
 const minsOff = m => { const a = Math.abs(m); return a >= 60 ? `${Math.floor(a / 60)} h${a % 60 ? ` ${a % 60} min` : ""}` : `${a} min`; };
 function sodReqCard() {
   const all = S.sodReqs || []; const pend = all.filter(r => r.status === "pending"); const recent = all.filter(r => r.status !== "pending").slice(0, 8);
-  if (!pend.length && !recent.length) return "";
   const what = r => `${r.kind === "early" ? "Started early" : "Started late"} · ${r.sod_at ? `SOD ${fmtT(toMin(r.sod_at))}, start set to ${fmtT(toMin(r.started))}` : `SOD ${fmtT(toMin(r.started))}`}, rostered ${fmtT(toMin(r.rostered))} (${minsOff(r.delta_min)} ${r.kind === "early" ? "early" : "late"})`;
   const moves = r => (r.moves || []).map(m => { const sh = S.shifts.find(s => s.id === m.shift_id); return sh ? `${esc(sh.run)} → ${fmtT(toMin(m.start_at))}${m.end_at ? `–${fmtT(toMin(m.end_at))}` : ""}` : ""; }).filter(Boolean).join(" · ");
   const row = r => `<div class="item ${r.status === "pending" ? "warn" : r.status === "approved" ? "done" : ""}"><div class="row" style="justify-content:space-between"><b>${esc(nm(r.driver))} · ${label(r.day)}</b><span class="meta">${ago(r.created_at)}</span></div>
@@ -340,17 +339,16 @@ function sodReqCard() {
       : `<div class="meta ${r.status === "approved" ? "c-ok" : "c-crit"}">${r.status === "approved" ? "✓ Approved · run times moved" : "✗ Declined · roster unchanged"}${r.decided_by ? ` by ${esc(fnm(r.decided_by))}` : ""}${r.reply ? ` · ${esc(r.reply)}` : ""}</div>
       ${r.status === "approved" && canSign() ? `<div class="row" style="margin-top:6px"><label class="meta" style="display:flex;align-items:center;gap:4px">Edit start <input class="in" type="time" data-sstart="${r.id}" value="${t24(r.started)}" style="width:110px"></label><button class="btn ghost sm" data-sreq="${r.id}" data-ok="1">Save start</button></div>` : ""}`}</div>`;
   return `<div class="card ${pend.length ? "hot" : ""}" id="sodreq"><h2>Start times to sign off<span>${pend.length ? `${pend.length} waiting` : "nothing waiting"} · SOD more than ${S.C.rules.sodReqMins ?? 20} min off the roster</span></h2>
-    ${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : ""}${recent.length ? `<details><summary>Recent decisions</summary><div class="list" style="margin-top:8px">${recent.map(row).join("")}</div></details>` : ""}</div>`;
+    ${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : `<p class="empty">✓ Nothing to sign off.</p>`}${recent.length ? `<details><summary>Recent decisions</summary><div class="list" style="margin-top:8px">${recent.map(row).join("")}</div></details>` : ""}</div>`;
 }
 function xtCard() {
   const all = (S.extra || []); const pend = all.filter(r => r.status === "pending"); const recent = all.filter(r => r.status !== "pending").slice(0, 12);
-  if (!pend.length && !recent.length) return "";
   const row = r => `<div class="item ${r.status === "pending" ? "warn" : r.status === "declined" ? "" : "done"}"><div class="row" style="justify-content:space-between"><b>${esc(nm(r.driver))} · ${label(r.day)} · ${esc(XT_KINDS[r.kind]?.name || r.kind)} · ${r.minutes} min</b><span class="meta">${ago(r.created_at)}</span></div>
     ${r.note ? `<div class="meta">“${esc(r.note)}”</div>` : ""}
     ${r.status === "pending" ? (S.me.isOwner ? `<div class="row" style="margin-top:6px"><input class="in" data-xreply="${r.id}" placeholder="Reply to ${esc(first(nm(r.driver)))} (optional)" style="flex:2 1 160px"><button class="btn sm" data-xreq="${r.id}" data-ok="1">✓ Approve</button><button class="btn ghost sm" data-xreq="${r.id}" data-ok="0">Decline</button></div>` : `<div class="meta">Waiting for Jeremy</div>`)
       : `<div class="meta ${r.status === "approved" ? "c-ok" : "c-crit"}">${r.status === "approved" ? (r.decided_by ? `✓ Approved by ${esc(fnm(r.decided_by))}` : "✓ Added") : `✗ Declined${r.decided_by ? ` by ${esc(fnm(r.decided_by))}` : ""}`}${r.reply ? ` · ${esc(r.reply)}` : ""}${S.me.isOwner && !r.decided_by ? ` · <button class="btn ghost sm" data-xreq="${r.id}" data-ok="0">Decline</button>` : ""}</div>`}</div>`;
   return `<div class="card ${pend.length ? "hot" : ""}" id="xtreq"><h2>Added hours<span>${pend.length ? `${pend.length} to approve` : "nothing waiting"} · logged with ＋ Hours in the driver app</span></h2>
-    ${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : ""}${recent.length ? `<details><summary>Recent</summary><div class="list" style="margin-top:8px">${recent.map(row).join("")}</div></details>` : ""}</div>`;
+    ${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : `<p class="empty">✓ Nothing to approve.</p>`}${recent.length ? `<details><summary>Recent</summary><div class="list" style="margin-top:8px">${recent.map(row).join("")}</div></details>` : ""}</div>`;
 }
 async function decideXt(id, ok) {
   const reply = $(`[data-xreply="${id}"]`)?.value.trim() || null;

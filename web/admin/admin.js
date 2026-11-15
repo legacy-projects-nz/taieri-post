@@ -113,14 +113,15 @@ async function loadReadOnly() {
 }
 const MENU_TABS = ["classic", "allowances", "fleet", "timing", "pay"];
 /* collapsible boxes: on every tab, every box after the first starts collapsed; tap its heading to open. Open/closed is kept while the page is open.
-   "Shift right now" and "Add-ons right now" (ids rightnow*) can be collapsed too, wherever they sit, but start open. */
+   "Shift right now" and "Add-ons right now" (ids rightnow*) can be collapsed too, wherever they sit, but start open.
+   Live tab: the first four (Start times to sign off, Added hours, Shift right now, Add-ons right now) sit side by side in .top4 as four same-size boxes. */
 S.open ??= {};
 function folds() {
   const cards = $$("#view .card").filter(c => !c.parentElement.closest(".card"));
   cards.forEach((c, i) => {
-    if (i === 0 && !c.id.startsWith("rightnow")) return; const h = c.querySelector(":scope > h2"); if (!h) return;
+    const top = !!c.closest(".top4"); if (i === 0 && !top && !c.id.startsWith("rightnow")) return; const h = c.querySelector(":scope > h2"); if (!h) return;
     const key = S.tab + "|" + (c.id || [...h.childNodes].filter(x => x.nodeType === 3).map(x => x.textContent).join("").trim() || i);
-    if (!(key in S.open)) S.open[key] = c.id.startsWith("rightnow");
+    if (!(key in S.open)) S.open[key] = c.id.startsWith("rightnow") || (top && c.classList.contains("hot"));   // top four: Right now boxes open, sign-off / added hours open only when something is waiting
     c.classList.add("fold"); c.classList.toggle("shut", !S.open[key]);
     h.setAttribute("role", "button"); h.tabIndex = 0; h.setAttribute("aria-expanded", String(!!S.open[key]));
     const ch = document.createElement("i"); ch.className = "fchev" + (h.querySelector(":scope > span") ? "" : " solo"); ch.setAttribute("aria-hidden", "true"); h.appendChild(ch);

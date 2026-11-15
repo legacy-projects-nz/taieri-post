@@ -245,3 +245,14 @@ button.qb:disabled{opacity:.4}
 .tk.tk1 input.in{min-height:30px!important}
 .ablk details.abmore{margin-top:4px}
 .ablk details.abmore>summary{justify-content:flex-start!important;text-align:left;font-size:12px;font-weight:600;color:var(--ink3);padding:4px 0;min-height:0}
+
+/* Live tab · top four boxes side by side, same size; heading info wraps under the title so it shows when collapsed */
+.top4{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px}
+@media (min-width:640px){.top4{grid-template-columns:1fr 1fr}}
+@media (min-width:1100px){.top4{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.top4>.card{min-width:0;margin:0}
+.top4>.card>h2{flex-wrap:wrap;white-space:normal;align-items:flex-start;row-gap:4px}
+.top4>.card>h2>span{order:3;flex:1 0 100%;margin-left:0;white-space:normal;overflow:visible}
+.top4>.card>h2>.fchev{margin-left:auto}
+.top4>.card>.list{max-height:420px;overflow:auto}
+.top4>.card.fold.shut>h2>span:has(button){display:block}
