@@ -314,7 +314,7 @@ function breakBtn(T, sod) {
   if (S.viewAs) return `<div class="qb brk off"><b>☕ Unpaid break</b><small>${taken || "none taken yet"}</small></div>`;
   return `<button class="btn ghost qb brk" id="brk-start" data-shift="${(runs.find(x => !x.eod) || T.segs[T.segs.length - 1]).shift.id}"><b>☕ Start unpaid break</b><small>${taken || ""}</small></button>`;
 }
-/* + Hours: extra work logged for the day (vehicle clean 20 min, vehicle check 10, maintenance / admin with a note, or something Jeremy asked for, which he approves) */
+/* + Hours: extra work logged for the day (vehicle clean 20 min, vehicle check 10, refuel 5, maintenance / admin with a note, or something Jeremy asked for, which he approves) */
 function hoursBtn(T, sod) {
   const mine = (S.extra || []).filter(e => e.day === T.day); const ok = mine.filter(e => e.status === "approved").reduce((a, e) => a + e.minutes, 0); const pend = mine.filter(e => e.status === "pending").length;
   const sub = mine.length ? `${ok} min added today${pend ? ` · ${pend} waiting for Jeremy` : ""}` : "";

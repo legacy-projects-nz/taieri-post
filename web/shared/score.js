@@ -237,7 +237,7 @@ export function setAddonNames(list) { ADDON_NAMES = Object.fromEntries((list || 
 export function addName(k) { return ADDON_NAMES[k] || ({ outram: "Outram Depot", pgg: "PGG", airport: "Airport", milton: "Milton", balclutha: "Balclutha", owaka: "Owaka", rose: "Roseneath receiver", sb: "Sawyers Bay receiver", fish: "Harbour Fish pick-up", pc: "Port Chalmers receiver", digi: "Digi Art pick-up", fonterra: "Fonterra pick-up", waihola: "Waihola Store" })[k] || k; }
 
 /* "+ Hours": approved extra minutes a driver logged for a day (vehicle clean, check, maintenance, admin, Jeremy's requests) */
-export const XT_KINDS = { van_clean: { name: "Vehicle clean", min: 20 }, vehicle_check: { name: "Vehicle check", min: 10 }, vehicle_maint: { name: "Vehicle maintenance" }, admin: { name: "Admin" }, owner_request: { name: "Jeremy's request", approve: true } };
+export const XT_KINDS = { van_clean: { name: "Vehicle clean", min: 20 }, vehicle_check: { name: "Vehicle check", min: 10 }, refuel: { name: "Refuel", min: 5 }, vehicle_maint: { name: "Vehicle maintenance" }, admin: { name: "Admin" }, owner_request: { name: "Jeremy's request", approve: true } };
 export function extraMins(list, driver, day) { return (list || []).filter(e => e.driver === driver && e.day === day && e.status === "approved").reduce((a, e) => a + (e.minutes || 0), 0); }
 
 /* ---- Scores for one driver over a date range ---- */
