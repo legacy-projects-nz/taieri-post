@@ -326,9 +326,9 @@ function hoursSheet(day, shiftId) {
   const mine = (S.extra || []).filter(e => e.day === day);
   const st = e => e.status === "pending" ? pill("waiting for Jeremy", "warn") : e.status === "declined" ? pill("declined", "crit") : pill("added", "ok");
   const list = mine.length ? `<div class="list" style="margin-bottom:10px">${mine.map(e => `<div class="item"><div class="row" style="justify-content:space-between;align-items:center"><span><b>${esc(XT_KINDS[e.kind]?.name || e.kind)}</b> · ${e.minutes} min ${st(e)}</span>${!e.decided_by ? `<button class="btn ghost sm" data-xtdel="${e.id}">Remove</button>` : ""}</div>${e.note ? `<div class="meta">${esc(e.note)}</div>` : ""}${e.reply ? `<div class="meta">Jeremy: ${esc(e.reply)}</div>` : ""}</div>`).join("")}</div>` : "";
-  const opts = Object.entries(XT_KINDS).map(([k, o], i) => `<label class="chk ${i === 0 ? "on" : ""}"><input type="radio" name="xk" value="${k}" ${i === 0 ? "checked" : ""}>${esc(o.name)}${o.min ? ` · ${o.min} min` : ""}</label>`).join("");
+  const opts = Object.entries(XT_KINDS).map(([k, o], i) => `<label class="chk ${i === 0 ? "on" : ""}" style="border-radius:12px;min-height:58px;line-height:1.2"><input type="radio" name="xk" value="${k}" ${i === 0 ? "checked" : ""}><span>${esc(o.name)}<br><small class="meta">${o.min ? `${o.min} min` : o.approve ? "Jeremy approves" : "minutes + note"}</small></span></label>`).join("");
   sheet(`<h3>＋ Hours · ${label(day)}</h3>${list}
-    <form class="frm" id="xf"><div class="full row" style="flex-wrap:wrap;gap:6px">${opts}</div>
+    <form class="frm" id="xf"><div class="full" style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${opts}</div>
     <label class="f" id="xmin-w" hidden>Minutes<input class="in" id="xmin" inputmode="numeric" placeholder="e.g. 30"></label>
     <label class="f full" id="xnote-w" hidden><span id="xnote-l">What did you do?</span><input class="in" id="xnote" placeholder=""></label>
     <button class="btn full" type="submit">Add</button></form>`, (bg, close) => {
