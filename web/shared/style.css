@@ -264,3 +264,9 @@ h1 span,h2 span,h3 span,h4 span,h2 .meta,h3 .meta,h4 .meta{text-transform:none}
 /* Owner portal: every full-width box/bar on a tab is the same width */
 #view{display:flex;flex-direction:column;gap:12px;width:100%}
 #view>*{align-self:stretch;width:100%;max-width:none;box-sizing:border-box;margin:0}
+/* RULE (15 Nov 2026): every horizontal row of buttons has buttons of the same width — owner portal and driver app.
+   Any .row / .seg-btns made only of buttons becomes an even grid (wraps onto new lines with the same widths). Tab bar buttons share the width evenly. */
+.row:not(:has(> :not(button, .btn, a.btn, .chip))):has(> :is(button, .btn, .chip)),
+.seg-btns{display:grid !important;grid-template-columns:repeat(auto-fit,minmax(min(100%,110px),1fr));gap:6px}
+.row:not(:has(> :not(button, .btn, a.btn, .chip))) > *, .seg-btns > *{width:100%;min-width:0;flex:none !important;justify-content:center;text-align:center;margin:0}
+.nav button{flex:1 1 0 !important;min-width:max-content}
