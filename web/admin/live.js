@@ -246,11 +246,12 @@ export function driverDay(drv, d) {
   const tracked = act != null && !est;
   return { d, drv, hol, D, exp, est, act, actEst, actIsEst: act == null, actHow, brk: Math.round(brk * 60), train, spend: (actEst ?? exp) * rate, rate, runs: runSegs.length, done: eods.length, sod, eods, runSegs, effRows, tracked, trk: tracked && exp ? ((act - train) - exp) / exp * 100 : null };
 }
-export function labourWeek(wk) {
+export function labourWeek(wk) { return labourRange(wk, addDays(wk, 6)); }
+export function labourRange(from, to) {
   const bandBy = {}; const bandRateFor = (drv, d) => { const k = drv.id + "|" + fortnight(d).from; if (!(k in bandBy)) bandBy[k] = payBand(drv, d, scoreData(), S.C).rate; return bandBy[k]; };  // band rate for that pay fortnight; null → no band yet
   let bandSpend = 0, bandMissing = 0;
   let E = 0, Ec = 0, Atk = 0, A = 0, Aest = 0, P = 0, spend = 0, runs = 0, done = 0, train = 0, estH = 0, trainAll = 0, oE = 0, oA = 0; const rows = [];  // oE / oA = Jeremy's hours: tracked separately, never added to the totals or spend
-  for (let i = 0; i < 7; i++) { const d = addDays(wk, i); let e = 0, ec = 0, ta = 0, a = null, aest = 0, sp = 0, tr = 0, est = 0, n = 0; const hol = S.C.holidays[d];
+  for (let d = from; d <= to; d = addDays(d, 1)) { let e = 0, ec = 0, ta = 0, a = null, aest = 0, sp = 0, tr = 0, est = 0, n = 0; const hol = S.C.holidays[d];
     for (const drv of S.drivers) { const r = driverDay(drv, d); if (!r) continue; if (drv.pay_exclude) { oE += r.exp; oA += r.act ?? r.actEst ?? r.exp; continue; } n++;
       e += r.exp; if (r.est) est += r.exp; runs += r.runs; done += r.done; sp += r.spend; { const br = bandRateFor(drv, d); bandSpend += r.rate ? r.spend / r.rate * (br ?? r.rate) : r.spend; if (br == null && r.spend) bandMissing++; } trainAll += r.train; if (r.act != null) a = (a || 0) + r.act; if (r.tracked) { ta += r.act; ec += r.exp; tr += r.train; } if (r.act == null) aest += r.actEst || 0; }
     E += e; Ec += ec; Atk += ta; A += a || 0; Aest += aest; spend += sp; train += tr; estH += est; P += (a || 0) + aest;
