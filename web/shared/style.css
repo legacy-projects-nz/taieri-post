@@ -261,3 +261,6 @@ button.qb:disabled{opacity:.4}
 /* Titles: first letter of every word capitalised, site-wide (driver app + owner portal). Subtitle spans inside headings stay as written. */
 h1,h2,h3,h4{text-transform:capitalize}
 h1 span,h2 span,h3 span,h4 span,h2 .meta,h3 .meta,h4 .meta{text-transform:none}
+/* Owner portal: every full-width box/bar on a tab is the same width */
+#view{display:flex;flex-direction:column;gap:12px;width:100%}
+#view>*{align-self:stretch;width:100%;max-width:none;box-sizing:border-box;margin-left:0;margin-right:0}
