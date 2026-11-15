@@ -140,6 +140,18 @@ function demoBar() {
 }
 
 /* ================= render ================= */
+/* ⓘ info buttons: tap for the full description in a pop-up, instead of explanation text on the page */
+const INFO = {
+  carry: ["Do these first", "<p>These tasks weren't done on the day they were due.</p><p>Do each one and tap <b>Done</b> before you post your SOD. Your SOD won't be accepted until they're cleared.</p><p>Each one is recorded as done late, and the late entry is logged against that day.</p>"],
+  backup: ["Back-up and on-call", "<p><b>On-call</b> (a day you're not rostered): check your phone 6:30–7:30am and confirm. Call-ins are made by 8am. If you're not needed you get the on-call allowance. If you're called in you're paid for the hours you work, with a 2-hour minimum.</p><p><b>Committed back-up</b> (a day you're working): you're committed to extra hours before or after your shift, up to the block shown. If you're not needed you get the back-up allowance. If you're called in you're paid for the hours worked instead.</p><p><b>Optional back-up</b>: extra hours before or after your shift if you want them. It's your call, and you're paid for hours worked only.</p><p>If your shift starts in the afternoon, check your phone 6:30–7:30am in case you're needed in the morning.</p><p>Allowances are worked out automatically and paid with your fortnightly pay.</p>"],
+  scores: ["My scores", "<p>Your scores count from the scoring start date. Each tile shows this week, with the month underneath in grey. Tap a tile to see the working.</p><p><b>Admin</b>: SODs, EODs and tasks posted on time. <b>Efficiency</b>: your actual time against the expected time for your runs. <b>Accuracy</b>: mistakes recorded against you. <b>Safety</b>: driving and safety records.</p><p>Your pay band is set from your average efficiency over the pay fortnight.</p>"],
+  tofix: ["To fix", "<p>Posts that were late, missing or incomplete, and EODs missing figures.</p><p>Tap an item to see the working. Post anything still missing with its button. For missing EOD figures, ask Jeremy to add them or include them next time.</p>"],
+  pickups: ["Parcel pick-ups", "<p>Your pick-up tasks have their own <b>Enter pick-ups</b> button in Today's tasks. Use that on the day.</p><p>Use this box for any pick-ups you missed, or for another day. Enter small and large parcels for each area and customer, and say whether they came from the depot or the customer.</p>"],
+  hazards: ["Hazards", "<p>The hazard register lists known hazards at addresses on the runs: dogs, aggressive people, access problems and so on.</p><p>Read the high and medium hazards for today's runs and tap <b>✓ Read</b>. They come back each month, whenever one changes, and when you're new to a run.</p><p>Use <b>Report a hazard</b> to add a new one, and <b>Search all</b> to look up any address.</p><p><b>If it doesn't feel right, don't do it.</b> Card it and report it.</p>"],
+  vcheck: ["Weekly vehicle check", "<p>Due every Thursday by 5pm.</p><p>Take four photos: the exterior, the cab, the oil dipstick and the coolant level. Report anything wrong in the notes.</p>"],
+};
+const ib = k => `<button type="button" class="ib" data-info="${k}" aria-label="More about ${esc(INFO[k][0])}">i</button>`;
+document.addEventListener("click", e => { const b = e.target.closest?.("[data-info]"); if (!b) return; e.preventDefault(); e.stopPropagation(); const [t, body] = INFO[b.dataset.info] || []; if (t) sheet(`<h3>${esc(t)}</h3><div class="infobody">${body}</div>`); }, true);
 const pair = (a, b) => a && b ? `<div class="pair">${a}${b}</div>` : (a || b || "");   // two boxes across wherever both exist, on phones too
 // A part of the page that fails to draw shows a short note instead of taking the whole page down (and the error is logged).
 const part = (name, fn) => { try { return fn() ?? ""; } catch (e) { reportError("render:" + name, e); return `<div class="card"><h2>${name}</h2><p class="hint">This part couldn't be shown just now. The rest of the app still works, and Jeremy has been told.</p></div>`; } };
@@ -163,7 +175,7 @@ function carryOver() {
 }
 function carryCard() {
   const L = carryOver(); if (!L.length) return "";
-  return `<div class="card hot"><h2 class="c-crit">Do these first<span>${L.length} from an earlier day</span></h2><p class="hint" style="margin:0 0 8px">These weren't done on the day. Please do them before you post your SOD. Each one is recorded as done late.</p><div class="list">${L.map(({ s, k, name }) => `<div class="item crit"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(name)}</b><span class="meta"> · ${esc(s.run)} · ${label(s.day)}</span></span><button class="btn sm" data-carry="${s.id}|${esc(k)}" data-name="${esc(name)}">Done</button></div></div>`).join("")}</div></div>`;
+  return `<div class="card hot"><h2 class="c-crit">Do these first ${ib("carry")}<span>${L.length} from an earlier day</span></h2><div class="list">${L.map(({ s, k, name }) => `<div class="item crit"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(name)}</b><span class="meta"> · ${esc(s.run)} · ${label(s.day)}</span></span><button class="btn sm" data-carry="${s.id}|${esc(k)}" data-name="${esc(name)}">Done</button></div></div>`).join("")}</div></div>`;
 }
 function renderNow() {
   const n = nzNow(); const t = n.date; const name = first(S.me.name);
@@ -468,14 +480,10 @@ function buSection(n) {
   const rows = list.map(x => {
     const works = !!S.days[x.day];
     const kind = works ? "Back-up" : "On-call";
-    const what = works
-      ? (x.bu_kind === "committed"
-        ? `Committed: extra hours before or after your shift${x.bu_block ? `, up to ${x.bu_block}h` : ""}. Allowance if not needed.`
-        : `Optional extra hours before or after your shift. Your call.`) + (works && (S.days[x.day].start >= 720) ? " Check your phone 6:30–7:30am." : "")
-      : `Check your phone 6:30–7:30am and confirm. Call-ins by 8am. Allowance if not needed; 2h minimum if called.`;
-    return `<div class="bu"><div class="meta"><b>${kind}</b> · ${dayTag(x.day)}</div><div class="hint" style="margin:2px 0 10px">${what}</div></div>`;
+    const what = works ? (x.bu_kind === "committed" ? `committed${x.bu_block ? `, up to ${x.bu_block}h` : ""}` : "optional") + (S.days[x.day].start >= 720 ? " · phone 6:30–7:30am" : "") : "phone 6:30–7:30am";
+    return `<div class="bu"><div class="meta"><b>${kind}</b> · ${dayTag(x.day)} · ${what}</div></div>`;
   }).join("");
-  return `<section class="ns"><h3 class="sub">Back-up and on-call</h3>${rows}</section>`;
+  return `<section class="ns"><h3 class="sub lbl">Back-up and on-call ${ib("backup")}</h3>${rows}</section>`;
 }
 function nextShiftCard(N, n) {   // one box: shift, tasks, vehicle, split by grey lines
   if (!N) return `<div class="card nextc" id="nextshift"><h2>Next shift<span>not on the roster yet</span></h2>${buSection(n)}</div>`;
@@ -603,8 +611,8 @@ function scoresCard() {
   const tile = (k, l) => `<div class="tile dual"><div class="l">${l} ▾</div><div class="halves">${half(k, "week")}${sub(k)}</div></div>`;
   const sc = SC.week; const line = [`${sc.onTime} of ${sc.closed} posts on time this week`, sc.late ? `${sc.late} late` : "", sc.missing ? `${sc.missing} missing` : "", sc.nMist ? `${sc.nMist} mistake${sc.nMist === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
   const fresh = !SC.month.closed && !SC.month.effDays.length && !SC.month.accDays.length && RG.week.from < S.C.rules.startDate;
-  return `<div class="card" id="scores"><h2>My scores<span>week of ${label(RG.week.from)} · ${new Date(RG.month.from + "T12:00:00Z").toLocaleString("en-NZ", { month: "long", timeZone: "UTC" })}</span></h2>
-    ${fresh ? `<p class="hint">Scores count from ${label(S.C.rules.startDate)}. Your first scored shifts will show here.</p>` : ""}
+  return `<div class="card" id="scores"><h2>My scores ${ib("scores")}<span>week of ${label(RG.week.from)} · ${new Date(RG.month.from + "T12:00:00Z").toLocaleString("en-NZ", { month: "long", timeZone: "UTC" })}</span></h2>
+    ${fresh ? `<p class="meta">Scores start ${label(S.C.rules.startDate)}.</p>` : ""}
     <div class="tiles" style="grid-template-columns:1fr 1fr">${tile("admin", "Admin")}${tile("eff", "Efficiency")}${tile("acc", "Accuracy")}${tile("safe", "Safety")}</div>
     <div class="meta">Overall <b class="c-${col(SC.week.overall)}">${pct(SC.week.overall)}</b> this week · <b class="c-${col(SC.month.overall)}">${pct(SC.month.overall)}</b> this month · ${line} · tap a score to see the figures</div>
     ${selK && SC[selR] ? `<div class="meta mono" style="text-transform:uppercase">${RG[selR].l} · ${label(RG[selR].from)} – ${label(RG[selR].to)}</div>${scoreDetail(SC[selR], selK)}` : ""}
@@ -636,9 +644,9 @@ function toFixCard(n) {
   const its = (S.sc?.items || []).filter(i => ["late", "miss", "over"].includes(i.st) && !i.pre && needsFix(i, S.C));
   const pend = (S.sc?.effDays || []).filter(e => e.pending && e.need && !e.need.includes("EOD"));
   if (!its.length && !pend.length) return "";
-  return `<div class="card warnc"><h2>To fix<span>${its.length + pend.length} to check</span></h2><div class="list">
+  return `<div class="card warnc"><h2>To fix ${ib("tofix")}<span>${its.length + pend.length} to check</span></h2><div class="list">
     ${its.sort((a, b) => b.day.localeCompare(a.day)).map(i => `<div class="item warn clk" data-postv="${esc(i.key)}"><div class="m c-warn">${label(i.day)}</div><div>${esc(i.label)}: ${itemNote(i)}</div>${!i.row ? `<button class="btn sm ${i.kind === "SOD" ? "" : "accent"}" data-${i.kind === "SOD" ? "sod-late" : "eod"}="${i.shift.id}" data-day="${i.day}">Post it now</button>` : ""}</div>`).join("")}
-    ${pend.map(e => `<div class="item warn clk" data-effv="${e.day}"><div class="m c-warn">${label(e.day)}</div><div>EOD figures missing: ${esc(e.need)}</div><div class="meta">Ask Jeremy to add them, or include them next time. Tap to see the working.</div></div>`).join("")}</div></div>`;
+    ${pend.map(e => `<div class="item warn clk" data-effv="${e.day}"><div class="m c-warn">${label(e.day)}</div><div>EOD figures missing: ${esc(e.need)}</div></div>`).join("")}</div></div>`;
 }
 
 /* ---------- Leave ---------- */
@@ -673,8 +681,8 @@ const puToday = T => (T?.segs || []).map(x => x.shift.run).find(r => PU_AREA[r])
 function pickupsCard(T) {
   if (S.viewAs) return "";
   const list = S.pickups || []; const run = puToday(T); const todays = list.filter(r => r.day === today());
-  return `<div class="card" id="pickups"><h2>Parcel pick-ups<span>${todays.length ? `✓ ${todays.length} logged today` : run ? "pick-up run today" : "Rural · South · Owaka · Lawrence · Balclutha"}</span></h2>
-    <p class="meta" style="margin:0 0 8px">Your pick-up tasks have their own Enter pick-ups button. Use this box for any you missed or another day.</p>
+  return `<div class="card" id="pickups"><h2>Parcel pick-ups ${ib("pickups")}<span>${todays.length ? `✓ ${todays.length} logged today` : run ? "pick-up run today" : "Rural · South · Owaka · Lawrence · Balclutha"}</span></h2>
+    
     ${todays.length ? `<p class="meta c-ok" style="margin:0 0 8px">✓ Today: ${todays.map(r => `${esc(r.area)} ${esc(PU_CUST[r.customer] || r.customer)} (${PU_SRC_L[r.source] || "depot"}) ${puLine(r)}`).join(" · ")}</p>` : ""}
     <div class="row"><button class="btn sm" id="pu-log" style="flex:0 0 auto">+ Enter pick-ups</button></div>
     ${list.length ? `<details style="margin-top:8px"><summary>This month · ${list.length} logged</summary><div class="list" style="margin-top:6px">${list.map(r => `<div class="item"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><div>${label(r.day)} · ${esc(r.area)} · ${esc(PU_CUST[r.customer] || r.customer)} · ${PU_SRC_L[r.source] || "depot"}</div><div class="meta">${puLine(r)}${r.note ? ` · ${esc(r.note)}` : ""}</div></div>${puEditable(r) ? `<button class="btn ghost sm" data-puedit="${r.id}" style="flex:0 0 auto">Edit</button>` : ""}</div></div>`).join("")}</div></details>` : ""}</div>`;
@@ -954,6 +962,9 @@ const EOD_INFO = {
   nzpTotal: "NZ Post parcels you delivered on this run. It's checked against NZ Post's data at 8pm and corrected to match if it's out.",
   thirdTotal: "Every other parcel you delivered on this run that isn't NZ Post's (TGE and other carriers). Put 0 if there were none.",
 };
+Object.assign(INFO, { eod_tgeRural: ["Rural TGE parcels", `<p>${EOD_INFO.tgeRural}</p><p>These are paid at a flat rate each, so count them carefully.</p>`],
+  eod_stops: ["Stops", `<p>${EOD_INFO.stops}</p>`], eod_parcels: ["Total parcels", `<p>${EOD_INFO.parcels}</p>`], eod_tgeParcels: ["Delivery total", `<p>${EOD_INFO.tgeParcels}</p>`],
+  eod_nzpTotal: ["NZ Post total", `<p>${EOD_INFO.nzpTotal}</p><p>The app adds the NZ Post and 3rd Party totals together for your parcel total.</p>`], eod_thirdTotal: ["3rd Party total", `<p>${EOD_INFO.thirdTotal}</p><p>This figure is never changed by the 8pm check.</p>`] });
 // RAM, TUA and Flyer: the EOD splits parcels into an NZ Post total and a 3rd Party total (the app adds them up).
 // At 8pm the NZ Post total is checked against NZ Post's emailed data and corrected; the 3rd Party total is never changed.
 const SPLIT_RUNS = ["RAM", "TUA", "FLY"];
@@ -973,8 +984,8 @@ function eodForm(shiftId, sortOnly, edit = false) {
   const yn = id => `<select class="in" id="${id}"><option value="">Pick…</option><option value="true" ${v(id) === "true" ? "selected" : ""}>Yes</option><option value="false" ${v(id) === "false" ? "selected" : ""}>No</option></select>`;
   const legs = LEG_RUNS[code] || []; const newsRun = (S.C.news.runs || []).includes(code); const legOn = l => ex ? (ex.legs || []).includes(l) : (shift.addons || []).includes(l);
   // ⓘ beside the boxes drivers most often get wrong: tap it to show what goes in the box
-  const lb = (text, k) => `<span class="lbl">${text}<button type="button" class="ib" data-ib="${k}" aria-label="What goes in ${text}?">i</button></span>`;
-  const ih = k => `<span class="ihint" data-ih="${k}" hidden>${EOD_INFO[k]}</span>`;
+  const lb = (text, k) => `<span class="lbl">${text}<button type="button" class="ib" data-info="eod_${k}" aria-label="What goes in ${text}?">i</button></span>`;
+  const ih = () => "";
   // stages: a run that isn't the first shift of the day needs its start (▶ Start tap); if it wasn't tapped, ask for it here.
   const TD = S.days[shift.day]; const seg = TD?.segs.find(x => x.shift.id === shiftId); const segI = seg ? TD.segs.indexOf(seg) : -1;
   const isRun = !sortOnly && !isSort(code); const askStart = isRun && !ex && segI > 0 && !shift.sor_at;
@@ -1007,7 +1018,7 @@ function eodForm(shiftId, sortOnly, edit = false) {
     bg.querySelector("#run_st")?.addEventListener("change", () => { const t = tapNow(); if (smIn && !smTouched && t != null) smIn.value = t; const h = bg.querySelector("#sorthint"); if (h && t != null) h.textContent = `Sorting time filled in from your times (${t} min). Change it if that's not right.`; });
     { const a = bg.querySelector("#nzp_total"), b3 = bg.querySelector("#third_total"), out = bg.querySelector("#split_sum b");
       if (a && b3 && out) { const sum = () => { out.textContent = String((+a.value || 0) + (+b3.value || 0)); }; a.oninput = sum; b3.oninput = sum; sum(); } }
-    bg.querySelectorAll("[data-ib]").forEach(b => b.onclick = e => { e.preventDefault(); const h = bg.querySelector(`[data-ih="${b.dataset.ib}"]`); if (h) h.hidden = !h.hidden; });
+
     bg.querySelector("#ef").onsubmit = async e => { e.preventDefault(); const g = id => bg.querySelector("#" + id); const num = id => g(id) && g(id).value !== "" ? +g(id).value : null; const bool = id => g(id) && g(id).value !== "" ? g(id).value === "true" : null;
       const row = { finish_time: g("finish").value, sort_min: num("sort_min"), parcels: num("parcels"), stops: num("stops"), trays: num("trays"), pickups: num("pickups"), pickup_parcels: num("pickup_parcels"), cycled: num("cycled"), sorted_parcels: bool("sorted_parcels"), sorted_mail: bool("sorted_mail"), nzc_ph: bool("nzc_ph"), legs: [...bg.querySelectorAll("input[name=leg]:checked")].map(i => i.value), newspapers: !!g("news")?.checked, note: g("note").value || null, run_id: S.C.runCodes[code] || null };
       if (g("tge_rural")) row.extra = { ...(ex?.extra || {}), tge_rural: num("tge_rural") ?? 0 };
@@ -1060,7 +1071,7 @@ function vanWashForm(plate) {
 }
 function vehicleCheckForm() {
   const n = nzNow(); const T = S.days[n.date]; const plates = [...new Set([...(T ? T.segs.map(x => x.shift.van) : []), ...S.shifts.filter(s => s.day <= n.date).sort((a, b) => b.day.localeCompare(a.day)).map(s => s.van)].filter(Boolean))];
-  sheet(`<h3>Weekly vehicle check</h3><p class="hint">Due Thursday by 5pm. Four photos: exterior, cab, oil dipstick, coolant level.</p>
+  sheet(`<h3 class="lbl">Weekly vehicle check ${ib("vcheck")}</h3><p class="meta">Due Thursday 5pm · 4 photos</p>
     <form class="frm" id="vf"><label class="f full">Van<select class="in" id="van">${opt([...plates, ...Object.keys(S.vans).filter(p => !plates.includes(p) && p !== "OTHER")].map(p => [p, p]), plates[0])}</select></label>
     <label class="f">Odometer (km)<input class="in" id="odo" inputmode="numeric" required></label><label class="f">RUCs left (km)<input class="in" id="ruc" inputmode="numeric" placeholder="blank if petrol"></label>
     <label class="chk"><input type="checkbox" id="washed">Van washed</label><label class="chk"><input type="checkbox" id="tyres">Tyres checked &amp; OK</label><label class="chk"><input type="checkbox" id="vault">Vault OK</label>
@@ -1252,15 +1263,14 @@ function hazardsCard(T) {
   const todo = today.filter(h => !hzOk(h)), done = S.hzAckOn ? today.filter(hzOk) : [];
   const line = (h, ack) => `<div class="hzline">${hzRow(h)}${ack ? `<button class="btn sm hzack" data-hzack="${h.id}" type="button">✓ Read</button>` : `<span class="hzok" title="Confirmed">✓</span>`}</div>`;
   const runs = T ? T.segs.length > 1 ? "today's runs" : "today's run" : "";
-  return `<div class="card" id="hazards" data-fold-open="${todo.length || near.length ? "1" : ""}"><h2>⚠️ Hazards<span>${todo.length ? `<b class="c-crit">${todo.length} to confirm</b>` : `${all.length} on the register`}</span></h2>
+  return `<div class="card" id="hazards" data-fold-open="${todo.length || near.length ? "1" : ""}"><h2>⚠️ Hazards ${ib("hazards")}<span>${todo.length ? `<b class="c-crit">${todo.length} to confirm</b>` : `${all.length} on the register`}</span></h2>
     ${near.length ? `<div class="hznear"><b>Near you now</b>${near.slice(0, 3).map(hzRow).join("")}</div>` : ""}
-    ${T ? (todo.length ? `<p class="meta" style="margin:0 0 4px">Read these for ${runs} and tap ✓ Read. They come back each month and whenever one changes.</p><div class="hzlist">${todo.slice(0, S.hzMore ? 999 : 8).map(h => line(h, true)).join("")}</div>
+    ${T ? (todo.length ? `<div class="hzlist">${todo.slice(0, S.hzMore ? 999 : 8).map(h => line(h, true)).join("")}</div>
         ${todo.length > 8 && !S.hzMore ? `<button class="btn ghost sm" id="hz-more" type="button">Show all ${todo.length}</button>` : ""}
         ${todo.length > 1 ? `<button class="btn full" id="hz-ackall" data-ids="${todo.map(h => h.id).join(",")}" type="button" style="margin-top:6px">✓ I've read all ${todo.length}</button>` : ""}`
       : today.length && !S.hzAckOn ? `<div class="hzlist">${today.slice(0, 8).map(hzRow).join("")}</div>` : today.length ? `<p class="meta">All ${today.length} high and medium hazards on ${runs} confirmed ✓</p>` : `<p class="meta">Nothing high or medium on ${runs}.</p>`) : ""}
     ${done.length ? `<details style="margin-top:6px"><summary class="meta">Confirmed (${done.length})</summary><div class="hzlist" style="margin-top:6px">${done.map(h => line(h, false)).join("")}</div></details>` : ""}
-    <div class="row" style="margin-top:8px"><button class="btn warn" id="hz-new" type="button">⚠️ Report a hazard</button><button class="btn ghost" id="hz-all" type="button">🔎 Search all</button></div>
-    <p class="hint" style="margin:6px 0 0">If it doesn't feel right, don't do it. Card it and report it.</p></div>`;
+    <div class="row" style="margin-top:8px"><button class="btn warn" id="hz-new" type="button">⚠️ Report a hazard</button><button class="btn ghost" id="hz-all" type="button">🔎 Search all</button></div></div>`;
 }
 document.addEventListener("click", e => { if (e.target.id === "hz-more") { S.hzMore = true; render(); } });
 function hazardDetail(id) {

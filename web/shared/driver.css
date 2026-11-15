@@ -168,3 +168,12 @@ hr.gl{display:none}
 .card.today .seg,.card.nextc .seg{padding:6px 0!important;align-items:baseline}
 .card .seg .tm{min-width:118px!important;font-size:13px!important;color:var(--ink2)!important}
 .ablk details.abmore>summary{gap:6px}
+
+/* every box and button row the same width: flex/grid children may shrink (long one-line text no longer pushes a box wider) */
+.wrap>*,.folds>*,.folds>.pair>*{min-width:0;max-width:100%;box-sizing:border-box}
+.card,.card>h2{min-width:0}.card>h2{overflow:hidden}
+.qbar{grid-template-columns:minmax(0,1fr) minmax(0,1fr);margin:0}
+.qb{min-width:0}.qb>b,.qb>small{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* ⓘ beside a heading */
+.card h2 .ib,h3 .ib{width:22px;height:22px;font-size:12px;margin-left:6px;vertical-align:middle;flex:0 0 auto}
+.infobody p{margin:0 0 10px;font-size:15px;line-height:1.45}
