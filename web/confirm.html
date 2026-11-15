@@ -1,0 +1,18 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Confirm roster change · Taieri Post</title>
+<link rel="icon" href="/icon.svg"><link rel="stylesheet" href="/shared/style.css"></head>
+<body><main style="max-width:520px;margin:24px auto;padding:0 14px"><div class="card" id="box"><h2>Roster Change</h2><p class="hint">Loading…</p></div></main>
+<script type="module">
+// Opened from the roster-change email. Shows the change, then confirms it when the driver taps the button (a tap, not the page load, so email link-scanners can't confirm for them).
+import { SUPABASE_URL, SUPABASE_KEY, SITE } from "/shared/config.js";
+const t = new URLSearchParams(location.search).get("t") || ""; const box = document.getElementById("box");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const call = go => fetch(`${SUPABASE_URL}/functions/v1/notify`, { method: "POST", headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }, body: JSON.stringify({ type: "confirm_link", t, go }) }).then(r => r.json()).catch(() => ({ error: "Couldn't reach the server. Check your connection and try again." }));
+function show(r) {
+  if (r.error) { box.innerHTML = `<h2>Roster Change</h2><p>${esc(r.error)}</p><a class="btn" href="${SITE}/">Open the app</a>`; return; }
+  const list = `<ul>${r.lines.map(l => `<li><b>${esc(l)}</b></li>`).join("")}</ul>`;
+  box.innerHTML = r.confirmed ? `<h2>Thanks ${esc(r.name)} ✓</h2><p>You've confirmed:</p>${list}<a class="btn ghost" href="${SITE}/">Open the app</a>`
+    : `<h2>Hi ${esc(r.name)}</h2><p>Your roster has changed:</p>${list}<button class="btn" id="go">Confirm I've seen this</button>`;
+  document.getElementById("go")?.addEventListener("click", async e => { e.target.disabled = true; e.target.textContent = "Confirming…"; show(await call(true)); });
+}
+call(false).then(show);
+</script></body></html>

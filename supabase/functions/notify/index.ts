@@ -9,8 +9,27 @@ function needsConfirm(i: any) { const a = i?.after || null, b = i?.before || nul
 const LEAVE_T: Record<string, string> = { annual: "Annual leave", sick: "Sick leave", unpaid: "Unpaid leave", bereave: "Bereavement leave", dayoff: "Day off request", other: "Other" };
 const SITE = "https://taieri-post.onrender.com";
 
+// One-tap confirm link in roster-change emails: token = <change_id>.<driver>.<hmac>, signed with app_secrets.cron_secret.
+// The link opens /confirm.html on the site, which shows the changes and posts here when the driver taps Confirm (no sign-in needed).
+const b64u = (b: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+async function sign(secret: string, msg: string) { const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]); return b64u(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(msg))).slice(0, 32); }
+async function confirmToken(secret: string, change: string, driver: string) { return `${change}.${driver}.${await sign(secret, change + "|" + driver)}`; }
+async function confirmLink(req: Request) {
+  const body = await req.clone().json().catch(() => ({})); if (body?.type !== "confirm_link") return null;
+  const sb = admin(); const sec = await secrets(sb); const [change, driver, sig] = String(body.t || "").split(".");
+  if (!change || !driver || !sig || sig !== await sign(sec.cron_secret, change + "|" + driver)) return json({ error: "This link isn't valid. Open the app to confirm instead." }, 400);
+  const { data: items } = await sb.from("roster_change_items").select("*, roster_changes!inner(status)").eq("change_id", change);
+  const mine = (items || []).filter(i => i.roster_changes.status === "sent" && (i.affects || []).includes(driver) && needsConfirm(i));
+  if (!mine.length) return json({ error: "Nothing to confirm on this link." }, 404);
+  const { data: acks } = await sb.from("change_acks").select("*").in("item_id", mine.map(i => i.id)).eq("driver", driver);
+  const done = (acks || []).filter(a => a.confirmed_at).length; const { data: p } = await sb.from("people").select("name").eq("id", driver).maybeSingle();
+  if (body.go) { const now = new Date().toISOString(); await sb.from("change_acks").upsert(mine.map(i => ({ item_id: i.id, driver, confirmed_at: (acks || []).find(a => a.item_id === i.id)?.confirmed_at || now, confirmed_by: driver })), { onConflict: "item_id,driver" }); }
+  return json({ ok: true, name: first(p?.name), lines: mine.map(i => i.summary), confirmed: !!body.go || done === mine.length });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return json({ ok: true });
+  if (req.method === "POST") { const r = await confirmLink(req); if (r) return r; }
   const auth = req.headers.get("Authorization") || "";
   const user = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } }, auth: { persistSession: false } });
   const { data: who } = await user.auth.getUser(); if (!who?.user) return json({ error: "sign in" }, 401);
@@ -29,7 +48,7 @@ Deno.serve(async (req) => {
     const reason = items[0].roster_changes.reason; let sent = 0;
     for (const [d, lines] of Object.entries(by)) { const p = people[d]; if (!p) continue;
       await push(sb, sec, set, [d], { title: `Roster change${lines.length > 1 ? "s" : ""} – please confirm`, body: lines[0] + (lines.length > 1 ? ` (+${lines.length - 1} more)` : ""), url: "/", tag: "rc-" + body.change_id });
-      if (p.email) { await sendEmail(sec, set, p.email, `Roster change${lines.length > 1 ? "s" : ""} – ${lines.length === 1 ? lines[0].split(":")[0] : "please confirm"}`, wrap(`<p>Hi ${esc(first(p.name))},</p><p>Your roster has changed:</p><ul>${lines.map(l => `<li><b>${esc(l)}</b></li>`).join("")}</ul>${reason ? `<p>${esc(reason)}</p>` : ""}<p><a href="${SITE}/" style="display:inline-block;background:#e34948;color:#fff;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:bold">Open the app and tap "Got it"</a></p><p>Please confirm so we know you've seen it.</p>${sig}`)); sent++; } }
+      if (p.email) { await sendEmail(sec, set, p.email, `Roster change${lines.length > 1 ? "s" : ""} – ${lines.length === 1 ? lines[0].split(":")[0] : "please confirm"}`, wrap(`<p>Hi ${esc(first(p.name))},</p><p>Your roster has changed:</p><ul>${lines.map(l => `<li><b>${esc(l)}</b></li>`).join("")}</ul>${reason ? `<p>${esc(reason)}</p>` : ""}<p><a href="${SITE}/confirm.html?t=${encodeURIComponent(await confirmToken(sec.cron_secret, body.change_id, d))}" style="display:inline-block;background:#e34948;color:#fff;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:bold">Confirm I've seen this</a></p><p>Please tap the button so we know you've seen it. You can also confirm in the <a href="${SITE}/">app</a>.</p>${sig}`)); sent++; } }
     return json({ ok: true, emailed: sent });
   }
   if (body.type === "leave_decided") {
