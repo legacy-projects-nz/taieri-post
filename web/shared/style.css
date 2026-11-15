@@ -258,3 +258,6 @@ button.qb:disabled{opacity:.4}
 .card>h2>.ico{font-style:normal;margin-right:8px;flex:0 0 auto}
 .top4>.card.fold.shut>h2{flex-wrap:nowrap;white-space:nowrap;align-items:center}
 .top4>.card.fold.shut>h2>span{display:none}
+/* Titles: first letter of every word capitalised, site-wide (driver app + owner portal). Subtitle spans inside headings stay as written. */
+h1,h2,h3,h4,.tabs button,.tab{text-transform:capitalize}
+h1 span,h2 span,h3 span,h4 span,h2 .meta,h3 .meta,h4 .meta{text-transform:none}
