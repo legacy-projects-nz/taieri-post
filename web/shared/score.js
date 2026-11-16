@@ -110,8 +110,9 @@ export function eodState(sched, at, finishTime) {
   const st = overFin > EOD_FLAG_MIN ? "slow" : posted > EOD_FLAG_MIN ? "lsub" : "ok";
   return { st, posted, overFin };
 }
-/** Fix posts: an EOD that is only a little late (up to rules.eodFixGrace minutes, default 90) still counts as late but needs no fix entry */
-export const needsFix = (it, C) => !(it.kind === "EOD" && it.st === "late" && (it.late ?? 0) <= (C?.rules?.eodFixGrace ?? 90));
+/** Fix posts / To fix: anything posted late by up to rules.lateFixGrace minutes (default 10) is recorded as late but needs no fix entry;
+ *  an EOD that is only a little late (up to rules.eodFixGrace minutes, default 90) likewise */
+export const needsFix = (it, C) => !(it.st === "late" && (it.late ?? 0) <= (it.kind === "EOD" ? Math.max(C?.rules?.eodFixGrace ?? 90, C?.rules?.lateFixGrace ?? 10) : (C?.rules?.lateFixGrace ?? 10)));
 export const STATE_LABEL = { slow: "Finished 1h+ over", lsub: "Posted 1h+ after", ok: "On time", late: "Late", part: "Incomplete", over: "Overdue", miss: "Missing", exc: "Excused", due: "Due", wait: "Waiting" };
 export function itemNote(it) {
   if (it.st === "ok") return `posted ${fmtT(it.at % 1440)}`;
