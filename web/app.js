@@ -217,9 +217,9 @@ function renderNow() {
 
 /* ---------- collapsible boxes: Next shift and everything below it (plus Parcel pick-ups) are one row until tapped ---------- */
 function folds() {
-  app.querySelectorAll(".folds .card, #pickups, #hazards, #tasks, #nextshift, #vanuse").forEach(c => {
+  app.querySelectorAll(".folds .card, #pickups, #hazards, #tasks, #nextshift, #vanuse, #msgs").forEach(c => {
     const h = c.querySelector(":scope > h2"); if (!h) return;
-    const key = c.id || [...h.childNodes].filter(x => x.nodeType === 3).map(x => x.textContent).join("").trim();
+    const key = c.dataset.foldKey || c.id || [...h.childNodes].filter(x => x.nodeType === 3).map(x => x.textContent).join("").trim();
     if (!(key in S.open)) S.open[key] = c.dataset.foldOpen === "1";
     c.classList.add("fold"); c.classList.toggle("shut", !S.open[key]);
     h.setAttribute("role", "button"); h.tabIndex = 0; h.setAttribute("aria-expanded", String(!!S.open[key]));
@@ -401,7 +401,8 @@ function alertsCard() {
 function messagesCard() {
   const unread = S.msgs.filter(m => !m.read_at); const toConfirm = S.msgs.filter(m => m.messages.needs_confirm && !m.confirmed_at);
   const show = S.msgs.slice(0, 5); if (!show.length) return "";
-  return `<div class="card ${toConfirm.length ? "warnc" : ""}" id="msgs"><h2>Messages<span>${toConfirm.length ? `${toConfirm.length} to confirm` : unread.length ? `${unread.length} new` : ""}</span></h2>
+  const pending = unread.length + toConfirm.length; // open while something needs reading or confirming, collapsed once all are responded to
+  return `<div class="card ${toConfirm.length ? "warnc" : ""}" id="msgs" data-fold-open="${pending ? 1 : 0}" data-fold-key="msgs${pending ? 1 : 0}"><h2>Messages<span>${toConfirm.length ? `${toConfirm.length} to confirm` : unread.length ? `${unread.length} new` : ""}</span></h2>
     <div class="list">${show.map(m => `<div class="item clk ${m.messages.needs_confirm && !m.confirmed_at ? "warn" : m.confirmed_at || (m.read_at && !m.messages.needs_confirm) ? "done" : m.read_at ? "" : "accent"}" data-msgv="${m.message_id}"><div class="m">${esc(first(S.people[m.messages.sender]?.name || "Jeremy"))} · ${fmtTs(m.messages.created_at)}${m.confirmed_at ? ` · <span class="c-ok">✓ confirmed</span>` : ""}</div><div style="white-space:pre-wrap">${esc(m.messages.body)}</div>${m.messages.needs_confirm && !m.confirmed_at ? `<button class="btn sm" data-confirm="${m.message_id}">Got it</button>` : ""}</div>`).join("")}</div>
     ${S.msgs.length > 5 ? `<details><summary>Older messages</summary><div class="list" style="margin-top:8px">${S.msgs.slice(5).map(m => `<div class="item clk" data-msgv="${m.message_id}"><div class="m">${fmtTs(m.messages.created_at)}</div><div style="white-space:pre-wrap">${esc(m.messages.body)}</div></div>`).join("")}</div></details>` : ""}</div>`;
 }
