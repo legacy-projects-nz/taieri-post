@@ -242,8 +242,8 @@ function quickBar(T, n) {
     : runs.map(x => { const due = (x.en ?? x.st) + S.C.rules.eodHours * 60; const late = sod && !x.eod && n.min > due;
         return x.eod ? `<div class="qb done"><b>✓ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${fmtTime(x.eod.sent_at)}${x.eod.finish_time ? ` · finished ${fmtT(toMin(x.eod.finish_time))}` : ""}</small></div>`
           : va ? offB(`■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}`, late ? "overdue" : "not posted yet") : `<button class="btn qb ${late ? "warn" : "accent"}" data-eod="${x.shift.id}" ${sod ? "" : "disabled"}><b>■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${!sod ? "after your SOD" : late ? "overdue" : ""}</small></button>`; }).join("");
-  const out = {}; const rb = runBar(T, sod, runs, va, offB, out);   // while sorting, Sort done sits first on the break row, beside the unpaid break
-  return `<div class="qbar">${sodBtn}${eodBtns}${brkRow(out.sort || "", breakBtn(T, sod), hoursBtn(T, sod))}</div>${rb}`;
+  const out = {}; const rb = runBar(T, sod, runs, va, offB, out);   // while sorting, the SOD button turns into ■ End sort [code] (one per sort, in order)
+  return `<div class="qbar">${out.sort || sodBtn}${eodBtns}${brkRow(breakBtn(T, sod), hoursBtn(T, sod))}</div>${rb}`;
 }
 // Runboard (view only for drivers): a full-width button near the end of the page, styled like the break / hours row
 const rbBtn = () => `<a class="btn ghost qb brk" href="/admin/#runboard" style="text-decoration:none"><b>Runboard</b><small>this week's roster, view only</small></a>`;
@@ -255,11 +255,14 @@ const stMs = (T, i) => { const x = T.segs[i]; if (i === 0) { const sod = T.segs.
 // "go" runs (RAM, TUA, Flyer): already sorted / loaded for the driver, so the run starts with the SOD or the Sort done tap
 const isGo = code => S.C?.sortMin?.[code] === 0;
 const NO_SORT = { includes: isGo };
+// runs with their own sort even straight after a sort shift (D>B: the mail sort comes after the SUP support sort)
+const OWN_SORT = ["DB"];
+const sortCode = c => c === "DB" ? "D>B" : c;
 // the sort the driver is on now, if any: a sort shift, or the sorting part of a run that has its own sort time
 function sortNow(T, cur) {
   if (!cur) return null; const { x, i } = cur; const st = stMs(T, i); if (st == null) return null;
   if (x.sort) { const en = x.rostEn ?? x.en; const exp = en != null && x.st != null && en > x.st ? en - x.st : null; return { st, exp }; }
-  if (isGo(x.shift.run) || x.shift.deliver_at || x.eod || T.segs[i - 1]?.sort) return null;
+  if (isGo(x.shift.run) || x.shift.deliver_at || x.eod || (T.segs[i - 1]?.sort && !OWN_SORT.includes(x.shift.run))) return null;
   return { st, exp: sortExp(S.C, x.shift.run, T.day || today()) };
 }
 function sortTap(T, x, runStartMs) {
@@ -282,7 +285,9 @@ function runBar(T, sod, runs, va, offB, out = {}) {
   // On a sort shift it ends the sort and starts the next run; on a run with its own sort it starts delivering.
   const so = sortNow(T, cur); const el = so ? Math.max(0, Math.round((Date.now() - so.st) / 60000)) : 0; const over = !!so && so.exp != null && el > so.exp;
   const tmr = so ? `sorting ${el}${so.exp != null ? ` of ${so.exp}` : ""} min${over ? " · over" : ""}` : "";
-  const sortB = (kind, id, then) => va ? offB("■ Sort done", tmr) : `<button class="btn qb ${over ? "warn" : ""}" data-runmark="${kind}" data-shift="${id}"><b>■ Sort done</b><small>${tmr} · ${then}</small></button>`;
+  // labelled with the sort being ended, e.g. ■ End sort SUP, then ■ End sort D>B
+  const endLab = `■ End sort ${so ? esc(sortCode(cur.x.shift.run)) : ""}`;
+  const sortB = (kind, id, then) => va ? offB(endLab, tmr) : `<button class="btn qb ${over ? "warn" : ""}" data-runmark="${kind}" data-shift="${id}"><b>${endLab}</b><small>${tmr} · ${then}</small></button>`;
   const sorB = !nxt ? "" : cur?.x.sort ? sortB("sor", nxt.x.shift.id, `starts ${lab(nxt.x)}`)
     : va ? offB(`▶ Start ${lab(nxt.x)}`, "not started") : `<button class="btn qb" data-runmark="sor" data-shift="${nxt.x.shift.id}"><b>▶ Start ${lab(nxt.x)}</b><small>${cur ? `ends ${lab(cur.x)}` : ""}</small></button>`;
   const dlvB = !so || cur.x.sort ? "" : sortB("dlv", cur.x.shift.id, `starts ${lab(cur.x)}`);
@@ -843,7 +848,7 @@ function wire() {
   $$("[data-runmark]").forEach(b => b.onclick = async () => { b.disabled = true; const k = b.dataset.runmark;
     const { error } = await sb.rpc("run_mark", { p_shift: b.dataset.shift, p_kind: k });
     if (error) { b.disabled = false; return toast(error.message, "err"); }
-    toast(k === "sor" ? (b.textContent.includes("Sort done") ? "Sort done ✓ · run started ▶" : "Started ▶ (the one before is ended)") : k === "dlv" ? "Sort done ✓ · run started ▶" : "Run ended ■ · send its EOD when you can", "ok"); await loadAll(); render(); });
+    toast(k === "sor" ? (b.textContent.includes("End sort") ? "Sort ended ✓ · next started ▶" : "Started ▶ (the one before is ended)") : k === "dlv" ? "Sort ended ✓ · delivering ▶" : "Run ended ■ · send its EOD when you can", "ok"); await loadAll(); render(); });
   $$("[data-done]").forEach(b => b.onclick = async () => { const undo = !!b.dataset.undo; b.disabled = true; const { error } = await sb.rpc(undo ? "task_undo" : "task_done", { p_shift: b.dataset.shift, p_addon: b.dataset.done }); if (error) { b.disabled = false; toast(error.message, "err"); } else { toast(undo ? "Done undone" : "Marked done ✓ · tap again to undo", "ok"); await loadAll(); render(); } });
   $$("[data-sc]").forEach(b => b.onclick = () => { S.scSel = S.scSel === b.dataset.sc ? null : b.dataset.sc; render(); setTimeout(() => $("#scores")?.scrollIntoView({ block: "nearest" }), 0); });
   $("#leave-new")?.addEventListener("click", leaveForm);
