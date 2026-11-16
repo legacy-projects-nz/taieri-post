@@ -12,17 +12,17 @@ const custErr = r => custFor(r.area).includes(r.customer) ? null : r.area === "S
 const SOURCES = [["depot", "Depot"], ["customer", "Customer"]];
 const AREA_SHORT = { Lawrence: "Law", Owaka: "Owaka", Rural: "Rural", South: "South", Balclutha: "Bal Depot" };
 export const CUSTOMERS = {
-  NZC: { name: "NZ Couriers - Aaron Johnston", short: "NZC", due: 7, acct: "200", tax: "15% GST on Income", small: { code: "NZCS", rate: 4.5, desc: "NZC - Small" }, large: { code: "NZCL", rate: 8, desc: "NZ Couriers - Large" } },
-  PH: { name: "Post Haste", short: "Post Haste", due: 7, acct: "200", tax: "15% GST on Income", small: { code: "PHS", rate: 4, desc: "Post Haste - Small" }, large: { code: "PHL", rate: 8, desc: "Post Haste - Large" } },
+  NZC: { name: "NZ Couriers - Aaron Johnston", short: "NZC", due: 7, acct: "200", tax: "15% GST on Income", small: { code: "NZCS", rate: 5, desc: "NZC - Small" }, large: { code: "NZCL", rate: 8, desc: "NZ Couriers - Large" } },
+  PH: { name: "Post Haste", short: "Post Haste", due: 7, acct: "200", tax: "15% GST on Income", small: { code: "PHS", rate: 5, desc: "Post Haste - Small" }, large: { code: "PHL", rate: 8, desc: "Post Haste - Large" } },
   TGE: { name: "NZ National Network LTD", short: "TGE", due: 0, acct: "201", tax: "15% GST on Income", small: { code: "TGE - OD - Pick ups", rate: 6, desc: "TGE - Small" }, large: { code: "TGE - OD - Pick ups", rate: 7.5, desc: "TGE - Large" } },
 };
 // Ready-made extra lines (from items already used in Xero); "Other" is free text
 const EXTRA_PRESETS = [
   { k: "tge-add", cust: "TGE", code: "TGE - Special Add", acct: "202", desc: "TGE Request Additional Work", price: "" },
   { k: "tge-pu", cust: "TGE", code: "TGE - OD - Pick ups", acct: "201", desc: "TGE - OD - Pick ups", price: 6 },
-  { k: "nzc-s", cust: "NZC", code: "NZCS", acct: "200", desc: "NZC - Small", price: 4.5 },
+  { k: "nzc-s", cust: "NZC", code: "NZCS", acct: "200", desc: "NZC - Small", price: 5 },
   { k: "nzc-l", cust: "NZC", code: "NZCL", acct: "200", desc: "NZ Couriers - Large", price: 8 },
-  { k: "ph-s", cust: "PH", code: "PHS", acct: "200", desc: "Post Haste - Small", price: 4 },
+  { k: "ph-s", cust: "PH", code: "PHS", acct: "200", desc: "Post Haste - Small", price: 5 },
   { k: "ph-l", cust: "PH", code: "PHL", acct: "200", desc: "Post Haste - Large", price: 8 },
   // Owaka extras
   { k: "nzc-telford", cust: "NZC", code: "", acct: "200", desc: "NZC - Telford Fee - Owaka", price: 5 },
