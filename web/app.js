@@ -217,7 +217,7 @@ function renderNow() {
 
 /* ---------- collapsible boxes: Next shift and everything below it (plus Parcel pick-ups) are one row until tapped ---------- */
 function folds() {
-  app.querySelectorAll(".folds .card, #pickups, #hazards, #tasks, #nextshift").forEach(c => {
+  app.querySelectorAll(".folds .card, #pickups, #hazards, #tasks, #nextshift, #vanuse").forEach(c => {
     const h = c.querySelector(":scope > h2"); if (!h) return;
     const key = c.id || [...h.childNodes].filter(x => x.nodeType === 3).map(x => x.textContent).join("").trim();
     if (!(key in S.open)) S.open[key] = c.dataset.foldOpen === "1";
@@ -505,8 +505,8 @@ function vanUseCard() {
   const days = [...new Set(S.vanUse.map(s => s.day))].sort().slice(0, 3); if (!days.includes(t)) days.unshift(t); const shown = days.slice(0, 3);
   const nm = id => id ? esc(first(S.people[id]?.name || id)) : `<span class="c-crit">unassigned</span>`;
   const rl = c => esc(S.runsBy[c]?.label || S.runsBy[c]?.name || c);
-  const block = d => { const rows = runs.map(r => { const ss = S.vanUse.filter(s => s.day === d && s.run === r); if (!ss.length) return ""; return ss.map(s => { const v = s.van ? S.vans[s.van] : null;
-      return `<tr><td><b>${rl(r)}</b>${s.start_at ? `<div class="meta">${fmtT(toMin(s.start_at))}</div>` : ""}</td><td>${nm(s.driver)}${s.trainee ? `<div class="meta">+ ${nm(s.trainee)}</div>` : ""}</td><td>${s.van ? `<button class="plate clk" data-vanv="${esc(s.van)}" style="background:none;cursor:pointer">${esc(s.van)}</button>${v?.name || v?.model ? `<div class="meta">${esc(v.name || v.model)}</div>` : ""}` : `<span class="c-crit">no van</span>`}</td></tr>`; }).join(""); }).join("");
+  const block = d => { const rows = runs.map(r => { const ss = S.vanUse.filter(s => s.day === d && s.run === r); if (!ss.length) return ""; return ss.map(s => {
+      return `<tr><td><b>${rl(r)}</b>${s.start_at ? `<div class="meta">${fmtT(toMin(s.start_at))}</div>` : ""}</td><td>${nm(s.driver)}${s.trainee ? `<div class="meta">+ ${nm(s.trainee)}</div>` : ""}</td><td>${s.van ? `<button class="plate clk" data-vanv="${esc(s.van)}" style="background:none;cursor:pointer">${esc(s.van)}</button>` : `<span class="c-crit">no van</span>`}</td></tr>`; }).join(""); }).join("");
     return `<div class="meta mono" style="margin:8px 0 4px">${d === t ? "TODAY" : esc(label(d)).toUpperCase()}</div>${rows ? `<table class="dt"><tr><th>Run</th><th>Driver</th><th>Van</th></tr>${rows}</table>` : `<p class="hint" style="margin:0">Nothing rostered.</p>`}`; };
   return `<div class="card" id="vanuse"><h2>Van use<span>${runs.map(rl).join(" · ")}</span></h2>${shown.map(block).join("")}</div>`;
 }
