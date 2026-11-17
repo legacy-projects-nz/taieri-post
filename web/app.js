@@ -258,6 +258,15 @@ const NO_SORT = { includes: isGo };
 // runs with their own sort even straight after a sort shift (D>B: the mail sort comes after the SUP support sort)
 const OWN_SORT = ["DB"];
 const sortCode = c => c === "DB" ? "D>B" : c;
+// for showing a day: a run with its own sort (D>B) shows as two rows, "Sort – D>B" then the run, split at its expected sort time
+function showSegs(D) {
+  if (!D) return [];
+  return D.segs.flatMap(x => {
+    const m = !x.sort && OWN_SORT.includes(x.shift.run) && x.st != null ? sortExp(S.C, x.shift.run, D.day) : null;
+    if (!m || (x.en != null && x.st + m >= x.en)) return [x];
+    return [{ ...x, shift: { ...x.shift, van: null, addons: [], note: null }, sort: true, inner: true, lab: `Sort – ${sortCode(x.shift.run)}`, en: x.st + m, eod: null, sod: null }, { ...x, st: x.st + m }];
+  });
+}
 // the sort the driver is on now, if any: a sort shift, or the sorting part of a run that has its own sort time
 function sortNow(T, cur) {
   if (!cur) return null; const { x, i } = cur; const st = stMs(T, i); if (st == null) return null;
@@ -278,7 +287,7 @@ function runBar(T, sod, runs, va, offB, out = {}) {
   const started = i => stMs(T, i) != null; const ended = (x, i) => !!x.shift.eor_at || !!x.eod || segs.some((y, j) => j > i && started(j));
   const cur = all.filter(({ x, i }) => started(i) && !ended(x, i)).pop();
   const nxt = all.find(({ i }) => !started(i));
-  const lab = x => x.sort ? "sort" : esc(x.shift.run);
+  const lab = x => x.sort ? "sort" : esc(sortCode(x.shift.run));
   const eorB = !cur || cur.x.sort || runs.length < 2 ? ""   // one run in the day: the EOD ends it, no EOR
   : va ? offB(`■ EOR ${lab(cur.x)}`, "run going") : `<button class="btn qb ghost" data-runmark="eor" data-shift="${cur.x.shift.id}"><b>■ EOR ${lab(cur.x)}</b><small></small></button>`;
   // sorting: one "Sort done" button with a timer; it turns amber once the sort is past its expected time.
@@ -300,7 +309,12 @@ function stageLine(T) {
   const segs = T.segs; const all = segs.map((x, i) => ({ x, i }));
   const tm = ms => fmtTime(new Date(ms).toISOString());
   const line = segs.length < 2 && !segs[0].shift.deliver_at ? "" : all.map(({ x, i }) => { const s0 = stMs(T, i); if (s0 == null) return ""; const e = x.shift.eor_at ? Date.parse(x.shift.eor_at) : (segs.slice(i + 1).map((_, k) => stMs(T, i + 1 + k)).find(v => v != null) ?? null);
-    return `<b>${x.sort ? "Sort" : esc(x.shift.run)}</b> ${tm(s0)}${x.shift.deliver_at ? ` (${NO_SORT.includes(x.shift.run) ? "on the road" : "delivering"} ${tm(Date.parse(x.shift.deliver_at))})` : ""}${e ? `–${tm(e)}` : x.eod ? " ✓" : " – now"}`; }).filter(Boolean).join(" · ");
+    const end = e ? `–${tm(e)}` : x.eod ? " ✓" : " – now"; const code = esc(sortCode(x.shift.run));
+    if (x.sort) return `<b>Sort ${code}</b> ${tm(s0)}${end}`;
+    // a run with its own sort (D>B): "Sort D>B 7:00–8:05 · D>B 8:05 – now"
+    if (x.shift.deliver_at && OWN_SORT.includes(x.shift.run)) { const d = Date.parse(x.shift.deliver_at); return `<b>Sort ${code}</b> ${tm(s0)}–${tm(d)} · <b>${code}</b> ${tm(d)}${end}`; }
+    if (OWN_SORT.includes(x.shift.run) && !e && !x.eod) return `<b>Sort ${code}</b> ${tm(s0)} – now`;
+    return `<b>${code}</b> ${tm(s0)}${x.shift.deliver_at ? ` (${NO_SORT.includes(x.shift.run) ? "on the road" : "delivering"} ${tm(Date.parse(x.shift.deliver_at))})` : ""}${end}`; }).filter(Boolean).join(" · ");
   return line;
 }
 /* Unpaid break and + Hours sit side by side on one full-width row (either alone takes the whole row) */
@@ -413,11 +427,11 @@ const VAN_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="tr
 const vanChips = D => [...new Set(D.segs.map(x => x.shift.van).filter(Boolean))].map(p => `<span class="tag van">${VAN_SVG}${esc(p)}</span>`).join("");
 function segRow(x, day, n, isToday, tasks = true) {
   const code = x.shift.run; const r = S.runsBy[code];
-  if (!tasks) { const act = isToday ? segActions(x, day, n) : ""; const one = (S.days[day]?.segs.length || 0) < 2; return `<div class="seg clk" data-dayv="${day}" title="Tap for the full day">${one ? "" : `<div class="tm">${fmtT(x.st)}–${fmtT(x.en)}</div>`}<div class="rn">${x.sort ? `Sort: ${esc(r?.name || r?.label || "Sort")}` : `${esc(code)}: ${esc(runName(code))}`}${x.shift.trainee ? ` <span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : ""}${act}</div></div>`; }
+  if (!tasks) { const act = isToday ? segActions(x, day, n) : ""; const one = (S.days[day]?.segs.length || 0) < 2; return `<div class="seg clk" data-dayv="${day}" title="Tap for the full day">${one ? "" : `<div class="tm">${fmtT(x.st)}–${fmtT(x.en)}</div>`}<div class="rn">${x.sort ? (x.lab ? esc(x.lab) : `Sort: ${esc(r?.name || r?.label || "Sort")}`) : `${esc(code)}: ${esc(runName(code))}`}${x.shift.trainee ? ` <span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : ""}${act}</div></div>`; }
   const tags = [x.shift.van ? `<span class="tag van"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 6.5A1.5 1.5 0 0 1 4.5 5H14l4.2 4.2H20a1 1 0 0 1 1 1V16a1 1 0 0 1-1 1h-1.3a2.5 2.5 0 0 1-4.9 0H9.7a2.5 2.5 0 0 1-4.9 0H4a1 1 0 0 1-1-1V6.5Zm10.6.5H5v4h12.2L13.6 7ZM7.25 18a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Zm9.5 0a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Z"/></svg>${esc(x.shift.van)}</span>` : "", x.shift.trainee ? `<span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : "", ...(tasks ? (x.shift.addons || []).map(a => `<span class="tag">+ ${esc(addName(a))}</span>`) : [])].join("");
   const tw = x.sort || !tasks ? "" : timingRows(x, day, isToday ? n.min : null);
   const act = isToday ? segActions(x, day, n) : "";
-  return `<div class="seg clk" data-dayv="${day}" title="Tap for the full day"><div class="tm">${fmtT(x.st)} – ${fmtT(x.en)}</div><div class="rn">${x.sort ? esc(r?.label || "Sort") : `${esc(code)}<span class="sub">${esc(runName(code))}</span>`}<div class="tags">${tags}</div>${tw}${act}</div></div>`;
+  return `<div class="seg clk" data-dayv="${day}" title="Tap for the full day"><div class="tm">${fmtT(x.st)} – ${fmtT(x.en)}</div><div class="rn">${x.sort ? esc(x.lab || r?.label || "Sort") : `${esc(code)}<span class="sub">${esc(runName(code))}</span>`}<div class="tags">${tags}</div>${tw}${act}</div></div>`;
 }
 function rulesFor(x, day) {
   const code = x.shift.run; const d = dow(day) + 1; const out = [];
@@ -457,20 +471,20 @@ function segActions(x, day, n) {
 function todayCard(T, N, n) {
   const hol = S.C.holidays[n.date];
   if (T) {
-    const left = T.segs.filter(x => n.min < (x.en ?? x.st));
+    const DS = showSegs(T); const left = DS.filter(x => n.min < (x.en ?? x.st));
     const sodSeg = T.segs.find(x => x.sod); const allEod = T.segs.filter(x => !x.sort).length ? T.segs.filter(x => !x.sort).every(x => x.eod) : T.segs.some(x => x.eod);
     if (left.length || (!allEod && sodSeg)) {
       const sodBtn = !sodSeg ? ""
         : `${allEod ? "" : `<div class="row"><button class="btn ghost sm" id="sod-edit" data-shift="${sodSeg.shift.id}" style="flex:0 0 auto">Edit SOD</button></div>`}${sodReqLine(T)}`;
       const sortOnly = !T.segs.some(x => !x.sort) && sodSeg && !allEod;
       // once the day has started (SOD in), Today shrinks to two rows; tap to see the full day again
-      if (sodSeg && !S.todayFull) { const cur = left[0] || T.segs[T.segs.length - 1]; const nxt = left[1];
-        const nm = x => x.sort ? (S.runsBy[x.shift.run]?.label || "Sort") : x.shift.run;
+      if (sodSeg && !S.todayFull) { const cur = left[0] || DS[DS.length - 1]; const nxt = left[1];
+        const nm = x => x.sort ? (x.lab || S.runsBy[x.shift.run]?.label || "Sort") : sortCode(x.shift.run);
         return `<div class="card today tdmini" id="today-mini" role="button" tabindex="0" aria-expanded="false" title="Tap for the full day">
           <div class="tdr1"><b>Today</b><span class="big">${fmtT((left[0] || T.segs[0]).st)}–${fmtT(T.end)}</span>${vanChips(T)}<i class="fchev" aria-hidden="true"></i></div>
           <div class="tdr2 meta">${stageLine(T) || `Now <b>${esc(nm(cur))}</b> till ${fmtT(cur.en)}${nxt ? ` · next <b>${esc(nm(nxt))}</b> ${fmtT(nxt.st)}` : ""}`}${S.locOn ? " · 📍" : ""}</div></div>`; }
       return `<div class="card today${sodSeg ? " " : ""}" ${sodSeg ? `id="today-full"` : ""}><h2>Today<span>${label(T.day)}${sodSeg ? ` <button class="btn ghost sm" id="today-less" type="button" style="min-height:28px;padding:2px 10px">Less ▴</button>` : ""}</span></h2><div class="big bigrow"><span>${fmtT((left[0] || T.segs[0]).st)}–${fmtT(T.end)}</span>${vanChips(T)}</div>${stageLine(T) ? `<p class="meta" style="margin:0">${stageLine(T)}</p>` : ""}
-        ${sodBtn}${(left.length ? left : T.segs).map(x => segRow(x, T.day, n, true, false)).join("")}
+        ${sodBtn}${(left.length ? left : DS).map(x => segRow(x, T.day, n, true, false)).join("")}
 </div>`;
     }
   }
@@ -494,7 +508,7 @@ function buSection(n) {
 function nextShiftCard(N, n) {   // one box: shift, tasks, vehicle, split by grey lines
   if (!N) return `<div class="card nextc" id="nextshift"><h2>Next shift<span>not on the roster yet</span></h2>${buSection(n)}</div>`;
   return `<div class="card nextc" id="nextshift" data-fold-open="${S.dayDone ? 1 : 0}"><h2>Next shift<span>${N.day === addDays(today(), 1) ? "Tomorrow" : label(N.day)} · ${fmtT(N.start)}–${fmtT(N.end)}</span></h2>
-    <section class="ns"><div class="bigrow">${vanChips(N)}</div>${N.segs.map(x => segRow(x, N.day, n, false, false)).join("")}</section>
+    <section class="ns"><div class="bigrow">${vanChips(N)}</div>${showSegs(N).map(x => segRow(x, N.day, n, false, false)).join("")}</section>
     <section class="ns"><h3 class="sub">Vehicle</h3>${vanInner(N)}</section>${buSection(n)}</div>`;
 }
 /* ---------- Van use: who is on which van for RAM, TUA and Flyer (shown only to people ticked in the owner portal) ---------- */
@@ -1145,8 +1159,8 @@ function daySheet(day) {
   const n = nzNow(); const D = S.days[day]; const hol = S.C.holidays[day]; const isT = day === n.date; const past = day <= n.date;
   const s = past && D ? scoreAt(day, day) : null; const e = s?.effDays.find(x => x.day === day);
   const ackBy = Object.fromEntries(S.acks.map(a => [a.item_id, a])); const ch = S.changes.filter(i => i.day === day); const ents = S.entries.filter(x => x.day === day && x.show_driver); const lv = S.leave.filter(l => l.status === "approved" && day >= l.date_from && day <= l.date_to);
-  const segs = D ? D.segs.map(x => { const code = x.shift.run; const r = S.runsBy[code]; const win = x.sort ? "" : timingRows(x, day, isT ? n.min : null);
-    return `<div class="seg"><div class="tm">${fmtT(x.st)} – ${fmtT(x.en)}</div><div class="rn">${x.sort ? esc(r?.label || "Sort") : `${esc(code)}<span class="sub">${esc(runName(code))}</span>`}<div class="tags">${x.shift.van ? `<button class="tag van" data-vanv="${esc(x.shift.van)}" style="border:0;cursor:pointer">${esc(x.shift.van)}</button>` : ""}${x.shift.trainee ? `<span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : ""}${(x.shift.addons || []).map(a => `<span class="tag">+ ${esc(S.addons.find(z => z.id === a)?.name || addName(a))}${x.shift.done?.[a] ? ` ✓ ${fmtTime(x.shift.done[a])}` : x.shift.plan?.[a] ? ` ~${fmtT(toMin(x.shift.plan[a]))}` : ""}</span>`).join("")}</div>${x.shift.note ? `<div class="meta">${esc(x.shift.note)}</div>` : ""}${win}
+  const segs = D ? showSegs(D).map(x => { const code = x.shift.run; const r = S.runsBy[code]; const win = x.sort ? "" : timingRows(x, day, isT ? n.min : null);
+    return `<div class="seg"><div class="tm">${fmtT(x.st)} – ${fmtT(x.en)}</div><div class="rn">${x.sort ? esc(x.lab || r?.label || "Sort") : `${esc(code)}<span class="sub">${esc(runName(code))}</span>`}<div class="tags">${x.shift.van ? `<button class="tag van" data-vanv="${esc(x.shift.van)}" style="border:0;cursor:pointer">${esc(x.shift.van)}</button>` : ""}${x.shift.trainee ? `<span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : ""}${(x.shift.addons || []).map(a => `<span class="tag">+ ${esc(S.addons.find(z => z.id === a)?.name || addName(a))}${x.shift.done?.[a] ? ` ✓ ${fmtTime(x.shift.done[a])}` : x.shift.plan?.[a] ? ` ~${fmtT(toMin(x.shift.plan[a]))}` : ""}</span>`).join("")}</div>${x.shift.note ? `<div class="meta">${esc(x.shift.note)}</div>` : ""}${win}
       ${past ? (x.sort ? (x.eod ? `<div class="meta c-ok">✓ sort finished ${fmtTime(x.eod.sent_at)}</div>` : "") : x.eod ? `<div class="meta c-ok">✓ EOD ${fmtTime(x.eod.sent_at)}${x.eod.finish_time ? ` · finished ${fmtT(toMin(x.eod.finish_time))}` : ""}${x.eod.parcels != null ? ` · ${x.eod.parcels} ${NET(code) === "tge" ? "deliveries" : "parcels"}` : ""}${x.eod.stops != null ? ` · ${x.eod.stops} ${NET(code) === "tge" ? "jobs" : "stops"}` : ""}${x.eod.edited_at ? " · edited" : ""}</div>${rawRow(x.eod)}${canEditEod(day) ? `<button class="btn ghost sm" data-eodedit="${x.shift.id}" data-sort="${x.sort ? 1 : ""}">Edit EOD</button>` : ""}` : `<div class="meta c-crit">No EOD for this run</div>${!S.viewAs ? `<button class="btn accent sm" data-eodv="${x.shift.id}">Post it now</button>` : ""}`) : ""}</div></div>`; }).join("") : "";
   const sodSeg = D?.segs.find(x => x.sod);
   sheet(`<h3>${label(day, true)}${isT ? " · today" : ""}</h3><p class="meta">${hol ? `${esc(hol.name)} · ` : ""}${D ? `${fmtT(D.start)} – ${fmtT(D.end)} · ${D.hours} h rostered` : lv.length ? "On leave" : "Day off"}${e && !e.pending ? ` · efficiency <b class="c-${col(Math.min(100, e.v))}">${Math.round(e.v)}%</b>` : ""}</p>
