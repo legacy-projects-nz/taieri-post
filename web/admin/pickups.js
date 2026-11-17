@@ -6,11 +6,11 @@
 import { sb, q, today, addDays, label, esc, $, $$, toast } from "/shared/core.js";
 import { S, sheet, opt, nm, render, fn } from "/admin/admin.js";
 
-export const AREAS = ["Rural", "South", "Owaka", "Lawrence", "Balclutha"];
+export const AREAS = ["Rural", "South", "Owaka Rural", "Owaka Town", "Owaka", "Lawrence", "Balclutha"];   // "Owaka" = before it was split into Rural / Town (18 Nov 2026)
 const custFor = a => a === "South" ? ["TGE"] : a === "Rural" ? ["NZC", "PH", "TGE"] : ["NZC", "PH"];   // South = TGE only; TGE also on Rural; never on Owaka / Lawrence / Balclutha
 const custErr = r => custFor(r.area).includes(r.customer) ? null : r.area === "South" ? "South is for TGE pick-ups only" : "TGE pick-ups are Rural or South only";
 const SOURCES = [["depot", "Depot"], ["customer", "Customer"]];
-const AREA_SHORT = { Lawrence: "Law", Owaka: "Owaka", Rural: "Rural", South: "South", Balclutha: "Bal Depot" };
+const AREA_SHORT = { Lawrence: "Law", Owaka: "Owaka", "Owaka Rural": "Owaka Rural", "Owaka Town": "Owaka Town", Rural: "Rural", South: "South", Balclutha: "Bal Depot" };
 export const CUSTOMERS = {
   NZC: { name: "NZ Couriers - Aaron Johnston", short: "NZC", due: 7, acct: "200", tax: "15% GST on Income", small: { code: "NZCS", rate: 5, desc: "NZC - Small" }, large: { code: "NZCL", rate: 8, desc: "NZ Couriers - Large" } },
   PH: { name: "Post Haste", short: "Post Haste", due: 7, acct: "200", tax: "15% GST on Income", small: { code: "PHS", rate: 5, desc: "Post Haste - Small" }, large: { code: "PHL", rate: 8, desc: "Post Haste - Large" } },

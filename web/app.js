@@ -703,8 +703,8 @@ function detailsCard() {
 }
 const PU_CUST = { NZC: "NZ Couriers", PH: "Post Haste", TGE: "TGE (NZ National Network)" };
 // Runs that do invoiced pick-ups, and the area they're usually in
-const PU_AREA = { TUA: "Rural", FLY: "Owaka", DB: "Owaka", LAW: "Lawrence" };
-const PU_AREAS = ["Rural", "South", "Owaka", "Lawrence", "Balclutha"]; const puCust = a => a === "South" ? ["TGE"] : a === "Rural" ? ["NZC", "PH", "TGE"] : ["NZC", "PH"];   // South = TGE only; TGE also on Rural; never on Owaka / Lawrence / Balclutha
+const PU_AREA = { TUA: "Rural", FLY: "Owaka Rural", DB: "Owaka Rural", LAW: "Lawrence" };
+const PU_AREAS = ["Rural", "South", "Owaka Rural", "Owaka Town", "Lawrence", "Balclutha"]; const puCust = a => a === "South" ? ["TGE"] : a === "Rural" ? ["NZC", "PH", "TGE"] : ["NZC", "PH"];   // South = TGE only; TGE also on Rural; never on Owaka / Lawrence / Balclutha
 const PU_MIN = 2.5; const PU_MIN_AREA = "Balclutha";   // Balclutha depot, no parcels: split fee, $2.50 each to NZC and Post Haste
 const puLine = r => r.min_fee != null ? `none · split fee $${(+r.min_fee).toFixed(2)}` : `${r.small} small${r.large ? ` + ${r.large} large` : ""}`;
 async function puMinFee(day, shift, key) {
@@ -718,7 +718,7 @@ const puToday = T => (T?.segs || []).map(x => x.shift.run).find(r => PU_AREA[r])
 function pickupsCard(T) {
   if (S.viewAs) return "";
   const list = S.pickups || []; const run = puToday(T); const todays = list.filter(r => r.day === today());
-  return `<div class="card" id="pickups"><h2>Parcel pick-ups ${ib("pickups")}<span>${todays.length ? `✓ ${todays.length} logged today` : run ? "pick-up run today" : "Rural · South · Owaka · Lawrence · Balclutha"}</span></h2>
+  return `<div class="card" id="pickups"><h2>Parcel pick-ups ${ib("pickups")}<span>${todays.length ? `✓ ${todays.length} logged today` : run ? "pick-up run today" : "Rural · South · Owaka Rural · Owaka Town · Lawrence · Balclutha"}</span></h2>
     
     ${todays.length ? `<p class="meta c-ok" style="margin:0 0 8px">✓ Today: ${todays.map(r => `${esc(r.area)} ${esc(PU_CUST[r.customer] || r.customer)} (${PU_SRC_L[r.source] || "depot"}) ${puLine(r)}`).join(" · ")}</p>` : ""}
     <div class="row"><button class="btn sm" id="pu-log" style="flex:0 0 auto">+ Enter pick-ups</button></div>

@@ -19,7 +19,7 @@ import { driverDay } from "/admin/live.js";
 const GST = 0.15;
 const WK_PER_MONTH = 52 / 12;
 // D>B income is its pick-ups only (Balclutha, Owaka, Lawrence and South TGE), not a rate on parcels delivered.
-const AREA_RUNS = { Rural: ["TUA"], South: ["DB"], Lawrence: ["DB"], Owaka: ["DB", "FLY"], Balclutha: ["DB"] };   // which run a pick-up area's income lands on
+const AREA_RUNS = { Rural: ["TUA"], South: ["DB"], Lawrence: ["DB"], Owaka: ["DB", "FLY"], "Owaka Rural": ["DB", "FLY"], "Owaka Town": ["DB", "FLY"], Balclutha: ["DB"] };   // which run a pick-up area's income lands on
 const money = n => (n < 0 ? "−$" : "$") + Math.abs(n).toFixed(2);
 const money0 = n => (n < 0 ? "−$" : "$") + Math.round(Math.abs(n)).toLocaleString();
 // shared bases: per = "day" | "week" | "month"; days = working days a week it's spread over
@@ -163,7 +163,7 @@ function breakdown(d) {
   const pu = {}; for (const p of cache[d]?.rows || []) { const k = p.area + "|" + (isT(p) ? "TGE" : "NZC/PH"); const a = (pu[k] ??= { area: p.area, tge: isT(p), small: 0, large: 0, min: 0 }); a.small += p.small || 0; a.large += p.large || 0; a.min += +p.min_fee || 0; }
   for (const a of Object.values(pu)) { const S_ = a.tge ? M.tgeSmall : M.small, L_ = a.tge ? M.tgeLarge : M.large; const fee = a.small * S_ + a.large * L_ + a.min; if (fee) add(feeRow(a.area), fee, `${a.area} ${a.tge ? "TGE " : ""}pick-ups: ${a.small} small × $${S_}${a.large ? ` + ${a.large} large × $${L_}` : ""}${a.min ? ` + split fee $${a.min.toFixed(2)}` : ""}`, false); }
   const areasLogged = new Set(Object.values(pu).map(a => a.area));
-  if (cache[d] && !cache[d].loading) for (const area of ["Rural", "Lawrence", "Owaka", "South"]) { if (areasLogged.has(area)) continue; const r = runOn(area); if (!r || done(r)) continue;
+  if (cache[d] && !cache[d].loading) for (const area of ["Rural", "Lawrence", "Owaka Rural", "Owaka Town", "South"]) { if (areasLogged.has(area)) continue; const r = runOn(area); if (!r || done(r)) continue;
     const by = {}; for (const p of cache[d].hist) { if (p.area !== area) continue; by[p.day] = (by[p.day] || 0) + feeOf(p); }
     const e = avgDays(by, d); if (e) add(r, e, `${area} pick-ups (average of recent days)`, true); }
   // D>B fixed extras: Owaka Medical $10 a weekday, Telford mail $5 every day it runs, and the Balclutha depot $5 minimum on a day with no Balclutha pick-ups
