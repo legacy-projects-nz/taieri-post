@@ -213,7 +213,23 @@ function renderNow() {
   </div>`;
   try { folds(); } catch (e) { reportError("folds", e); }
   try { wire(); } catch (e) { reportError("wire", e); }
+  try { fitQb(); document.fonts?.ready.then(() => fitQb()); } catch (e) { reportError("fitQb", e); }
 }
+/* Button titles never get cut off: if a line doesn't fit, swap in its short form (data-s), then shrink the text a little */
+function fitQb(root = app) {
+  root.querySelectorAll(".qb > b, .qb > small").forEach(el => {
+    // scrollWidth can't be trusted with an ellipsis, so measure the text itself
+    const over = () => { const room = el.getBoundingClientRect().width; const st = el.style; const was = [st.maxWidth, st.width, st.position];
+      st.maxWidth = "none"; st.width = "max-content"; st.position = "absolute"; const need = el.getBoundingClientRect().width;
+      [st.maxWidth, st.width, st.position] = was; return need > room + 0.01; };
+    const lead = el.dataset.with ? el.parentElement.querySelector(":scope > " + el.dataset.with) : null;
+    if (!over() && !(lead && lead.dataset.s && lead.textContent === lead.dataset.s)) return;
+    if (el.dataset.s) el.textContent = el.dataset.s;
+    let f = parseFloat(getComputedStyle(el).fontSize); const min = f * 0.75;
+    while (over() && f > min) { f -= 0.5; el.style.fontSize = f + "px"; }
+  });
+}
+addEventListener("resize", () => { try { fitQb(); } catch { } });
 
 /* ---------- collapsible boxes: Next shift and everything below it (plus Parcel pick-ups) are one row until tapped ---------- */
 function folds() {
@@ -295,8 +311,9 @@ function runBar(T, sod, runs, va, offB, out = {}) {
   const so = sortNow(T, cur); const el = so ? Math.max(0, Math.round((Date.now() - so.st) / 60000)) : 0; const over = !!so && so.exp != null && el > so.exp;
   const tmr = so ? `sorting ${el}${so.exp != null ? ` of ${so.exp}` : ""} min${over ? " · over" : ""}` : "";
   // labelled with the sort being ended, e.g. ■ End sort SUP, then ■ End sort D>B
-  const endLab = `■ End sort ${so ? esc(sortCode(cur.x.shift.run)) : ""}`;
-  const sortB = (kind, id, then) => va ? offB(endLab, tmr) : `<button class="btn qb ${over ? "warn" : ""}" data-runmark="${kind}" data-shift="${id}"><b>${endLab}</b><small>${tmr} · ${then}</small></button>`;
+  const endLab = `■ End sort ${so ? esc(sortCode(cur.x.shift.run)) : ""}`; const endS = "■ End sort";   // short form: the sort's code moves down to the timer line
+  const tmrS = so ? `${esc(sortCode(cur.x.shift.run))} · ${el}${so.exp != null ? `/${so.exp}` : ""} min${over ? " · over" : ""}` : "";
+  const sortB = (kind, id, then) => va ? offB(endLab, tmr) : `<button class="btn qb ${over ? "warn" : ""}" data-runmark="${kind}" data-shift="${id}"><b data-s="${endS}">${endLab}</b><small data-s="${tmrS}" data-with="b">${tmr} · ${then}</small></button>`;
   const sorB = !nxt ? "" : cur?.x.sort ? sortB("sor", nxt.x.shift.id, `starts ${lab(nxt.x)}`)
     : va ? offB(`▶ Start ${lab(nxt.x)}`, "not started") : `<button class="btn qb" data-runmark="sor" data-shift="${nxt.x.shift.id}"><b>▶ Start ${lab(nxt.x)}</b><small>${cur ? `ends ${lab(cur.x)}` : ""}</small></button>`;
   const dlvB = !so || cur.x.sort ? "" : sortB("dlv", cur.x.shift.id, `starts ${lab(cur.x)}`);
@@ -328,10 +345,10 @@ function breakBtn(T, sod) {
   const taken = todays.length ? `${todays.length} unpaid break${todays.length > 1 ? "s" : ""} today · ${mins} min` : "";
   if (open) { const m = Math.max(0, Math.round((Date.now() - new Date(open.started_at)) / 60000));
     return S.viewAs ? `<div class="qb brk on"><b>☕ On unpaid break</b><small>since ${fmtTime(open.started_at)} · ${m} min</small></div>`
-      : `<button class="btn qb brk on" id="brk-end"><b>■ End unpaid break</b><small>on unpaid break since ${fmtTime(open.started_at)} · ${m} min</small></button>`; }
+      : `<button class="btn qb brk on" id="brk-end"><b data-s="■ End break">■ End unpaid break</b><small data-s="${m} min">on unpaid break since ${fmtTime(open.started_at)} · ${m} min</small></button>`; }
   if (!sod || allEod) return taken ? `<div class="qb brk off"><b>☕ Unpaid break</b><small>${taken}</small></div>` : "";
   if (S.viewAs) return `<div class="qb brk off"><b>☕ Unpaid break</b><small>${taken || "none taken yet"}</small></div>`;
-  return `<button class="btn ghost qb brk" id="brk-start" data-shift="${(runs.find(x => !x.eod) || T.segs[T.segs.length - 1]).shift.id}"><b>☕ Start unpaid break</b><small>${taken || ""}</small></button>`;
+  return `<button class="btn ghost qb brk" id="brk-start" data-shift="${(runs.find(x => !x.eod) || T.segs[T.segs.length - 1]).shift.id}"><b data-s="☕ Break">☕ Start unpaid break</b><small data-s="${mins ? `${mins} min taken` : ""}">${taken || ""}</small></button>`;
 }
 /* + Hours: extra work logged for the day (vehicle clean 20 min, vehicle check 10, refuel 5, maintenance / admin with a note, or something Jeremy asked for, which he approves) */
 function hoursBtn(T, sod) {
