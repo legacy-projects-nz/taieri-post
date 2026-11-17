@@ -617,6 +617,8 @@ function tasksCard(D, n, next, bare = false) {
       return `<div class="tk tk1 ${cls}"><div class="tkt"><span class="t">${esc(t.short || tkShort(t.key, t.title))}</span>${when ? `<span class="tkw">${esc(when)}</span>` : ""}${t.code ? `<span class="tkc">🔑 ${esc(t.code)}</span>` : ""}</div>${meet}${btn}</div>`; };
     return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${items.length && isT ? `${nDone}/${items.length} done` : ""}</span></div>
       ${items.length ? (() => { const isDone = t => !!(t.doneAt || t.planned); const todo = items.filter(t => !isDone(t)), fin = items.filter(isDone);
+        // pick-ups not done yet sit together at the top of the list (Owaka Rural, Owaka Town, …)
+        const isPu = t => !!puAreaOf(t.key); todo.sort((a, b) => isPu(b) - isPu(a));
         // done ones shrink into half-height tiles with a short name; tap a tile to undo (pick-up tiles open the pick-up editor instead)
         const tile = t => { const pu = puAreaOf(t.key); const can = isT && t.key && !t.planned && (!S.viewAs || S.viewer?.isStaff);
           const puOk = pu && puAreaLines(pu, x.shift.day).length; const attrs = !can ? "" : pu ? (puOk ? `data-puarea="${esc(pu)}" data-puday="${x.shift.day}"` : "") : `data-done="${esc(t.key)}" data-undo="1" data-shift="${x.shift.id}"`;
