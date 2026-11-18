@@ -76,7 +76,7 @@ function effView() {
 
 /* ---------- Formulas (run time allowed) ---------- */
 const RUNS_F = ["TUA", "FLY", "RAM", "LAW", "DB", "PCB", "RSB", "WH", "S", "T"];
-const F_COLS = [["base", "Base (min)"], ["parcel", "Per parcel"], ["stop", "Per stop"], ["tray", "Per tray"], ["mail", "Per mail stop"], ["pickup", "Per pick-up stop"], ["puparcel", "Per pick-up parcel (TGE)"], ["addon", "Add-ons (est. min)"], ["floor", "Minimum (min)"]];
+const F_COLS = [["base", "Base (min)"], ["parcel", "Per parcel"], ["stop", "Per stop"], ["tray", "Per tray"], ["mail", "Per mail stop"], ["slots", "Tray slots (mail)"], ["pickup", "Per pick-up stop"], ["puparcel", "Per pick-up parcel (TGE)"], ["addon", "Add-ons (est. min)"], ["floor", "Minimum (min)"]];
 function exampleHours(m, C) { const tge = (m.net || (/^(S|T)$/.test(m.code) ? "tge" : "nzp")) === "tge"; let min = m.base + (tge ? 120 * m.parcel + 70 * m.stop + 5 * (m.pickup || 0) + 20 * (m.puparcel || 0) + 90 : 70 * m.parcel + (m.mail != null ? 56 : 60) * m.stop + 1 * (m.tray || 0) + 75 * (m.mail || 0) + C.sortF.pBase + C.sortF.mailTray) + (m.addon || 0); if (m.floor && min < m.floor) min = m.floor; return (min / 60).toFixed(1); }
 function formulasView() {
   const C = S.C; const es = C.effSimple; const sf = C.sortF; const am = C.addMin; const est = C.estFig;
