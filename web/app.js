@@ -999,9 +999,9 @@ function runEstimate(x, D) {
 const hm = m => `${Math.floor(m / 60)}h${String(Math.round(m % 60)).padStart(2, "0")}`;
 function estLine(x, D) {
   const e = runEstimate(x, D); if (!e) return "";
-  if (e.scan == null) return `<div class="meta" style="margin:2px 0 6px">⏱ Your time estimate shows once the runsheet photo + scanner total are in.</div>`;
+  if (e.scan == null) return `<div class="meta" style="margin:2px 0 6px">⏱ Time estimated for your run shows once the runsheet photo + scanner total are in.</div>`;
   const mailTxt = e.mail != null ? `${e.mail} mail stops` : e.mailDue ? "mail stops to come (tray photo)" : "no mail today";
-  return `<div class="meta" style="margin:2px 0 6px">⏱ TDT <b>${hm(e.tdt)}</b> · at ${Math.round(e.eff * 100)}% ≈ <b>${hm(e.dur)}</b>${e.end != null ? ` · finish ≈ <b>${fmtT(e.end % 1440)}</b>` : ""}<br>${e.scan} parcels · ${autoStops(S.C, e.scan)} stops · ${mailTxt}</div>`;
+  return `<div class="meta" style="margin:2px 0 6px">⏱ Time estimated for your run: <b>${hm(e.dur)}</b>${e.end != null ? ` · finish ≈ <b>${fmtT(e.end % 1440)}</b>` : ""}<br>${e.scan} parcels · ${autoStops(S.C, e.scan)} stops · ${mailTxt}</div>`;
 }
 function sheet(html, onOpen, opts = {}) {
   const bg = h(`<div class="sheet-bg"><div class="sheet ${opts.wide ? "wide" : ""}" role="dialog" aria-modal="true" style="position:relative"><button class="x" aria-label="Close">×</button>${html}</div></div>`);
