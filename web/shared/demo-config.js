@@ -29,7 +29,8 @@ export const ADDONS = [
   A("tw_twtrays", "Mail trays photo to Jeremy (WhatsApp)", ["RSB"], { task: true }), A("tw_twnzcph", "NZC/PH Pick Up", ["SUP"], { task: true, no_saturday: true }),
   A("tw_twtidybay", "Tidy bay", ["SUP"], { task: true, no_saturday: true }), A("tw_twtidydesk", "Tidy desk", ["SUP"], { task: true, no_saturday: true }), A("tw_twmissorts", "Missorts", ["SUP"], { task: true, no_saturday: true }), A("tw_tw3rdparty", "3rd Party", ["SUP"], { task: true, no_saturday: true }),
   A("tw_twrcvkey", "Pick up street receiver key", ["SUP", "SUP2", "SUP3", "RSB", "PCB", "WH"], { task: true }), A("tw_twairkeys", "Pick up airport keys", ["SUP", "SUP2", "SUP3", "TUA", "FLY", "RAM"], { task: true }),
-  A("tw_twrunsheet", "Runsheet photo", ["TUA", "DB", "FLY", "LAW", "RAM", "PCB", "RSB"], { task: true, always: true }),
+  A("tw_twrunsheet", "Runsheet photo", ["TUA", "DB", "FLY", "LAW", "RAM", "PCB", "RSB"], { task: true, always: true, photo: true }),
+  A("tw_mailtrays", "Mail tray photo", ["TUA", "FLY", "RAM", "LAW", "PCB", "RSB", "WH"], { task: true, always: true, photo: true, short: "Mail trays", since: new Intl.DateTimeFormat("en-CA", { timeZone: "Pacific/Auckland" }).format(new Date()) }),
 ];
 const R = (id, name, runs, addon, o = {}) => ({ id, name, runs, addon, opens: null, closes: null, days: [1, 2, 3, 4, 5], note: null, active: true, ...o });
 export const RULES = [
@@ -60,9 +61,11 @@ export const RULES = [
   R("twmissorts", "Missorts", ["SUP"], "tw_twmissorts", { note: "Before you finish. Tap Done when missorts are dealt with." }),
   R("tw3rdparty", "3rd Party", ["SUP"], "tw_tw3rdparty", { note: "Before you finish. Tap Done when 3rd Party is sorted." }),
   R("twrunsheet", "Runsheet photo", ["TUA", "DB", "FLY", "LAW", "RAM", "PCB", "RSB"], "tw_twrunsheet", { note: "Take a photo of the completed runsheet, then tap Done." }),
+  R("mailtrays", "Mail tray photo", ["TUA", "FLY", "RAM", "LAW"], "tw_mailtrays", { note: "Photograph your mail trays (up to 3 photos). The slots with mail are counted for your mail stops." }),
+  R("mailtrays_wh", "Mail tray photo", ["PCB", "RSB", "WH"], "tw_mailtrays", { days: [2, 4, 6], note: "Photograph your mail trays (up to 3 photos). The slots with mail are counted for your mail stops." }),
 ];
 export const SETTINGS = {
-  rules: { tgeSort: 75, vchkDay: 4, accStart: "2026-09-01", effStart: "2026-09-01", eodHours: 1.5, hourRate: 28, perEvent: 5, sodGrace: 5, vchkTime: "17:00", effMethod: "sheet", partEvent: 2.5, rucSoonKm: 1000, startDate: "2026-09-01", stopRatio: 0.8, adminFloor: 50, adminStart: "2026-09-01", holidayCap: 8, mistakePct: 10, dueSoonDays: 14 },
+  rules: { tgeSort: 75, vchkDay: 4, accStart: "2026-09-01", effStart: "2026-09-01", eodHours: 1.5, hourRate: 28, perEvent: 5, sodGrace: 5, vchkTime: "17:00", effMethod: "sheet", partEvent: 2.5, rucSoonKm: 1000, startDate: "2026-09-01", stopRatio: 0.8, mailRuns: ["TUA", "FLY", "RAM", "LAW", "RSB", "PCB", "WH"], mailPerTray: 75, estEff: 0.9, adminFloor: 50, adminStart: "2026-09-01", holidayCap: 8, mistakePct: 10, dueSoonDays: 14 },
   weights: { acc: 15, eff: 32, safe: 33, admin: 20 },
   runCodes: { S: "9363", T: "4682", DB: "D>B", FLY: "D5636A", LAW: "PLAD01", PCB: "PPCS63", RAM: "Z5636", RSB: "PPCS64", TUA: "D5636" },
   typical: { S: 110, T: 110, DB: 40, WH: 105, FLY: 55, LAW: 95, PCB: 55, RAM: 85, RSB: 50, TUA: 40 },
@@ -75,10 +78,10 @@ export const SETTINGS = {
   sortF: { nzcph: 15, pBase: 45, pIncl: 80, pRate: 0.35, mailTray: 20 },
   effSimple: {
     S: { net: "tge", base: 65, stop: 2.25, tray: 0, parcel: 1.2, pickup: 3.4, puparcel: 0.6 }, T: { net: "tge", base: 65, stop: 2.25, tray: 0, parcel: 1.2, pickup: 3.4, puparcel: 0.6 },
-    DB: { net: "nzp", base: 60, stop: 3, tray: 0, parcel: 0, pickup: 0 }, WH: { net: "nzp", base: 175, stop: 1.5, tray: 60, parcel: 0.35, pickup: 0 },
-    FLY: { net: "nzp", base: 120, legs: 1, news: 1, stop: 1.5, tray: 0.5, addon: 25, parcel: 0.5, pickup: 0 }, LAW: { net: "nzp", base: 60, stop: 1.75, tray: 0.5, addon: 45, parcel: 0, pickup: 2 },
-    PCB: { net: "nzp", base: 90, stop: 1.5, tray: 60, floor: 225, parcel: 0.35, pickup: 0 }, RAM: { net: "nzp", base: 60, stop: 1.2, tray: 0.5, parcel: 0.6, pickup: 0 },
-    RSB: { net: "nzp", base: 90, stop: 1.5, tray: 60, floor: 225, parcel: 0.35, pickup: 0 }, TUA: { net: "nzp", base: 90, legs: 1, news: 1, stop: 1.5, tray: 0.5, addon: 4, parcel: 0.5, pickup: 0 },
+    DB: { net: "nzp", base: 60, stop: 3, tray: 0, parcel: 0, pickup: 0 }, WH: { net: "nzp", base: 175, stop: 1.5, tray: 0, parcel: 0.35, pickup: 0, mail: 0.6 },
+    FLY: { net: "nzp", base: 76, legs: 1, news: 1, stop: 1.5, tray: 0, addon: 25, parcel: 0.5, pickup: 0, mail: 0.25 }, LAW: { net: "nzp", base: 50, stop: 1.75, tray: 0, addon: 45, parcel: 0, pickup: 2, mail: 0.6 },
+    PCB: { net: "nzp", base: 105, stop: 1.5, tray: 0, floor: 225, parcel: 0.35, pickup: 0, mail: 0.6 }, RAM: { net: "nzp", base: 53, stop: 1.2, tray: 0, parcel: 0.6, pickup: 0, mail: 0.25 },
+    RSB: { net: "nzp", base: 76, stop: 1.5, tray: 0, floor: 225, parcel: 0.35, pickup: 0, mail: 0.6 }, TUA: { net: "nzp", base: 106, legs: 1, news: 1, stop: 1.5, tray: 0, addon: 4, parcel: 0.5, pickup: 0, mail: 0.25 },
   },
 };
 export const VANS = [

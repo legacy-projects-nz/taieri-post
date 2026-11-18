@@ -1,7 +1,7 @@
 // Fix posts tab: everything that was missed, late or left undone, in one place. Every item gets the same four outcomes
 // (Done / Late / Not done / Excuse), one at a time or for a whole box. The buttons and what they do live in settle.js.
 import { needsConfirm, sb, q, nzNow, today, addDays, dayName, dow, monOf, label, toMin, fmtT, fmt24, nzToIso, esc, $, $$, toast, first, ago } from "/shared/core.js";
-import { scoreFor, itemNote, STATE_LABEL, needsFix } from "/shared/score.js";
+import { scoreFor, itemNote, STATE_LABEL, needsFix, standingOn } from "/shared/score.js";
 import { S, sheet, nm, weekBar, wireWeek, loadAll, render, scoreData, alertsTab, wireAlerts } from "/admin/admin.js";
 import { chip, eodEdit } from "/admin/scorecard.js";
 import { actBtns, allBar, keyName, addKey } from "/admin/settle.js";
@@ -40,7 +40,7 @@ function addTodo() {
     if (!s.driver || s.run === "BU" || s.day < from || s.day > to || s.day > t) continue;
     if (s.day === t && !S.eodBy?.[s.id]) continue;   // still running today
     const sat = dayName(s.day) === "Sat";
-    const keys = new Set([...(s.addons || []), ...S.addons.filter(a => a.always && a.runs.includes(s.run) && !(sat && a.no_saturday)).map(a => a.id)]);
+    const keys = new Set([...(s.addons || []), ...S.addons.filter(a => standingOn(a, s.run, s.day, S.rules)).map(a => a.id)]);
     for (const r of S.rules) if (r.active && r.done_key && keys.has(r.addon) && r.runs.includes(s.run) && r.days.includes(dow(s.day) + 1)) keys.add(r.done_key);   // e.g. Owaka Medical drop-off
     for (const k of keys) if (!s.done?.[k] && !dec.has(addKey(s.id, k))) out.push({ s, k });
   }

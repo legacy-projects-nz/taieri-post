@@ -3,7 +3,7 @@ import { needsConfirm, DEMO, sb, q, me, nzNow, today, addDays, dow, dayName, mon
 import { requireUser } from "/shared/auth.js";
 import { VAPID_PUBLIC } from "/shared/config.js";
 import { resetDemo, newRuns } from "/shared/demo.js";
-import { cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, NET, PICKUP_RUNS, LEG_RUNS, effCalc, setEvidence, setAddonNames, meetRule, meetOn, needsFix, sortExp, XT_KINDS, extraMins } from "/shared/score.js";
+import { cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, NET, PICKUP_RUNS, LEG_RUNS, effCalc, setEvidence, setAddonNames, meetRule, meetOn, needsFix, sortExp, XT_KINDS, extraMins, mailRun, autoStops, tdtEstimate, sodStart, ownerBreakHrs, standingOn } from "/shared/score.js";
 
 const app = $("#app");
 const S = { me: null, set: {}, C: null, runs: [], runsBy: {}, vans: {}, addons: [], rules: [], people: {}, shifts: [], sods: [], eods: [], marks: [], entries: [], feed: [], changes: [], acks: [], msgs: [], leave: [], alerts: [], loc: null, gotit: {}, login: {} };
@@ -167,7 +167,7 @@ function carryOver() {
   for (const s of S.shifts) {
     if (s.driver !== S.me.id || s.run === "BU" || s.day < from || s.day >= t) continue;
     const sat = dayName(s.day) === "Sat";
-    const keys = new Set([...(s.addons || []), ...S.addons.filter(a => a.always && a.runs.includes(s.run) && !(sat && a.no_saturday)).map(a => a.id)]);
+    const keys = new Set([...(s.addons || []), ...S.addons.filter(a => standingOn(a, s.run, s.day, S.rules)).map(a => a.id)]);
     for (const r of S.rules) if (r.active && r.done_key && keys.has(r.addon) && r.runs.includes(s.run) && r.days.includes(dow(s.day) + 1)) keys.add(r.done_key);
     for (const k of keys) { const m = mk[`add|${s.id}|${k}`]; if (s.done?.[k] || (m && m.status !== "miss")) continue; out.push({ s, k, name: S.rules.find(r => r.done_key === k)?.name || addName(k) }); }
   }
@@ -456,6 +456,7 @@ function rulesFor(x, day) {
     if (!r.days.includes(d)) continue;
     const all = r.runs.includes("ALL"); if (!all && !r.runs.includes(code)) continue;
     const ad = r.addon ? S.addons.find(a => a.id === r.addon) : null;
+    if (ad?.always && ad.since && day < ad.since) continue;   // standing task that starts later (addons.since)
     if (ad?.always && ad.runs.includes(code)) { out.push(r); continue; }   // standing task: on every one of its runs, no ticking needed
     if (ad && ad.runs.includes(code)) { if (!(x.shift.addons || []).includes(r.addon) && !meetOn(r, x.shift)) continue; }
     else if (!all && r.runs.length > 1) continue;
@@ -615,7 +616,7 @@ function tasksCard(D, n, next, bare = false) {
       const meet = t.meetEdit && !isDone && D.day >= n.date && (!S.viewAs || S.viewer?.isStaff) ? `<label class="meta" style="display:flex;flex-direction:column;gap:2px;flex:0 0 112px">Milton time<input class="in" type="time" step="300" style="min-height:40px" value="${esc(t.meetVal)}" data-meet="${x.shift.id}" aria-label="Milton drop-off time"></label>` : "";
       const when = t.key === "tw_twrunsheet" && (cls === "over" || cls === "late") ? (cls === "over" ? "✗ 45 min" : `${45 - (n.min - x.st)} min`) : cls === "over" ? `✗ ${fmtT(t.closes)}` : cls === "soon" ? `${t.closes - n.min} min` : t.time === "any time" ? "" : t.time;
       return `<div class="tk tk1 ${cls}"><div class="tkt"><span class="t">${esc(t.short || tkShort(t.key, t.title))}</span>${when ? `<span class="tkw">${esc(when)}</span>` : ""}${t.code ? `<span class="tkc">🔑 ${esc(t.code)}</span>` : ""}</div>${meet}${btn}</div>`; };
-    return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${items.length && isT ? `${nDone}/${items.length} done` : ""}</span></div>
+    return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${items.length && isT ? `${nDone}/${items.length} done` : ""}</span></div>${isT ? estLine(x, D) : ""}
       ${items.length ? (() => { const isDone = t => !!(t.doneAt || t.planned); const todo = items.filter(t => !isDone(t)), fin = items.filter(isDone);
         // pick-ups not done yet sit together at the top of the list (Owaka Rural, Owaka Town, …)
         const isPu = t => !!puAreaOf(t.key); todo.sort((a, b) => isPu(b) - isPu(a));
@@ -784,7 +785,7 @@ const noneBtn = (key, shiftId) => puAreaOf(key) === PU_MIN_AREA ? `<button class
 const puBtn = (key, shiftId) => puAreaOf(key) ? `<button class="btn sm accent" data-puopen="${esc(key)}" data-shift="${shiftId}" style="flex:0 0 auto;min-height:34px">Enter</button>` : "";
 /** Runsheet photo task: the Done button opens the camera; the photo is uploaded and the task ticked */
 const isPhotoTask = key => !!key && !!S.addons.find(a => a.id === key)?.photo;
-const rsBtn = (shiftId, key = "tw_twrunsheet") => `<label class="btn sm accent" style="flex:0 0 auto;min-height:34px;cursor:pointer">📷 Photo<input type="file" accept="image/*" capture="environment" data-rsphoto="${shiftId}" data-rskey="${esc(key)}" hidden></label>`;
+const rsBtn = (shiftId, key = "tw_twrunsheet") => key === MAIL_KEY ? `<button type="button" class="btn sm accent" style="flex:0 0 auto;min-height:34px" data-mailtrays="${shiftId}">📷 Photos</button>` : `<label class="btn sm accent" style="flex:0 0 auto;min-height:34px;cursor:pointer">📷 Photo<input type="file" accept="image/*" capture="environment" data-rsphoto="${shiftId}" data-rskey="${esc(key)}" hidden></label>`;
 function logPickup(opt = {}) {
   const area = opt.area || PU_AREA[puToday(S.days[today()])] || "Lawrence";
   sheet(`<h3>Enter pick-ups${opt.area ? ` · ${esc(opt.area)}` : ""}</h3><form class="frm" id="pf"><label class="f">Date<input class="in" type="date" id="pu-day" value="${today()}" required></label>
@@ -870,13 +871,16 @@ function wire() {
   $$("[data-rsphoto]").forEach(inp => inp.onchange = async () => { const f = inp.files?.[0]; if (!f) return; const sh = S.shifts.find(z => z.id === inp.dataset.rsphoto); const lab = inp.closest("label");
     const rk = inp.dataset.rskey || "tw_twrunsheet"; const ad = S.addons.find(a => a.id === rk);
     let note = null; if (ad?.photo_note) { note = await photoNote(ad); if (note === undefined) { inp.value = ""; return; } }
+    let scan = null; if (rk === "tw_twrunsheet" && sh && mailRun(S.C, sh.run)) { scan = await scanTotal(sh); if (scan === undefined) { inp.value = ""; return; } }
     if (lab) lab.style.opacity = ".5"; toast("Uploading photo…");
     const path = `${sh?.driver || S.me.id}/${sh?.day || today()}/${inp.dataset.rsphoto}-${rk}-${Date.now()}.${(f.name.split(".").pop() || "jpg").toLowerCase()}`;
     const { error } = await sb.storage.from("runsheets").upload(path, f, { upsert: true, contentType: f.type || "image/jpeg" });
     if (error) { if (lab) lab.style.opacity = ""; return toast(`Photo didn't upload: ${error.message}`, "err"); }
     const { error: e2 } = await sb.rpc("task_photo_done", { p_shift: inp.dataset.rsphoto, p_addon: rk, p_path: path, p_note: note });
     if (e2) { if (lab) lab.style.opacity = ""; return toast(e2.message, "err"); }
-    toast("Photo saved ✓", "ok"); await loadAll(); render(); });
+    if (scan != null) { const { error: e3 } = await sb.rpc("set_run_figs", { p_shift: inp.dataset.rsphoto, p_scan: scan }); if (e3) toast(`Photo saved, but the scanner total didn't: ${e3.message}`, "err"); }
+    toast(scan != null ? `Photo + scanner total (${scan}) saved ✓` : "Photo saved ✓", "ok"); await loadAll(); render(); });
+  $$("[data-mailtrays]").forEach(b => b.onclick = e => { e.stopPropagation(); mailTraySheet(b.dataset.mailtrays); });
   $$("[data-pumin]").forEach(b => b.onclick = async e => { e.stopPropagation(); b.disabled = true; if (!(await puMinFee(today(), b.dataset.shift, b.dataset.pumin))) b.disabled = false; });
   $$("[data-puopen]").forEach(b => b.onclick = e => { e.stopPropagation(); logPickup({ area: puAreaOf(b.dataset.puopen), key: b.dataset.puopen, shift: b.dataset.shift }); });
   $$("[data-runmark]").forEach(b => b.onclick = async () => { b.disabled = true; const k = b.dataset.runmark;
@@ -930,6 +934,67 @@ function photoNote(ad) {
     });
     new MutationObserver((_, o) => { if (!bg.isConnected) { o.disconnect(); fin(undefined); } }).observe(document.body, { childList: true });
   });
+}
+/* ---------- Scanner total (asked with the runsheet photo on NZ Post runs) ---------- */
+function scanTotal(sh) {
+  return new Promise(res => { let done = false; const fin = v => { if (!done) { done = true; res(v); } };
+    const { bg } = sheet(`<h3>Runsheet · ${esc(sh.run)}</h3><form class="frm" id="st"><label class="f full">Total parcels on the scanner<input class="in" id="st-n" inputmode="numeric" pattern="[0-9]*" required placeholder="e.g. 72" value="${sh.scan_parcels ?? ""}"></label><p class="hint full" style="margin:0">From the scanner's total for today's run. Your stops and today's time estimate are worked out from it.</p><button class="btn full" type="submit">Save + take photo</button></form>`, (bg2, close) => {
+      bg2.querySelector("#st-n").focus();
+      bg2.querySelector("#st").onsubmit = e => { e.preventDefault(); const v = bg2.querySelector("#st-n").value.trim(); if (!/^\d+$/.test(v) || +v > 2000) return toast("Type the scanner total (a number)", "err"); fin(+v); close(); };
+    });
+    new MutationObserver((_, o) => { if (!bg.isConnected) { o.disconnect(); fin(undefined); } }).observe(document.body, { childList: true });
+  });
+}
+/* ---------- Mail tray photo: up to 3 photos → slots with mail counted (mail stops) → driver checks the number → saved ---------- */
+const MAIL_KEY = "tw_mailtrays";
+function mailTraySheet(shiftId) {
+  const sh = S.shifts.find(z => z.id === shiftId); if (!sh) return; const files = [];
+  const slot = i => files[i] ? `<div style="position:relative"><img src="${files[i].url}" alt="tray photo ${i + 1}" style="width:96px;height:96px;object-fit:cover;border-radius:8px"><button type="button" class="btn ghost sm" data-mtdel="${i}" style="position:absolute;top:2px;right:2px;min-height:24px;padding:0 6px">×</button></div>`
+    : i === files.length ? `<label class="btn ghost" style="width:96px;height:96px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-direction:column;font-size:13px">📷<span>Photo ${i + 1}</span><input type="file" accept="image/*" capture="environment" data-mtadd hidden></label>` : "";
+  sheet(`<h3>Mail trays · ${esc(sh.run)}</h3><p class="hint">Take up to 3 photos so every slot shows. The slots with mail are counted for your mail stops — check the number, then save.</p>
+    <div class="row" id="mt-ph" style="gap:8px;flex-wrap:wrap"></div>
+    <form class="frm" id="mt"><button class="btn full ghost" type="button" id="mt-count" disabled>Count mail slots</button>
+    <label class="f full">Mail stops (slots with mail)<input class="in" id="mt-n" inputmode="numeric" pattern="[0-9]*" placeholder="counted from the photos" value="${sh.mail_stops ?? ""}"></label>
+    <p class="meta full" id="mt-ai" style="margin:0"></p><button class="btn full" type="submit" id="mt-save" disabled>Save photos + mail stops</button></form>`, (bg, close) => {
+    const paths = []; let counted = false;
+    const draw = () => { bg.querySelector("#mt-ph").innerHTML = [0, 1, 2].map(slot).join(""); bg.querySelector("#mt-count").disabled = !files.length; bg.querySelector("#mt-save").disabled = !files.length;
+      bg.querySelectorAll("[data-mtadd]").forEach(inp => inp.onchange = () => { const f = inp.files?.[0]; if (f && files.length < 3) { files.push({ f, url: URL.createObjectURL(f) }); paths.length = 0; counted = false; } draw(); });
+      bg.querySelectorAll("[data-mtdel]").forEach(b => b.onclick = () => { files.splice(+b.dataset.mtdel, 1); paths.length = 0; counted = false; draw(); }); };
+    draw();
+    const upload = async () => { if (paths.length === files.length) return true; paths.length = 0;
+      for (const [i, x] of files.entries()) { const path = `${sh.driver || S.me.id}/${sh.day}/${sh.id}-${MAIL_KEY}-${Date.now()}-${i + 1}.${(x.f.name.split(".").pop() || "jpg").toLowerCase()}`;
+        const { error } = await sb.storage.from("runsheets").upload(path, x.f, { upsert: true, contentType: x.f.type || "image/jpeg" }); if (error) { toast(`Photo didn't upload: ${error.message}`, "err"); paths.length = 0; return false; } paths.push(path); }
+      return true; };
+    const ai = bg.querySelector("#mt-ai"), nIn = bg.querySelector("#mt-n");
+    bg.querySelector("#mt-count").onclick = async e => { const b = e.currentTarget; b.disabled = true; b.textContent = "Uploading…"; if (!(await upload())) { b.disabled = false; b.textContent = "Count mail slots"; return; }
+      b.textContent = "Counting…"; let r = null; try { const x = await sb.functions.invoke("mailcount", { body: { shift: sh.id, paths } }); r = x.data || null; if (x.error) r = { error: x.error.message }; } catch (err) { r = { error: String(err?.message || err) }; }
+      b.disabled = false; b.textContent = "Count again";
+      if (r?.ok) { counted = true; nIn.value = r.count; ai.innerHTML = `Counted <b>${r.count}</b> slots with mail${r.total ? ` of ${r.total}` : ""}${r.confidence && r.confidence !== "high" ? ` · ${esc(r.confidence)} confidence` : ""}${r.notes ? ` · ${esc(r.notes)}` : ""}. Fix the number if it's off.`; }
+      else ai.textContent = r?.error === "no_key" ? "Auto count isn't switched on yet — count the slots with mail and type the number in." : `Couldn't count from the photos (${r?.error || "no answer"}) — type the number in.`; };
+    bg.querySelector("#mt").onsubmit = async e => { e.preventDefault(); const v = nIn.value.trim(); if (!/^\d+$/.test(v) || +v > 2000) return toast(counted ? "Check the mail stops number" : "Count the slots first, or type the number in", "err");
+      const b = bg.querySelector("#mt-save"); b.disabled = true; if (!(await upload())) { b.disabled = false; return; }
+      for (const p of paths) { const { error } = await sb.rpc("task_photo_done", { p_shift: sh.id, p_addon: MAIL_KEY, p_path: p, p_note: null }); if (error) { b.disabled = false; return toast(error.message, "err"); } }
+      const { error } = await sb.rpc("set_run_figs", { p_shift: sh.id, p_mail: +v }); if (error) { b.disabled = false; return toast(error.message, "err"); }
+      close(); toast(`Mail trays saved · ${v} mail stops ✓`, "ok"); await loadAll(); render(); };
+  });
+}
+/* ---------- Today's estimate on a mail run: TDT from the scanner total + mail stops, worked at 90% → time and likely finish ---------- */
+function runEstimate(x, D) {
+  const code = x.shift.run; if (x.sort || !mailRun(S.C, code)) return null; const segI = D.segs.indexOf(x); const runs = D.segs.filter(y => !y.sort);
+  const sod = D.segs.map(y => y.sod).find(Boolean); const first = runs[0] === x;
+  // the driver's sort answers / trays from their last EOD on this run stand in until today's EOD
+  const prev = S.eods.filter(e => { const z = S.shifts.find(y => y.id === e.shift_id); return z && z.run === code && z.day < D.day; }).sort((a, b) => String(b.sent_at).localeCompare(String(a.sent_at)))[0];
+  const usual = prev ? { sorted_parcels: prev.sorted_parcels, sorted_mail: prev.sorted_mail, nzc_ph: prev.nzc_ph, trays: prev.trays } : null;
+  let c = null; try { c = effCalc(x, null, S.ovs?.find(o => o.shift_id === x.shift.id), S.C, S.runsBy, { usual, sodMin: first && sod ? sodStart(sod, D.start, S.C) : null, brk: ownerBreakHrs(S.breaks, x.shift, !!S.me.pay_exclude) }); } catch { return null; }
+  if (!c) return null; const brk = Math.round((c.brk || 0) * 60); const e = tdtEstimate({ ...c, start: c.start ?? x.st }, S.C, brk);
+  return { ...e, scan: x.shift.scan_parcels, mail: x.shift.mail_stops, mailDue: rulesFor(x, D.day).some(r => r.addon === MAIL_KEY), started: c.start != null && segI >= 0 };
+}
+const hm = m => `${Math.floor(m / 60)}h${String(Math.round(m % 60)).padStart(2, "0")}`;
+function estLine(x, D) {
+  const e = runEstimate(x, D); if (!e) return "";
+  if (e.scan == null) return `<div class="meta" style="margin:2px 0 6px">⏱ Your time estimate shows once the runsheet photo + scanner total are in.</div>`;
+  const mailTxt = e.mail != null ? `${e.mail} mail stops` : e.mailDue ? "mail stops to come (tray photo)" : "no mail today";
+  return `<div class="meta" style="margin:2px 0 6px">⏱ TDT <b>${hm(e.tdt)}</b> · at ${Math.round(e.eff * 100)}% ≈ <b>${hm(e.dur)}</b>${e.end != null ? ` · finish ≈ <b>${fmtT(e.end % 1440)}</b>` : ""}<br>${e.scan} parcels · ${autoStops(S.C, e.scan)} stops · ${mailTxt}</div>`;
 }
 function sheet(html, onOpen, opts = {}) {
   const bg = h(`<div class="sheet-bg"><div class="sheet ${opts.wide ? "wide" : ""}" role="dialog" aria-modal="true" style="position:relative"><button class="x" aria-label="Close">×</button>${html}</div></div>`);
@@ -1038,7 +1103,7 @@ function eodForm(shiftId, sortOnly, edit = false) {
     if (isDB) fields += `<label class="f">TGE total<input class="in" id="db_tge" inputmode="numeric" required placeholder="0" value="${tgeV}"></label><label class="f">Everything else total<input class="in" id="db_other" inputmode="numeric" required placeholder="0" value="${othV}"></label><label class="f full">${lb("Stops total", "stops")}<input class="in" id="stops" inputmode="numeric" required value="${v("stops")}">${ih("stops")}</label>${ex ? "" : ``}`;
     else if (net === "tge") fields += `<label class="f">Sorting time (min)<input class="in" id="sort_min" inputmode="numeric" placeholder="e.g. 90" value="${v("sort_min")}"></label><label class="f">${lb("Delivery total", "tgeParcels")}<input class="in" id="parcels" inputmode="numeric" required value="${v("parcels")}">${ih("tgeParcels")}</label><label class="f">${lb("Jobs (stops)", "stops")}<input class="in" id="stops" inputmode="numeric" required value="${v("stops")}">${ih("stops")}</label><label class="f">Pick-up stops<input class="in" id="pickups" inputmode="numeric" value="${v("pickups")}"></label><label class="f">Pick-up parcels<input class="in" id="pickup_parcels" inputmode="numeric" value="${v("pickup_parcels")}"></label><label class="f">Next cycled<input class="in" id="cycled" inputmode="numeric" value="${v("cycled")}"></label>`;
     else if (net === "fb") fields += `<label class="f">${lb("Total parcels", "parcels")}<input class="in" id="parcels" inputmode="numeric" required value="${v("parcels")}">${ih("parcels")}</label><label class="f">${lb("Stops", "stops")}<input class="in" id="stops" inputmode="numeric" required value="${v("stops")}">${ih("stops")}</label>`;
-    else fields += `${NO_SORT.includes(code) ? "" : `<label class="f">Sorting time (min)<input class="in" id="sort_min" inputmode="numeric" placeholder="e.g. 90" value="${v("sort_min")}"></label>`}${SPLIT_RUNS.includes(code) ? `<label class="f">${lb("NZ Post total", "nzpTotal")}<input class="in" id="nzp_total" inputmode="numeric" required placeholder="0" value="${ex?.extra?.nzp_driver ?? ex?.extra?.nzp_total ?? ""}">${ih("nzpTotal")}</label><label class="f">${lb("3rd Party total", "thirdTotal")}<input class="in" id="third_total" inputmode="numeric" required placeholder="0" value="${ex?.extra?.third_total ?? ""}">${ih("thirdTotal")}</label><div class="f full meta" id="split_sum">Total parcels: <b>${ex?.parcels ?? 0}</b></div>` : `<label class="f">${lb("Total parcels", "parcels")}<input class="in" id="parcels" inputmode="numeric" required value="${v("parcels")}">${ih("parcels")}</label>`}<label class="f">${lb("Stops", "stops")}<input class="in" id="stops" inputmode="numeric" required value="${v("stops")}">${ih("stops")}</label>${TGE_RURAL_RUNS.includes(code) ? `<label class="f">${lb("Rural TGE parcels", "tgeRural")}<input class="in" id="tge_rural" inputmode="numeric" required placeholder="0" value="${ex?.extra?.tge_rural != null ? String(ex.extra.tge_rural) : ""}">${ih("tgeRural")}</label>` : ""}<label class="f">Mail trays<input class="in" id="trays" inputmode="decimal" placeholder="e.g. 1 or 0.5" value="${v("trays")}"></label>${NO_SORT.includes(code) ? "" : `<label class="f">Sorted parcels?${yn("sorted_parcels")}</label><label class="f">Sorted mail?${yn("sorted_mail")}</label>`}${PICKUP_RUNS.includes(code) ? `<label class="f">NZC / PH pick-up?${yn("nzc_ph")}</label>` : ""}<label class="f">Next cycled<input class="in" id="cycled" inputmode="numeric" value="${v("cycled")}"></label>`;
+    else fields += `${NO_SORT.includes(code) ? "" : `<label class="f">Sorting time (min)<input class="in" id="sort_min" inputmode="numeric" placeholder="e.g. 90" value="${v("sort_min")}"></label>`}${SPLIT_RUNS.includes(code) ? `<label class="f">${lb("NZ Post total", "nzpTotal")}<input class="in" id="nzp_total" inputmode="numeric" required placeholder="0" value="${ex?.extra?.nzp_driver ?? ex?.extra?.nzp_total ?? ""}">${ih("nzpTotal")}</label><label class="f">${lb("3rd Party total", "thirdTotal")}<input class="in" id="third_total" inputmode="numeric" required placeholder="0" value="${ex?.extra?.third_total ?? ""}">${ih("thirdTotal")}</label><div class="f full meta" id="split_sum">Total parcels: <b>${ex?.parcels ?? 0}</b></div>` : `<label class="f">${lb("Total parcels", "parcels")}<input class="in" id="parcels" inputmode="numeric" required value="${v("parcels")}">${ih("parcels")}</label>`}${mailRun(S.C, code) ? "" : `<label class="f">${lb("Stops", "stops")}<input class="in" id="stops" inputmode="numeric" required value="${v("stops")}">${ih("stops")}</label>`}${TGE_RURAL_RUNS.includes(code) ? `<label class="f">${lb("Rural TGE parcels", "tgeRural")}<input class="in" id="tge_rural" inputmode="numeric" required placeholder="0" value="${ex?.extra?.tge_rural != null ? String(ex.extra.tge_rural) : ""}">${ih("tgeRural")}</label>` : ""}<label class="f">Mail trays<input class="in" id="trays" inputmode="decimal" placeholder="e.g. 1 or 0.5" value="${v("trays")}"></label>${NO_SORT.includes(code) ? "" : `<label class="f">Sorted parcels?${yn("sorted_parcels")}</label><label class="f">Sorted mail?${yn("sorted_mail")}</label>`}${PICKUP_RUNS.includes(code) ? `<label class="f">NZC / PH pick-up?${yn("nzc_ph")}</label>` : ""}<label class="f">Next cycled<input class="in" id="cycled" inputmode="numeric" value="${v("cycled")}"></label>`;
     if (legs.length) fields += `<div class="full"><div class="meta mono" style="margin-bottom:6px">ADD-ON LEGS YOU DID</div><div class="row">${legs.map(l => `<label class="chk ${legOn(l) ? "on" : ""}"><input type="checkbox" name="leg" value="${l}" ${legOn(l) ? "checked" : ""}>${esc(addName(l))}</label>`).join("")}</div></div>`;
     if (newsRun) fields += `<label class="chk full ${ex?.newspapers ? "on" : ""}"><input type="checkbox" id="news" ${ex?.newspapers ? "checked" : ""}>Newspapers done today (once a week, ${S.C.news.byRun?.[code] ?? S.C.news.min} min allowed)</label>`;
     if (puTot && !(ex && ex[puKey] != null)) fields += ``;
@@ -1067,6 +1132,7 @@ function eodForm(shiftId, sortOnly, edit = false) {
       if (g("nzp_total")) { const a = num("nzp_total") ?? 0, b = num("third_total") ?? 0; row.parcels = a + b;   // the 8pm check may correct nzp_total; the driver's own figure is kept as nzp_driver
         const keep = { ...(row.extra || ex?.extra || {}) }; delete keep.nzp_driver; delete keep.nzp_feed; delete keep.nzp_checked_at; row.extra = { ...keep, nzp_total: a, third_total: b }; }
       if (isDB) { const t = num("db_tge") ?? 0, o = num("db_other") ?? 0; row.parcels = t + o; row.extra = { ...(row.extra || ex?.extra || {}), tge_total: t, other_total: o }; }
+      if (mailRun(S.C, code) && !sortOnly && !isSort(code)) { row.stops = autoStops(S.C, row.parcels); row.mail_stops = shift.mail_stops ?? ex?.mail_stops ?? null; }   // stops aren't asked for: 80% of the parcels
       if (ex) { const { error } = await sb.from("eod").update(row).eq("shift_id", shiftId); if (error) return toast(error.message.includes("row-level") ? "Too late to edit this one — ask Jeremy" : error.message, "err"); close(); toast("EOD updated ✓", "ok"); await loadAll(); render(); return; }
       Object.assign(row, { shift_id: shiftId, driver: S.me.id }); if (shift.day !== n.date) row.sent_at = nzToIso(shift.day, g("finish").value);
       const { error } = await sb.from("eod").insert(row); if (error) return toast(error.message, "err");

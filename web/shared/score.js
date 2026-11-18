@@ -20,6 +20,17 @@ export function sortExp(C, code, day) { const v = C?.sortMin?.[code]; if (v == n
 export const NET = c => /^(S|T)$/.test(c) ? "tge" : /^(FB|MFB)/.test(c) ? "fb" : "nzp";
 export const PICKUP_RUNS = ["TUA", "FLY", "DB"];
 export const LEGS = ["airport", "milton", "balclutha", "owaka"];
+/* NZ Post runs on the scanner-total + mail-tray model (18 Nov 2026): the runsheet photo asks for the scanner's parcel total, stops are
+   never asked for (80% of the parcel total), and the mail tray photo gives the day's mail stops (tray slots with mail, counted from the photo).
+   Settings → rules.mailRuns to change the list; effSimple[code].mail = minutes per mail stop. */
+export const MAIL_RUNS = ["TUA", "FLY", "RAM", "LAW", "RSB", "PCB", "WH"];
+/** A standing (always-on) task applies to this shift: right run, not a no-Saturday Saturday, on/after the add-on's start date (addons.since),
+ *  and, when the add-on has timing rules, an active rule covering the run on that weekday (e.g. West Harbour mail trays only Tue/Thu/Sat). */
+export function standingOn(a, run, day, rules) { if (!a?.always || !a.runs.includes(run)) return false; if (a.no_saturday && dow(day) === 5) return false; if (a.since && day < a.since) return false;
+  const rs = (rules || []).filter(r => r.addon === a.id && r.active !== false); return !rs.length || rs.some(r => (r.runs.includes(run) || r.runs.includes("ALL")) && r.days.includes(dow(day) + 1)); }
+export const mailRun = (C, code) => (C?.rules?.mailRuns || MAIL_RUNS).includes(code);
+/** stops for a mail run: 80% of the parcel total (settings → rules.stopRatio) */
+export const autoStops = (C, parcels) => parcels == null || parcels === "" || isNaN(+parcels) ? null : Math.round(+parcels * (C?.rules?.stopRatio ?? 0.8));
 export const LEG_RUNS = { TUA: ["outram", "pgg", "airport"], FLY: ["airport", "milton", "balclutha", "owaka"], DB: ["milton", "balclutha", "owaka"], RAM: ["airport"] };
 
 export function cfg(settings) { const o = {}; for (const k of Object.keys(DEF)) o[k] = { ...DEF[k], ...(settings[k] || {}) }; o.runCodes = settings.runCodes || {}; o.holidays = settings.holidays || {}; o.bands = settings.bands || {}; return o; }
@@ -129,7 +140,7 @@ export function itemNote(it) {
 export const late = m => m >= 60 ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}` : `${m}m`;
 
 /* ---- Evidence: average EOD figures per run and weekday from recent EODs — the estimate used until a run's EOD is in ---- */
-let EVID = null; const EV_KEYS = ["parcels", "stops", "trays", "sort_min", "pickups", "pickup_parcels"];
+let EVID = null; const EV_KEYS = ["parcels", "stops", "trays", "sort_min", "pickups", "pickup_parcels", "mail_stops"];
 // a figure that's plainly a slip isn't used in the averages: 0 parcels or 0 stops, or stops under a fifth of the parcels on a 20+ parcel day
 const evOk = (e, k) => { const v = e[k]; if (v == null || v === "" || isNaN(+v)) return false; if ((k === "parcels" || k === "stops") && +v <= 0) return false;
   if (k === "stops" && +e.parcels >= 20 && +v < +e.parcels / 5) return false; return true; };
@@ -146,6 +157,12 @@ export function evidenceFor(code, day) { if (!EVID?.[code]) return null; const d
   return out; }
 export const evidence = () => EVID;
 
+/* ---- Day estimate for the driver: the TDT (allowed minutes) worked at the target efficiency (settings → rules.estEff, 90%) ---- */
+/** c = effCalc result. Returns { tdt, dur, start, end } in minutes; end = start + dur (+ breaks already taken, which are unpaid). */
+export function tdtEstimate(c, C, brkMin = 0) { if (!c || !c.allowed) return null; const eff = C?.rules?.estEff ?? 0.9; const dur = c.allowed / eff;
+  const st = c.sortIn != null && c.sortFrom != null ? c.sortFrom : c.start;   // a team sort counted into the run: the clock runs from the start of the sort
+  return { tdt: c.allowed, eff, dur, start: st, end: st != null ? Math.round(st + dur + (brkMin || 0)) : null }; }
+
 /* ---- Efficiency ---- */
 /** Breaks are unpaid from this moment (9 Nov 2026) — they come off paid hours and efficiency time from then on. */
 export const UNPAID_BREAKS_FROM = Date.parse("2026-11-09T01:48:00Z");
@@ -160,15 +177,26 @@ const overlap = (wins, f, t) => f == null || t == null || t <= f ? 0 : (wins || 
 export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   const code = seg.shift.run, model = C.effSimple[code]; if (!model) return null;
   const net = model.net || NET(code); const g = []; const parts = []; const ev = evidenceFor(code, seg.shift.day);
-  const v = (k, fallback) => { if (ov && ov[k] != null) return { v: ov[k], src: "set by hand" }; if (eod && eod[k] != null) return { v: eod[k], src: "driver posted" }; if (ev && ev[k] != null) { g.push(k); return { v: ev[k], src: "average of past EODs" }; } if (fallback != null) { g.push(k); return { v: fallback, src: "best guess" }; } return { v: null, src: "missing" }; };
+  // mail runs: before the EOD, the scanner total from the runsheet photo and the mail stops from the tray photo stand in (not guesses)
+  const mr = mailRun(C, code); const sh = seg.shift; const day0 = { parcels: sh.scan_parcels, mail_stops: sh.mail_stops };
+  const v = (k, fallback) => { if (ov && ov[k] != null) return { v: ov[k], src: "set by hand" }; if (eod && eod[k] != null) return { v: eod[k], src: "driver posted" };
+    if (mr && day0[k] != null) return { v: day0[k], src: k === "parcels" ? "scanner total (runsheet photo)" : "mail tray photo" };
+    if (!eod && k === "trays" && ctx.usual?.trays != null) return { v: ctx.usual.trays, src: "your last EOD on this run" };   // live estimate only
+    if (mr && k === "mail_stops" && eod && eod.trays != null && +eod.trays <= 3) return { v: Math.round(+eod.trays * (C.rules.mailPerTray ?? 75)), src: `estimated from ${eod.trays} tray${+eod.trays === 1 ? "" : "s"}` };   // EODs from before the tray photo
+    if (ev && ev[k] != null) { g.push(k); return { v: ev[k], src: "average of past EODs" }; } if (fallback != null) { g.push(k); return { v: fallback, src: "best guess" }; } return { v: null, src: "missing" }; };
   const typ = C.typical[code] || 50; const est = C.estFig[code] || {};
-  const parcels = v("parcels", est.parcels ?? typ), stops = v("stops", est.stops ?? Math.round((est.parcels ?? typ) * (net === "tge" ? 0.65 : 0.8)));
+  const parcels = v("parcels", est.parcels ?? typ);
+  // mail runs: stops are 80% of the parcel total (never asked for); a figure set by hand still wins
+  const stops = mr ? (ov?.stops != null ? { v: ov.stops, src: "set by hand" } : { v: autoStops(C, parcels.v) ?? 0, src: `${Math.round((C.rules.stopRatio ?? 0.8) * 100)}% of parcels` })
+    : v("stops", est.stops ?? Math.round((est.parcels ?? typ) * (net === "tge" ? 0.65 : 0.8)));
   const trays = v("trays", 1), pickups = v("pickups", 0), pup = v("pickup_parcels", 0);
+  const mail = mr && model.mail ? v("mail_stops", 0) : { v: 0, src: "" };
   let min = model.base; parts.push(["Base", `${model.base} min`, model.base]);
   const add = (lbl, calc, m) => { if (m) { parts.push([lbl, calc, Math.round(m)]); min += m; } };
   add("Parcels", `${parcels.v} × ${model.parcel}`, parcels.v * (model.parcel || 0));
   add("Stops", `${stops.v} × ${model.stop}`, stops.v * (model.stop || 0));
   if (model.tray) add("Trays", `${trays.v} × ${model.tray}`, trays.v * model.tray);
+  if (mr && model.mail) add("Mail stops", `${mail.v} × ${model.mail}`, mail.v * model.mail);
   if (model.pickup) add("Pick-up stops", `${pickups.v} × ${model.pickup}`, pickups.v * model.pickup);
   if (model.puparcel) add("Pick-up parcels", `${pup.v} × ${model.puparcel}`, pup.v * model.puparcel);
   // sorting
@@ -193,12 +221,13 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   else {
     // Sorting done on a sort shift (SUP…) is team work: paid, but out of efficiency both ways — the run is timed from when the sort ends
     // and gets no sorting allowance. Without a sort shift before it, sorting the driver says they did on the run is allowed by the formula.
-    const sp = ov?.sorted_parcels ?? eod?.sorted_parcels, smail = ov?.sorted_mail ?? eod?.sorted_mail;
+    // before the EOD (live estimate), the driver's sort answers from their last EOD on this run stand in (ctx.usual)
+    const U = eod ? {} : ctx.usual || {}; const sp = ov?.sorted_parcels ?? eod?.sorted_parcels ?? U.sorted_parcels, smail = ov?.sorted_mail ?? eod?.sorted_mail ?? U.sorted_mail;
     if (!pre && !preLoaded && !fixedSort) {
       if (sp) add("Sorting parcels", `${C.sortF.pBase} + (${parcels.v} − ${C.sortF.pIncl}) × ${C.sortF.pRate}`, C.sortF.pBase + Math.max(0, parcels.v - C.sortF.pIncl) * C.sortF.pRate);
       if (smail) add("Sorting mail", `${trays.v} × ${C.sortF.mailTray}`, trays.v * C.sortF.mailTray);
     }
-    const np = ov?.nzc_ph ?? eod?.nzc_ph; if (np && PICKUP_RUNS.includes(code)) add("NZC/PH pick-up", `${C.sortF.nzcph} min`, C.sortF.nzcph);
+    const np = ov?.nzc_ph ?? eod?.nzc_ph ?? U.nzc_ph; if (np && PICKUP_RUNS.includes(code)) add("NZC/PH pick-up", `${C.sortF.nzcph} min`, C.sortF.nzcph);
   }
   // add-ons / legs
   if (model.addon != null && !(ov?.legs)) add("Add-ons (estimate)", `${model.addon} min`, model.addon);
@@ -219,9 +248,9 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   const taken = (tSt != null && endT != null && endT > tSt) ? (endT - tSt) / 60 : null;
   let takenTrk = taken; if (ov?.train_day) takenTrk = 0; else if (ov?.train_min && taken) takenTrk = Math.max(0.01, taken - ov.train_min / 60);
   const brkH = Array.isArray(ctx.brk) ? overlap(ctx.brk, tSt, endT) / 60 : (ctx.brk || 0); if (brkH && takenTrk) takenTrk = Math.max(0.01, takenTrk - brkH);   // owner's unpaid breaks
-  const need = []; if (!eod) need.push("EOD"); else { if (start != null && endT != null && endT <= start) need.push("Times (SOD is after the EOD finish)"); for (const k of ["parcels", "stops"]) if ((model[k === "parcels" ? "parcel" : "stop"] || 0) > 0 && eod[k] == null && ov?.[k] == null) need.push(k === "parcels" ? (net === "tge" ? "Delivery total" : "Total parcels") : (net === "tge" ? "Jobs" : "Stops")); if (net === "tge" && !pre && sortMin == null) need.push("Sorting time"); if (!eod.finish_time) need.push("Finish time"); }
+  const need = []; if (!eod) need.push("EOD"); else { if (start != null && endT != null && endT <= start) need.push("Times (SOD is after the EOD finish)"); for (const k of mr ? ["parcels"] : ["parcels", "stops"]) if ((model[k === "parcels" ? "parcel" : "stop"] || 0) > 0 && eod[k] == null && ov?.[k] == null) need.push(k === "parcels" ? (net === "tge" ? "Delivery total" : "Total parcels") : (net === "tge" ? "Jobs" : "Stops")); if (net === "tge" && !pre && sortMin == null) need.push("Sorting time"); if (!eod.finish_time) need.push("Finish time"); }
   let perf = null; if (taken && takenTrk !== 0) perf = C.rules.effMethod === "tdt" ? (2 - takenTrk / (allowed / 60)) * 100 : (allowed / 60) / takenTrk * 100; if (perf != null) perf = Math.max(0, Math.min(150, perf));
-  return { code, net, allowed, parts, sortTaken, sortIn, sortFrom: pre ? preSt : null, sortRun: pre?.shift.run || null, taken, takenTrk, brk: brkH, perf, need, est: g.length > 0, guess: g, trainDay: !!ov?.train_day, start, end: endT, model, evid: ev ? ev.scope : null, evN: ev?.n || 0, noEod: !eod, figs: { parcels, stops, trays, pickups, pup } };
+  return { code, net, allowed, parts, sortTaken, sortIn, sortFrom: pre ? preSt : null, sortRun: pre?.shift.run || null, taken, takenTrk, brk: brkH, perf, need, est: g.length > 0, guess: g, trainDay: !!ov?.train_day, start, end: endT, model, evid: ev ? ev.scope : null, evN: ev?.n || 0, noEod: !eod, figs: { parcels, stops, trays, pickups, pup, mail } };
 }
 /* Milton meet: the D>B driver sets the drop-off time each day (shifts.milton_at, copied onto that day's LAW shift).
    It replaces the timing rule's usual 10:30 for both runs, and puts the meet on the LAW driver's list even if not ticked. */
