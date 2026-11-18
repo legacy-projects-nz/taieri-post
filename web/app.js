@@ -947,6 +947,10 @@ function scanTotal(sh) {
 }
 /* ---------- Mail tray photo: up to 3 photos → slots with mail counted (mail stops) → driver checks the number → saved ---------- */
 const MAIL_KEY = "tw_mailtrays";
+/** shrink a phone photo to ≤2000px JPEG before upload (keeps the tray count fast and under the photo size limit) */
+async function shrinkPhoto(f, max = 2000) { try { const bm = await createImageBitmap(f); const k = Math.min(1, max / Math.max(bm.width, bm.height)); if (k === 1 && f.size < 3e6) return f;
+  const c = document.createElement("canvas"); c.width = Math.round(bm.width * k); c.height = Math.round(bm.height * k); c.getContext("2d").drawImage(bm, 0, 0, c.width, c.height);
+  const b = await new Promise(r => c.toBlob(r, "image/jpeg", 0.85)); return b ? new File([b], "tray.jpg", { type: "image/jpeg" }) : f; } catch { return f; } }
 function mailTraySheet(shiftId) {
   const sh = S.shifts.find(z => z.id === shiftId); if (!sh) return; const files = [];
   const slot = i => files[i] ? `<div style="position:relative"><img src="${files[i].url}" alt="tray photo ${i + 1}" style="width:96px;height:96px;object-fit:cover;border-radius:8px"><button type="button" class="btn ghost sm" data-mtdel="${i}" style="position:absolute;top:2px;right:2px;min-height:24px;padding:0 6px">×</button></div>`
@@ -962,8 +966,8 @@ function mailTraySheet(shiftId) {
       bg.querySelectorAll("[data-mtdel]").forEach(b => b.onclick = () => { files.splice(+b.dataset.mtdel, 1); paths.length = 0; counted = false; draw(); }); };
     draw();
     const upload = async () => { if (paths.length === files.length) return true; paths.length = 0;
-      for (const [i, x] of files.entries()) { const path = `${sh.driver || S.me.id}/${sh.day}/${sh.id}-${MAIL_KEY}-${Date.now()}-${i + 1}.${(x.f.name.split(".").pop() || "jpg").toLowerCase()}`;
-        const { error } = await sb.storage.from("runsheets").upload(path, x.f, { upsert: true, contentType: x.f.type || "image/jpeg" }); if (error) { toast(`Photo didn't upload: ${error.message}`, "err"); paths.length = 0; return false; } paths.push(path); }
+      for (const [i, x] of files.entries()) { const f = await shrinkPhoto(x.f); const path = `${sh.driver || S.me.id}/${sh.day}/${sh.id}-${MAIL_KEY}-${Date.now()}-${i + 1}.${(f.name.split(".").pop() || "jpg").toLowerCase()}`;
+        const { error } = await sb.storage.from("runsheets").upload(path, f, { upsert: true, contentType: f.type || "image/jpeg" }); if (error) { toast(`Photo didn't upload: ${error.message}`, "err"); paths.length = 0; return false; } paths.push(path); }
       return true; };
     const ai = bg.querySelector("#mt-ai"), nIn = bg.querySelector("#mt-n");
     bg.querySelector("#mt-count").onclick = async e => { const b = e.currentTarget; b.disabled = true; b.textContent = "Uploading…"; if (!(await upload())) { b.disabled = false; b.textContent = "Count mail slots"; return; }

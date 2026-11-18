@@ -8,7 +8,7 @@
 // as { filename, b64 } instead of an email.
 import * as XLSX from "npm:xlsx@0.18.5";
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
-import { cfg, scoreFor, setEvidence, segTimes, addName, STATE_LABEL } from "https://cdn.jsdelivr.net/gh/legacy-projects-nz/taieri-post@99ee021f52535a777e24bb52b93545932052d7d7/web/shared/score.js";
+import { cfg, scoreFor, setEvidence, segTimes, addName, STATE_LABEL } from "https://cdn.jsdelivr.net/gh/legacy-projects-nz/taieri-post@dfa8bd353c94b3ab9b7ef0835ef5072c88516331/web/shared/score.js";
 import { nzNow as nz, addDays, dow, label } from "./core.js";
 
 const admin = () => createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
@@ -70,7 +70,7 @@ async function build(sb: any, from: string, to: string) {
     }
     for (const e of s.effDays) for (const r of (e.rows || [])) {
       const ov = r.ov || {}; const eod = r.eod || {};
-      effRows.push({ Date: e.day, Driver: nm(d), Run: r.code, "Expected min": Math.round(r.allowed), "Expected h": r2(r.allowed / 60), "Start": r.start != null ? `${String(Math.floor(r.start / 60)).padStart(2, "0")}:${String(r.start % 60).padStart(2, "0")}` : "", "Finish": r.end != null ? `${String(Math.floor(r.end / 60)).padStart(2, "0")}:${String(r.end % 60).padStart(2, "0")}` : "", "Actual h": r2(r.taken), "Efficiency %": r1(r.perf), "Estimated": r.est ? "Yes" : "", "Guessed figures": (r.guess || []).join(", "), "Needs": (r.need || []).join(", "), "Training day": r.trainDay ? "Yes" : "", "Parcels": r.figs?.parcels ?? "", "Stops": r.figs?.stops ?? "", "Trays": r.figs?.trays ?? "", "Pick-ups": r.figs?.pickups ?? "", "Corrected by hand": Object.keys(ov).filter(k => !["shift_id", "updated_at"].includes(k) && ov[k] != null && ov[k] !== false && !(Array.isArray(ov[k]) && !ov[k].length)).join(", "), "Formula": (r.parts || []).map((p: any) => `${p[0]} ${p[1] ?? ""}`.trim()).join(" + ") });
+      effRows.push({ Date: e.day, Driver: nm(d), Run: r.code, "Expected min": Math.round(r.allowed), "Expected h": r2(r.allowed / 60), "Start": r.start != null ? `${String(Math.floor(r.start / 60)).padStart(2, "0")}:${String(r.start % 60).padStart(2, "0")}` : "", "Finish": r.end != null ? `${String(Math.floor(r.end / 60)).padStart(2, "0")}:${String(r.end % 60).padStart(2, "0")}` : "", "Actual h": r2(r.taken), "Efficiency %": r1(r.perf), "Estimated": r.est ? "Yes" : "", "Guessed figures": (r.guess || []).join(", "), "Needs": (r.need || []).join(", "), "Training day": r.trainDay ? "Yes" : "", "Parcels": r.figs?.parcels ?? "", "Stops": r.figs?.stops ?? "", "Trays": r.figs?.trays ?? "", "Mail stops": r.figs?.mail?.v ?? "", "Pick-ups": r.figs?.pickups ?? "", "Corrected by hand": Object.keys(ov).filter(k => !["shift_id", "updated_at"].includes(k) && ov[k] != null && ov[k] !== false && !(Array.isArray(ov[k]) && !ov[k].length)).join(", "), "Formula": (r.parts || []).map((p: any) => `${p[0]} ${p[1] ?? ""}`.trim()).join(" + ") });
     }
     for (const it of s.items) posts.push({ Date: it.day, Driver: nm(d), Post: it.kind, Run: it.code || it.shift?.run || "", "Due": it.due != null ? `${String(Math.floor((it.due % 1440) / 60)).padStart(2, "0")}:${String(it.due % 60).padStart(2, "0")}` : "", "Posted at": tsNZ(it.row?.sent_at), Status: STATE_LABEL[it.st] || it.st, "Late (min)": it.late ?? "" });
   }
