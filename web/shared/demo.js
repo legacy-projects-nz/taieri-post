@@ -159,6 +159,7 @@ function rpc(name, a = {}) {
       else if (a.p_kind === "dlv") s.deliver_at = a.p_undo ? null : (s.deliver_at ?? t);
       save(); return { data: { ok: true }, error: null }; }
     case "task_photo_done": { const s = shift(); if (!s) return err("No such shift"); (s.done ??= {})[a.p_addon] = nowIso(); (s.task_photos ??= {})[a.p_addon] = [...(s.task_photos[a.p_addon] || []), a.p_path]; save(); return { data: null, error: null }; }
+    case "mail_none": { const s = shift(); if (!s) return err("No such shift"); s.mail_stops = 0; (s.done ??= {}).tw_mailtrays = nowIso(); save(); return { data: null, error: null }; }
     case "set_run_figs": { const s = shift(); if (!s) return err("No such shift"); if (a.p_scan != null) s.scan_parcels = a.p_scan; if (a.p_mail != null) s.mail_stops = a.p_mail; save(); return { data: null, error: null }; }
     case "task_undo": { const s = shift(); if (s?.done) delete s.done[a.p_addon]; save(); return { data: null, error: null }; }
     case "set_my_addons": { const s = shift(); if (!s) return err("No such shift"); s.addons = a.p_addons; save(); return { data: null, error: null }; }
@@ -179,7 +180,7 @@ export function demoClient() {
     channel: () => ({ on() { return this; }, subscribe() { return this; }, unsubscribe() { } }),
     removeChannel() { },
     storage: { from: () => ({ upload: async () => ({ data: { path: "demo" }, error: null }) }) },
-    functions: { invoke: async name => name === "mailcount" ? { data: { ok: true, count: 64, total: 90, confidence: "medium", notes: "Demo count" }, error: null } : { data: null, error: null } },
+    functions: { invoke: async (name, o) => { if (name !== "mailcount") return { data: null, error: null }; const db = load(); const s = db.shifts.find(x => x.id === o?.body?.shift); if (s) { s.mail_stops = 64; save(); } return { data: { ok: true, count: 64, total: 90, confidence: "medium", notes: "Demo count" }, error: null }; } },
     auth: {
       getSession: async () => ({ data: { session } }), getUser: async () => ({ data: { user: session.user } }),
       signOut: async () => { stopDemo(); }, onAuthStateChange() { return { data: { subscription: { unsubscribe() { } } } }; },

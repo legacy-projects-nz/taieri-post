@@ -62,7 +62,7 @@ export const RULES = [
   R("tw3rdparty", "3rd Party", ["SUP"], "tw_tw3rdparty", { note: "Before you finish. Tap Done when 3rd Party is sorted." }),
   R("twrunsheet", "Runsheet photo", ["TUA", "DB", "FLY", "LAW", "RAM", "PCB", "RSB"], "tw_twrunsheet", { note: "Take a photo of the completed runsheet, then tap Done." }),
   R("mailtrays", "Mail tray photo", ["TUA", "FLY", "RAM", "LAW"], "tw_mailtrays", { note: "Photograph your mail trays (up to 3 photos). The slots with mail are counted for your mail stops." }),
-  R("mailtrays_wh", "Mail tray photo", ["PCB", "RSB", "WH"], "tw_mailtrays", { days: [2, 4, 6], note: "Photograph your mail trays (up to 3 photos). The slots with mail are counted for your mail stops." }),
+  R("mailtrays_wh", "Mail tray photo", ["PCB", "RSB", "WH"], "tw_mailtrays", { days: [1, 2, 3, 4, 5, 6], note: "Photograph your mail trays (up to 3 photos). The slots with mail are counted for your mail stops." }),
 ];
 export const SETTINGS = {
   rules: { tgeSort: 75, vchkDay: 4, accStart: "2026-09-01", effStart: "2026-09-01", eodHours: 1.5, hourRate: 28, perEvent: 5, sodGrace: 5, vchkTime: "17:00", effMethod: "sheet", partEvent: 2.5, rucSoonKm: 1000, startDate: "2026-09-01", stopRatio: 0.8, mailRuns: ["TUA", "FLY", "RAM", "LAW", "RSB", "PCB", "WH"], mailPerTray: 75, estEff: 0.9, adminFloor: 50, adminStart: "2026-09-01", holidayCap: 8, mistakePct: 10, dueSoonDays: 14 },

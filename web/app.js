@@ -958,8 +958,9 @@ function mailTraySheet(shiftId) {
   sheet(`<h3>Mail trays · ${esc(sh.run)}</h3><p class="hint">Take up to 3 photos so every slot shows. The slots with mail are counted for your mail stops — check the number, then save.</p>
     <div class="row" id="mt-ph" style="gap:8px;flex-wrap:wrap"></div>
     <form class="frm" id="mt"><button class="btn full ghost" type="button" id="mt-count" disabled>Count mail slots</button>
-    <label class="f full">Mail stops (slots with mail)<input class="in" id="mt-n" inputmode="numeric" pattern="[0-9]*" placeholder="counted from the photos" value="${sh.mail_stops ?? ""}"></label>
-    <p class="meta full" id="mt-ai" style="margin:0"></p><button class="btn full" type="submit" id="mt-save" disabled>Save photos + mail stops</button></form>`, (bg, close) => {
+    <div class="f full"><span class="lbl">Mail stops (slots with mail)</span><div class="big" id="mt-n" style="font-size:28px">${sh.mail_stops ?? "—"}</div></div>
+    <p class="meta full" id="mt-ai" style="margin:0">Counted from your photos. If the count looks wrong, add a clearer photo and count again.</p><button class="btn full" type="submit" id="mt-save" disabled>Save photos</button>
+    <button class="btn full ghost" type="button" id="mt-none">No mail trays today</button></form>`, (bg, close) => {
     const paths = []; let counted = false;
     const draw = () => { bg.querySelector("#mt-ph").innerHTML = [0, 1, 2].map(slot).join(""); bg.querySelector("#mt-count").disabled = !files.length; bg.querySelector("#mt-save").disabled = !files.length;
       bg.querySelectorAll("[data-mtadd]").forEach(inp => inp.onchange = () => { const f = inp.files?.[0]; if (f && files.length < 3) { files.push({ f, url: URL.createObjectURL(f) }); paths.length = 0; counted = false; } draw(); });
@@ -969,17 +970,18 @@ function mailTraySheet(shiftId) {
       for (const [i, x] of files.entries()) { const f = await shrinkPhoto(x.f); const path = `${sh.driver || S.me.id}/${sh.day}/${sh.id}-${MAIL_KEY}-${Date.now()}-${i + 1}.${(f.name.split(".").pop() || "jpg").toLowerCase()}`;
         const { error } = await sb.storage.from("runsheets").upload(path, f, { upsert: true, contentType: f.type || "image/jpeg" }); if (error) { toast(`Photo didn't upload: ${error.message}`, "err"); paths.length = 0; return false; } paths.push(path); }
       return true; };
-    const ai = bg.querySelector("#mt-ai"), nIn = bg.querySelector("#mt-n");
+    const ai = bg.querySelector("#mt-ai"), nOut = bg.querySelector("#mt-n");
     bg.querySelector("#mt-count").onclick = async e => { const b = e.currentTarget; b.disabled = true; b.textContent = "Uploading…"; if (!(await upload())) { b.disabled = false; b.textContent = "Count mail slots"; return; }
       b.textContent = "Counting…"; let r = null; try { const x = await sb.functions.invoke("mailcount", { body: { shift: sh.id, paths } }); r = x.data || null; if (x.error) r = { error: x.error.message }; } catch (err) { r = { error: String(err?.message || err) }; }
       b.disabled = false; b.textContent = "Count again";
-      if (r?.ok) { counted = true; nIn.value = r.count; ai.innerHTML = `Counted <b>${r.count}</b> slots with mail${r.total ? ` of ${r.total}` : ""}${r.confidence && r.confidence !== "high" ? ` · ${esc(r.confidence)} confidence` : ""}${r.notes ? ` · ${esc(r.notes)}` : ""}. Fix the number if it's off.`; }
-      else ai.textContent = r?.error === "no_key" ? "Auto count isn't switched on yet — count the slots with mail and type the number in." : `Couldn't count from the photos (${r?.error || "no answer"}) — type the number in.`; };
-    bg.querySelector("#mt").onsubmit = async e => { e.preventDefault(); const v = nIn.value.trim(); if (!/^\d+$/.test(v) || +v > 2000) return toast(counted ? "Check the mail stops number" : "Count the slots first, or type the number in", "err");
+      if (r?.ok) { counted = true; nOut.textContent = r.count; ai.innerHTML = `Counted <b>${r.count}</b> slots with mail${r.total ? ` of ${r.total}` : ""}${r.notes ? ` · ${esc(r.notes)}` : ""}. Not right? Add a clearer photo and count again.`; }
+      else { counted = false; ai.textContent = r?.error === "no_key" ? "Auto count isn't switched on yet — save your photos and Jeremy will set the mail stops." : `Couldn't count from the photos (${r?.error || "no answer"}). Try a clearer photo, or save and Jeremy will set the mail stops.`; } };
+    bg.querySelector("#mt").onsubmit = async e => { e.preventDefault(); if (!counted && !bg.querySelector("#mt-ai").textContent.includes("Jeremy")) return toast("Tap Count mail slots first", "err");
       const b = bg.querySelector("#mt-save"); b.disabled = true; if (!(await upload())) { b.disabled = false; return; }
       for (const p of paths) { const { error } = await sb.rpc("task_photo_done", { p_shift: sh.id, p_addon: MAIL_KEY, p_path: p, p_note: null }); if (error) { b.disabled = false; return toast(error.message, "err"); } }
-      const { error } = await sb.rpc("set_run_figs", { p_shift: sh.id, p_mail: +v }); if (error) { b.disabled = false; return toast(error.message, "err"); }
-      close(); toast(`Mail trays saved · ${v} mail stops ✓`, "ok"); await loadAll(); render(); };
+      close(); toast(counted ? `Mail trays saved · ${nOut.textContent} mail stops ✓` : "Mail tray photos saved ✓", "ok"); await loadAll(); render(); };
+    bg.querySelector("#mt-none").onclick = async e => { e.currentTarget.disabled = true; const { error } = await sb.rpc("mail_none", { p_shift: sh.id }); if (error) { e.currentTarget.disabled = false; return toast(error.message, "err"); }
+      close(); toast("No mail today ✓", "ok"); await loadAll(); render(); };
   });
 }
 /* ---------- Today's estimate on a mail run: TDT from the scanner total + mail stops, worked at 90% → time and likely finish ---------- */

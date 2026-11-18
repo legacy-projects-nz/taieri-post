@@ -1,5 +1,5 @@
 // mailcount: counts the mail tray slots that have mail in them, from the driver's mail tray photos (up to 3), with Claude vision.
-// The count is the day's mail stops for the run: it goes onto the shift (shifts.mail_stops) and feeds the TDT.
+// The count is the day's mail stops for the run: it goes straight onto the shift (shifts.mail_stops) and feeds the TDT. Drivers can't edit it.
 // Needs an Anthropic API key: edge function secret ANTHROPIC_API_KEY, or app_secrets.anthropic_api_key. Model: app_secrets.anthropic_model (optional).
 // Without a key it answers { error: "no_key" } and the driver types the count in by hand.
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
@@ -47,6 +47,6 @@ Deno.serve(async (req) => {
   const m = txt.match(/\{[\s\S]*\}/); let res: any = null; try { res = m ? JSON.parse(m[0]) : null; } catch { /* below */ }
   const n = Math.round(Number(res?.slots_with_mail)); if (!res || !Number.isFinite(n) || n < 0) return json({ error: "couldn't read a count from the photos" });
   const ai = { count: n, total: res.slots_total ?? null, confidence: res.confidence || null, notes: res.notes || null, model, photos: paths.length, at: new Date().toISOString() };
-  await sb.from("shifts").update({ mail_ai: ai }).eq("id", shiftId);
+  await sb.from("shifts").update({ mail_ai: ai, mail_stops: n }).eq("id", shiftId);   // the count is the mail stops: drivers can't change it (owner/admin can correct it)
   return json({ ok: true, ...ai });
 });
