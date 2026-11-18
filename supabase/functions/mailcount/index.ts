@@ -1,4 +1,4 @@
-// mailcount: counts the mail tray slots that have mail in them, from the driver's mail tray photos (up to 3), with Claude vision.
+// mailcount: counts the mail tray slots that have mail in them, from the driver's mail tray photos (up to 6), with Claude vision.
 // The count is the day's mail stops for the run: it goes straight onto the shift (shifts.mail_stops) and feeds the TDT. Drivers can't edit it.
 // Needs an Anthropic API key: edge function secret ANTHROPIC_API_KEY, or app_secrets.anthropic_api_key. Model: app_secrets.anthropic_model (optional).
 // Without a key it answers { error: "no_key" } and the driver types the count in by hand.
@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
   const { data: me } = pid ? await sb.from("people").select("id, role, perms").eq("id", pid).maybeSingle() : { data: null };
   if (!me) return json({ error: "not on the list" }, 403);
 
-  const body = await req.json().catch(() => ({})); const shiftId = String(body.shift || ""); const paths: string[] = (body.paths || []).slice(0, 3).map(String); const left = body.mode === "left";
+  const body = await req.json().catch(() => ({})); const shiftId = String(body.shift || ""); const paths: string[] = (body.paths || []).slice(0, 6).map(String); const left = body.mode === "left";
   if (!shiftId || !paths.length) return json({ error: "shift and photos needed" }, 400);
   const { data: sh } = await sb.from("shifts").select("id, driver, run, day, mail_stops, mail_ai").eq("id", shiftId).maybeSingle();
   if (!sh) return json({ error: "shift not found" }, 404);

@@ -946,7 +946,7 @@ function scanTotal(sh) {
     new MutationObserver((_, o) => { if (!bg.isConnected) { o.disconnect(); fin(undefined); } }).observe(document.body, { childList: true });
   });
 }
-/* ---------- Mail tray photo: up to 3 photos → slots with mail counted (mail stops) → driver checks the number → saved ---------- */
+/* ---------- Mail tray photo: up to 6 photos → slots with mail counted (mail stops) → driver checks the number → saved ---------- */
 const MAIL_KEY = "tw_mailtrays";
 /** shrink a phone photo to ≤2000px JPEG before upload (keeps the tray count fast and under the photo size limit) */
 async function shrinkPhoto(f, max = 2000) { try { const bm = await createImageBitmap(f); const k = Math.min(1, max / Math.max(bm.width, bm.height)); if (k === 1 && f.size < 3e6) return f;
@@ -956,19 +956,19 @@ function mailTraySheet(shiftId) {
   const sh = S.shifts.find(z => z.id === shiftId); if (!sh) return; const files = [];
   const slot = i => files[i] ? `<div style="position:relative"><img src="${files[i].url}" alt="tray photo ${i + 1}" style="width:96px;height:96px;object-fit:cover;border-radius:8px"><button type="button" class="btn ghost sm" data-mtdel="${i}" style="position:absolute;top:2px;right:2px;min-height:24px;padding:0 6px">×</button></div>`
     : i === files.length ? `<label class="btn ghost" style="width:96px;height:96px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-direction:column;font-size:13px">📷<span>Photo ${i + 1}</span><input type="file" accept="image/*" capture="environment" data-mtadd hidden></label>` : "";
-  sheet(`<h3>Mail trays · ${esc(sh.run)}</h3><p class="hint">Take up to 3 photos so each slot shows. The slots with mail are counted across all your photos for your mail stops (overlapping photos are allowed for). Nil mail day? Close this and tap Nil.</p>
+  sheet(`<h3>Mail trays · ${esc(sh.run)}</h3><p class="hint">Take up to 6 photos so each slot shows. The slots with mail are counted across all your photos for your mail stops (overlapping photos are allowed for). Nil mail day? Close this and tap Nil.</p>
     <div class="row" id="mt-ph" style="gap:8px;flex-wrap:wrap"></div>
     <form class="frm" id="mt"><button class="btn full ghost" type="button" id="mt-count" disabled>Count mail slots</button>
     <div class="f full"><span class="lbl">Mail stops (slots with mail)</span><div class="big" id="mt-n" style="font-size:28px">${sh.mail_stops ?? "—"}</div></div>
     <p class="meta full" id="mt-ai" style="margin:0">Counted from your photos. If the count looks wrong, add a clearer photo and count again.</p><button class="btn full" type="submit" id="mt-save" disabled>Save photos</button>
     <button class="btn full ghost" type="button" id="mt-none">No mail trays today</button></form>`, (bg, close) => {
     const paths = []; let counted = false;
-    const draw = () => { bg.querySelector("#mt-ph").innerHTML = [0, 1, 2].map(slot).join(""); bg.querySelector("#mt-count").disabled = !files.length; bg.querySelector("#mt-save").disabled = !files.length;
-      bg.querySelectorAll("[data-mtadd]").forEach(inp => inp.onchange = () => { const f = inp.files?.[0]; if (f && files.length < 3) { files.push({ f, url: URL.createObjectURL(f) }); paths.length = 0; counted = false; } draw(); });
+    const draw = () => { bg.querySelector("#mt-ph").innerHTML = [0, 1, 2, 3, 4, 5].map(slot).join(""); bg.querySelector("#mt-count").disabled = !files.length; bg.querySelector("#mt-save").disabled = !files.length;
+      bg.querySelectorAll("[data-mtadd]").forEach(inp => inp.onchange = () => { const f = inp.files?.[0]; if (f && files.length < 6) { files.push({ f, url: URL.createObjectURL(f) }); paths.length = 0; counted = false; } draw(); });
       bg.querySelectorAll("[data-mtdel]").forEach(b => b.onclick = () => { files.splice(+b.dataset.mtdel, 1); paths.length = 0; counted = false; draw(); }); };
     draw();
     const upload = async () => { if (paths.length === files.length) return true; paths.length = 0;
-      for (const [i, x] of files.entries()) { const f = await shrinkPhoto(x.f); const path = `${sh.driver || S.me.id}/${sh.day}/${sh.id}-${MAIL_KEY}-${Date.now()}-${i + 1}.${(f.name.split(".").pop() || "jpg").toLowerCase()}`;
+      for (const [i, x] of files.entries()) { const f = await shrinkPhoto(x.f, 1600); const path = `${sh.driver || S.me.id}/${sh.day}/${sh.id}-${MAIL_KEY}-${Date.now()}-${i + 1}.${(f.name.split(".").pop() || "jpg").toLowerCase()}`;
         const { error } = await sb.storage.from("runsheets").upload(path, f, { upsert: true, contentType: f.type || "image/jpeg" }); if (error) { toast(`Photo didn't upload: ${error.message}`, "err"); paths.length = 0; return false; } paths.push(path); }
       return true; };
     const ai = bg.querySelector("#mt-ai"), nOut = bg.querySelector("#mt-n");
