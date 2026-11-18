@@ -88,10 +88,11 @@ var W={
  FBP:{name:"Food bag · pm shift",label:"Food bag 1 PM",net:"sun",fixed:1,slim:1,d:{Sun:[[m(14),m(17)]]}},
  FB2:{name:"Food bag · am shift",label:"Food bag 2 AM",net:"sun",fixed:1,slim:1,d:{Sun:[[m(11),m(14)]]}},
  FB2P:{name:"Food bag · pm shift",label:"Food bag 2 PM",net:"sun",fixed:1,slim:1,d:{Sun:[[m(14),m(17)]]}},
+ SG:{name:"TGE Surge",label:"TGE Surge",net:"tge",d:{Mon:[[m(8),m(14,30)]],Tue:[[m(8),m(14,30)]],Wed:[[m(8),m(14,30)]],Thu:[[m(8),m(14,30)]],Fri:[[m(8),m(14,30)]]}},   /* TGE surge run (19 Nov 2026) */
  MFB1:{name:"MFB 1",net:"sun",d:{Sun:[[m(10),m(16)]]}},
  MFB2:{name:"MFB 2",net:"sun",d:{Sun:[[m(10),m(16)]]}}
 };
-var ORDER=["TUA","DB","FLY","LAW","RAM","PCB","RSB","S","T","FB","FBP","FB2","FB2P","SUP","SUP3","SUP2","BU"];
+var ORDER=["TUA","DB","FLY","LAW","RAM","PCB","RSB","S","T","SG","FB","FBP","FB2","FB2P","SUP","SUP3","SUP2","BU"];
 /* Saturday: PCB and RSB now go out as two separate rounds (split Oct 2026) — COMBINED is switched off by pointing it at no day */
 var COMBINED={day:"none",top:"PCB",under:"RSB",label:"PCB + RSB combined"};
 
@@ -318,7 +319,7 @@ function win(run,day){
 }
 function defWin(run,day){return W[run].d[day]||null;}
 /* run experience: which driver is signed off ("yes") or in training ("tr") on which run; the AM/PM food bag rows and Saturday combined share one skill */
-var SKILL_RUNS=["TUA","DB","FLY","LAW","RAM","PCB","RSB","S","T","FB"];
+var SKILL_RUNS=["TUA","DB","FLY","LAW","RAM","PCB","RSB","S","T","SG","FB"];
 var SKILL_OF={WH:"PCB",FBP:"FB",FB2:"FB",FB2P:"FB"};
 function skillRun(run){var s=SKILL_OF[run]||run;return SKILL_RUNS.indexOf(s)>=0?s:null;}
 function skillOf(drv,run){var s=skillRun(run);if(!s)return "yes";return (state.cfg.skills||{})[drv+"|"+s]||"";}
