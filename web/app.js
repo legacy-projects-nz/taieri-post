@@ -1118,6 +1118,9 @@ function eodForm(shiftId, sortOnly, edit = false) {
   if (tap0 != null && !ex) fields += ``;
   else if (exp0 != null) fields += ``;
   // NZ Post runs: the runsheet photo is a standing task that has to be done before the EOD, so the form won't send until it's ticked (and ticking it marks the task done)
+  // mail runs with mail today: a photo of any mail left (or All delivered) is needed before the EOD; the stops left come off the TDT
+  const needMl = !ex && !sortOnly && !isSort(code) && mailRun(S.C, code) && (shift.mail_stops || 0) > 0 && shift.mail_left == null;
+  if (needMl) fields += `<div class="full" id="ml-box"><span class="lbl">Mail left over</span><div class="row" style="gap:6px;margin-top:4px"><label class="btn sm accent" style="flex:1 1 0;min-height:34px;cursor:pointer">📷 Mail left<input type="file" accept="image/*" capture="environment" id="ml-photo" hidden></label><button type="button" class="btn sm ghost" style="flex:1 1 0;min-height:34px" id="ml-none">All delivered</button></div><p class="meta" id="ml-st" style="margin:4px 0 0">Photo of any mail you couldn't deliver (box or tray), or tap All delivered.</p></div>`;
   const needRs = !ex && !sortOnly && !isSort(code) && !shift.done?.tw_twrunsheet && rulesFor({ shift }, shift.day).some(r => r.addon === "tw_twrunsheet");
   if (needRs) fields += `<label class="chk full"><input type="checkbox" id="runsheet" required>Runsheet photo taken (NZ Post needs it before every EOD)</label>`;
   fields += `<label class="f full">Note (optional)<input class="in" id="note" placeholder="anything Jeremy should know" value="${esc(ex?.note || "")}"></label>`;
@@ -1130,7 +1133,14 @@ function eodForm(shiftId, sortOnly, edit = false) {
     { const a = bg.querySelector("#nzp_total"), b3 = bg.querySelector("#third_total"), out = bg.querySelector("#split_sum b");
       if (a && b3 && out) { const sum = () => { out.textContent = String((+a.value || 0) + (+b3.value || 0)); }; a.oninput = sum; b3.oninput = sum; sum(); } }
 
-    bg.querySelector("#ef").onsubmit = async e => { e.preventDefault(); const g = id => bg.querySelector("#" + id); const num = id => g(id) && g(id).value !== "" ? +g(id).value : null; const bool = id => g(id) && g(id).value !== "" ? g(id).value === "true" : null;
+    let mlDone = !needMl; const mlSt = bg.querySelector("#ml-st");
+    bg.querySelector("#ml-none")?.addEventListener("click", async e => { e.currentTarget.disabled = true; const { error } = await sb.rpc("mail_left_none", { p_shift: shiftId }); if (error) { e.currentTarget.disabled = false; return toast(error.message, "err"); } mlDone = true; mlSt.innerHTML = "✓ All mail delivered"; });
+    bg.querySelector("#ml-photo")?.addEventListener("change", async e => { const f0 = e.target.files?.[0]; if (!f0) return; mlSt.textContent = "Uploading…"; const f = await shrinkPhoto(f0);
+      const path = `${shift.driver || S.me.id}/${shift.day}/${shiftId}-mail_left-${Date.now()}.jpg`; const { error } = await sb.storage.from("runsheets").upload(path, f, { upsert: true, contentType: f.type || "image/jpeg" }); if (error) { mlSt.textContent = `Photo didn't upload: ${error.message}`; return; }
+      await sb.rpc("task_photo_done", { p_shift: shiftId, p_addon: "mail_left", p_path: path, p_note: null });
+      mlSt.textContent = "Counting…"; let r = null; try { const x = await sb.functions.invoke("mailcount", { body: { shift: shiftId, paths: [path], mode: "left" } }); r = x.data || { error: x.error?.message }; } catch (err) { r = { error: String(err?.message || err) }; }
+      mlDone = true; mlSt.innerHTML = r?.ok ? `✓ About <b>${r.count}</b> stops of mail left — they come off today's mail stops.` : "✓ Photo saved — Jeremy will check the mail left."; });
+    bg.querySelector("#ef").onsubmit = async e => { e.preventDefault(); if (!mlDone) return toast("Take a photo of the mail left, or tap All delivered", "err"); const g = id => bg.querySelector("#" + id); const num = id => g(id) && g(id).value !== "" ? +g(id).value : null; const bool = id => g(id) && g(id).value !== "" ? g(id).value === "true" : null;
       const row = { finish_time: g("finish").value, sort_min: num("sort_min"), parcels: num("parcels"), stops: num("stops"), trays: num("trays"), pickups: num("pickups"), pickup_parcels: num("pickup_parcels"), cycled: num("cycled"), sorted_parcels: bool("sorted_parcels"), sorted_mail: bool("sorted_mail"), nzc_ph: bool("nzc_ph"), legs: [...bg.querySelectorAll("input[name=leg]:checked")].map(i => i.value), newspapers: !!g("news")?.checked, note: g("note").value || null, run_id: S.C.runCodes[code] || null };
       if (g("tge_rural")) row.extra = { ...(ex?.extra || {}), tge_rural: num("tge_rural") ?? 0 };
       const tapM = !ex ? tapNow() : null; if (tapM != null) row.extra = { ...(row.extra || ex?.extra || {}), sort_tap: tapM };
@@ -1139,7 +1149,7 @@ function eodForm(shiftId, sortOnly, edit = false) {
       if (g("nzp_total")) { const a = num("nzp_total") ?? 0, b = num("third_total") ?? 0; row.parcels = a + b;   // the 8pm check may correct nzp_total; the driver's own figure is kept as nzp_driver
         const keep = { ...(row.extra || ex?.extra || {}) }; delete keep.nzp_driver; delete keep.nzp_feed; delete keep.nzp_checked_at; row.extra = { ...keep, nzp_total: a, third_total: b }; }
       if (isDB) { const t = num("db_tge") ?? 0, o = num("db_other") ?? 0; row.parcels = t + o; row.extra = { ...(row.extra || ex?.extra || {}), tge_total: t, other_total: o }; }
-      if (mailRun(S.C, code) && !sortOnly && !isSort(code)) { row.stops = autoStops(S.C, row.parcels); row.mail_stops = shift.mail_stops ?? ex?.mail_stops ?? null; }   // stops aren't asked for: 80% of the parcels
+      if (mailRun(S.C, code) && !sortOnly && !isSort(code)) { row.stops = autoStops(S.C, row.parcels); row.mail_stops = shift.mail_stops ?? ex?.mail_stops ?? null; }   // mail left is kept on the shift (photo count)   // stops aren't asked for: 80% of the parcels
       if (ex) { const { error } = await sb.from("eod").update(row).eq("shift_id", shiftId); if (error) return toast(error.message.includes("row-level") ? "Too late to edit this one — ask Jeremy" : error.message, "err"); close(); toast("EOD updated ✓", "ok"); await loadAll(); render(); return; }
       Object.assign(row, { shift_id: shiftId, driver: S.me.id }); if (shift.day !== n.date) row.sent_at = nzToIso(shift.day, g("finish").value);
       const { error } = await sb.from("eod").insert(row); if (error) return toast(error.message, "err");

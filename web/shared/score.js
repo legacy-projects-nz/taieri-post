@@ -191,12 +191,14 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
     : v("stops", est.stops ?? Math.round((est.parcels ?? typ) * (net === "tge" ? 0.65 : 0.8)));
   const trays = v("trays", 1), pickups = v("pickups", 0), pup = v("pickup_parcels", 0);
   const mail = mr && model.mail ? v("mail_stops", 0) : { v: 0, src: "" };
+  // mail left at the end of the day (EOD mail-left photo, estimated stops): those stops weren't delivered, so they come off the TDT
+  const mailLeft = mr && model.mail && sh.mail_left != null ? Math.min(+sh.mail_left, +mail.v || 0) : 0;
   let min = model.base; parts.push(["Base", `${model.base} min`, model.base]);
   const add = (lbl, calc, m) => { if (m) { parts.push([lbl, calc, Math.round(m)]); min += m; } };
   add("Parcels", `${parcels.v} × ${model.parcel}`, parcels.v * (model.parcel || 0));
   add("Stops", `${stops.v} × ${model.stop}`, stops.v * (model.stop || 0));
   if (model.tray) add("Trays", `${trays.v} × ${model.tray}`, trays.v * model.tray);
-  if (mr && model.mail) add("Mail stops", `${mail.v} × ${model.mail}`, mail.v * model.mail);
+  if (mr && model.mail) add("Mail stops", mailLeft ? `(${mail.v} − ${mailLeft} left) × ${model.mail}` : `${mail.v} × ${model.mail}`, (mail.v - mailLeft) * model.mail);
   if (model.pickup) add("Pick-up stops", `${pickups.v} × ${model.pickup}`, pickups.v * model.pickup);
   if (model.puparcel) add("Pick-up parcels", `${pup.v} × ${model.puparcel}`, pup.v * model.puparcel);
   // sorting
@@ -250,7 +252,7 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   const brkH = Array.isArray(ctx.brk) ? overlap(ctx.brk, tSt, endT) / 60 : (ctx.brk || 0); if (brkH && takenTrk) takenTrk = Math.max(0.01, takenTrk - brkH);   // owner's unpaid breaks
   const need = []; if (!eod) need.push("EOD"); else { if (start != null && endT != null && endT <= start) need.push("Times (SOD is after the EOD finish)"); for (const k of mr ? ["parcels"] : ["parcels", "stops"]) if ((model[k === "parcels" ? "parcel" : "stop"] || 0) > 0 && eod[k] == null && ov?.[k] == null) need.push(k === "parcels" ? (net === "tge" ? "Delivery total" : "Total parcels") : (net === "tge" ? "Jobs" : "Stops")); if (net === "tge" && !pre && sortMin == null) need.push("Sorting time"); if (!eod.finish_time) need.push("Finish time"); }
   let perf = null; if (taken && takenTrk !== 0) perf = C.rules.effMethod === "tdt" ? (2 - takenTrk / (allowed / 60)) * 100 : (allowed / 60) / takenTrk * 100; if (perf != null) perf = Math.max(0, Math.min(150, perf));
-  return { code, net, allowed, parts, sortTaken, sortIn, sortFrom: pre ? preSt : null, sortRun: pre?.shift.run || null, taken, takenTrk, brk: brkH, perf, need, est: g.length > 0, guess: g, trainDay: !!ov?.train_day, start, end: endT, model, evid: ev ? ev.scope : null, evN: ev?.n || 0, noEod: !eod, figs: { parcels, stops, trays, pickups, pup, mail, mail_stops: mail } };
+  return { code, net, allowed, parts, sortTaken, sortIn, sortFrom: pre ? preSt : null, sortRun: pre?.shift.run || null, taken, takenTrk, brk: brkH, perf, need, est: g.length > 0, guess: g, trainDay: !!ov?.train_day, start, end: endT, model, evid: ev ? ev.scope : null, evN: ev?.n || 0, noEod: !eod, figs: { parcels, stops, trays, pickups, pup, mail, mail_stops: mail, mail_left: mailLeft } };
 }
 /* Milton meet: the D>B driver sets the drop-off time each day (shifts.milton_at, copied onto that day's LAW shift).
    It replaces the timing rule's usual 10:30 for both runs, and puts the meet on the LAW driver's list even if not ticked. */
