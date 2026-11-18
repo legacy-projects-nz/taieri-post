@@ -32,7 +32,9 @@ Deno.serve(async (req) => {
   if (!shiftId || !paths.length) return json({ error: "shift and photos needed" }, 400);
   const { data: sh } = await sb.from("shifts").select("id, driver, run, day, mail_stops, mail_ai").eq("id", shiftId).maybeSingle();
   if (!sh) return json({ error: "shift not found" }, 404);
-  if (sh.driver !== me.id && me.role !== "owner" && !(me.perms || []).includes("roster")) return json({ error: "not your shift" }, 403);
+  if (sh.driver !== me.id && me.role !== "owner" && !(me.perms || []).includes("roster")) {   // mail tray helpers (settings rules.mailHelpers) may count other drivers' trays on their runs
+    const { data: rs } = await sb.from("settings").select("value").eq("key", "rules").maybeSingle();
+    if (left || !(rs?.value?.mailHelpers?.[me.id] || []).includes(sh.run)) return json({ error: "not your shift" }, 403); }
 
   const { data: sec } = await sb.from("app_secrets").select("key, value").in("key", ["anthropic_api_key", "anthropic_model"]);
   const S = Object.fromEntries((sec || []).map(r => [r.key, r.value]));

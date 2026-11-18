@@ -87,6 +87,9 @@ async function loadAllNow() {
   // Van use: people Jeremy picks (settings.van_use) see who's on which van for RAM, TUA and Flyer, today and the next few days
   const vu = vanUse(set);
   S.vanUse = vu ? await soft(sb.from("shifts").select("id,day,run,driver,trainee,van,start_at").in("run", vu.runs).gte("day", t).lte("day", addDays(t, 6)).order("day"), []) : null;
+  // Mail tray helpers (settings rules.mailHelpers, e.g. Liam: TUA, Flyer, RAM): today's shifts on those runs, to take their mail tray photos
+  const mh = S.C.rules.mailHelpers?.[m];
+  S.helpShifts = mh?.length ? (await soft(sb.from("shifts").select("*").in("run", mh).eq("day", t).neq("driver", m), [])).filter(s => s.driver) : [];
   S.extra = xt || [];
   S.sods = sods; S.eods = eods; S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || []; S.sodReqs = sr || []; S.hazards = hz || []; S.hzAckOn = Array.isArray(ha); S.hzAcks = Object.fromEntries((ha || []).map(a => [a.hazard_id, a.acked_at]));   // confirmations only once the table exists
   setEvidence(S.shifts, S.eods);
@@ -192,6 +195,7 @@ function renderNow() {
     ${part("SOD / EOD", () => quickBar(T, n))}
     ${dayDone ? part("Next shift", () => nextShiftCard(nextDay, n)) : part("Today", () => todayCard(T, nextDay, n))}
     ${part("Van use", () => vanUseCard())}
+    ${part("Mail trays · other runs", () => mailHelpCard())}
     ${part("Today's tasks", () => addonsCard(T, nextDay, n))}
     ${part("Roster changes", () => rosterChanges(n))}
     ${part("Alerts", () => alertsCard())}
@@ -953,7 +957,7 @@ async function shrinkPhoto(f, max = 2000) { try { const bm = await createImageBi
   const c = document.createElement("canvas"); c.width = Math.round(bm.width * k); c.height = Math.round(bm.height * k); c.getContext("2d").drawImage(bm, 0, 0, c.width, c.height);
   const b = await new Promise(r => c.toBlob(r, "image/jpeg", 0.85)); return b ? new File([b], "tray.jpg", { type: "image/jpeg" }) : f; } catch { return f; } }
 function mailTraySheet(shiftId) {
-  const sh = S.shifts.find(z => z.id === shiftId); if (!sh) return; const files = [];
+  const sh = S.shifts.find(z => z.id === shiftId) || (S.helpShifts || []).find(z => z.id === shiftId); if (!sh) return; const files = [];
   const slot = i => files[i] ? `<div style="position:relative"><img src="${files[i].url}" alt="tray photo ${i + 1}" style="width:96px;height:96px;object-fit:cover;border-radius:8px"><button type="button" class="btn ghost sm" data-mtdel="${i}" style="position:absolute;top:2px;right:2px;min-height:24px;padding:0 6px">×</button></div>`
     : i === files.length ? `<label class="btn ghost" style="width:96px;height:96px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-direction:column;font-size:13px">📷<span>Photo ${i + 1}</span><input type="file" accept="image/*" capture="environment" data-mtadd hidden></label>` : "";
   sheet(`<h3>Mail trays · ${esc(sh.run)}</h3><p class="hint">Take up to 6 photos so each slot shows. The slots with mail are counted across all your photos for your mail stops (overlapping photos are allowed for). Nil mail day? Close this and tap Nil.</p>
@@ -968,7 +972,7 @@ function mailTraySheet(shiftId) {
       bg.querySelectorAll("[data-mtdel]").forEach(b => b.onclick = () => { files.splice(+b.dataset.mtdel, 1); paths.length = 0; counted = false; draw(); }); };
     draw();
     const upload = async () => { if (paths.length === files.length) return true; paths.length = 0;
-      for (const [i, x] of files.entries()) { const f = await shrinkPhoto(x.f, 1600); const path = `${sh.driver || S.me.id}/${sh.day}/${sh.id}-${MAIL_KEY}-${Date.now()}-${i + 1}.${(f.name.split(".").pop() || "jpg").toLowerCase()}`;
+      for (const [i, x] of files.entries()) { const f = await shrinkPhoto(x.f, 1600); const path = `${S.me.id}/${sh.day}/${sh.id}-${MAIL_KEY}-${Date.now()}-${i + 1}.${(f.name.split(".").pop() || "jpg").toLowerCase()}`;
         const { error } = await sb.storage.from("runsheets").upload(path, f, { upsert: true, contentType: f.type || "image/jpeg" }); if (error) { toast(`Photo didn't upload: ${error.message}`, "err"); paths.length = 0; return false; } paths.push(path); }
       return true; };
     const ai = bg.querySelector("#mt-ai"), nOut = bg.querySelector("#mt-n");
@@ -984,6 +988,13 @@ function mailTraySheet(shiftId) {
     bg.querySelector("#mt-none").onclick = async e => { e.currentTarget.disabled = true; const { error } = await sb.rpc("mail_none", { p_shift: sh.id }); if (error) { e.currentTarget.disabled = false; return toast(error.message, "err"); }
       close(); toast("No mail today ✓", "ok"); await loadAll(); render(); };
   });
+}
+/* ---------- Mail trays for other runs (helpers like Liam, who sorts TUA, Flyer and RAM): Photos / Nil for each run today ---------- */
+function mailHelpCard() {
+  const L = (S.helpShifts || []).filter(s => S.rules.some(r => r.addon === MAIL_KEY && r.runs.includes(s.run) && r.days.includes(dow(s.day) + 1)));
+  if (!L.length || S.viewAs && !S.viewer?.isStaff) return "";
+  const row = s => { const done = s.done?.[MAIL_KEY]; return `<div class="tk tk1 ${done ? "ok" : "pend"}"><div class="tkt"><span class="t">${esc(s.run)} · ${esc(first(S.people[s.driver]?.name || ""))}</span>${done ? `<span class="tkw">✓ ${s.mail_stops ?? "?"} mail stops</span>` : ""}</div>${done ? "" : rsBtn(s.id, MAIL_KEY)}</div>`; };
+  return `<div class="card"><h2>Mail trays · other runs<span>${L.filter(s => s.done?.[MAIL_KEY]).length}/${L.length} done</span></h2><div class="tks">${L.map(row).join("")}</div></div>`;
 }
 /* ---------- Today's estimate on a mail run: TDT from the scanner total + mail stops, worked at 90% → time and likely finish ---------- */
 function runEstimate(x, D) {
