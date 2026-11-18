@@ -31,6 +31,8 @@ export function standingOn(a, run, day, rules) { if (!a?.always || !a.runs.inclu
 export const mailRun = (C, code) => (C?.rules?.mailRuns || MAIL_RUNS).includes(code);
 /** stops for a mail run: 80% of the parcel total (settings → rules.stopRatio) */
 export const autoStops = (C, parcels) => parcels == null || parcels === "" || isNaN(+parcels) ? null : Math.round(+parcels * (C?.rules?.stopRatio ?? 0.8));
+/** runs whose stops are never asked for but worked out from the parcel total (settings → rules.stopRatioByRun); TGE Surge is mostly residential, so 90% */
+export const runStopRatio = (C, code) => (C?.rules?.stopRatioByRun || { SG: 0.9 })[code] ?? null;
 export const LEG_RUNS = { TUA: ["outram", "pgg", "airport"], FLY: ["airport", "milton", "balclutha", "owaka"], DB: ["milton", "balclutha", "owaka"], RAM: ["airport"] };
 
 export function cfg(settings) { const o = {}; for (const k of Object.keys(DEF)) o[k] = { ...DEF[k], ...(settings[k] || {}) }; o.runCodes = settings.runCodes || {}; o.holidays = settings.holidays || {}; o.bands = settings.bands || {}; return o; }
@@ -187,7 +189,9 @@ export function effCalc(seg, eod, ov, C, runsBy, ctx = {}) {
   const typ = C.typical[code] || 50; const est = C.estFig[code] || {};
   const parcels = v("parcels", est.parcels ?? typ);
   // mail runs: stops are 80% of the parcel total (never asked for); a figure set by hand still wins
-  const stops = mr ? (ov?.stops != null ? { v: ov.stops, src: "set by hand" } : { v: autoStops(C, parcels.v) ?? 0, src: `${Math.round((C.rules.stopRatio ?? 0.8) * 100)}% of parcels` })
+  const sr = runStopRatio(C, code);
+  const stops = sr != null && !mr ? (ov?.stops != null ? { v: ov.stops, src: "set by hand" } : { v: Math.round((+parcels.v || 0) * sr), src: `${Math.round(sr * 100)}% of parcels` })
+    : mr ? (ov?.stops != null ? { v: ov.stops, src: "set by hand" } : { v: autoStops(C, parcels.v) ?? 0, src: `${Math.round((C.rules.stopRatio ?? 0.8) * 100)}% of parcels` })
     : v("stops", est.stops ?? Math.round((est.parcels ?? typ) * (net === "tge" ? 0.65 : 0.8)));
   const trays = v("trays", 1), pickups = v("pickups", 0), pup = v("pickup_parcels", 0);
   const mail = mr && model.mail ? v("mail_stops", 0) : { v: 0, src: "" };
