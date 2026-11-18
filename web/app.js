@@ -785,7 +785,7 @@ const noneBtn = (key, shiftId) => puAreaOf(key) === PU_MIN_AREA ? `<button class
 const puBtn = (key, shiftId) => puAreaOf(key) ? `<button class="btn sm accent" data-puopen="${esc(key)}" data-shift="${shiftId}" style="flex:0 0 auto;min-height:34px">Enter</button>` : "";
 /** Runsheet photo task: the Done button opens the camera; the photo is uploaded and the task ticked */
 const isPhotoTask = key => !!key && !!S.addons.find(a => a.id === key)?.photo;
-const rsBtn = (shiftId, key = "tw_twrunsheet") => key === MAIL_KEY ? `<button type="button" class="btn sm accent" style="flex:0 0 auto;min-height:34px" data-mailtrays="${shiftId}">📷 Photos</button>` : `<label class="btn sm accent" style="flex:0 0 auto;min-height:34px;cursor:pointer">📷 Photo<input type="file" accept="image/*" capture="environment" data-rsphoto="${shiftId}" data-rskey="${esc(key)}" hidden></label>`;
+const rsBtn = (shiftId, key = "tw_twrunsheet") => key === MAIL_KEY ? `<div class="row" style="flex:0 0 auto;gap:6px"><button type="button" class="btn sm accent" style="flex:0 0 auto;min-height:34px" data-mailtrays="${shiftId}">📷 Photos</button><button type="button" class="btn sm ghost" style="flex:0 0 auto;min-height:34px" data-mailnil="${shiftId}">Nil</button></div>` : `<label class="btn sm accent" style="flex:0 0 auto;min-height:34px;cursor:pointer">📷 Photo<input type="file" accept="image/*" capture="environment" data-rsphoto="${shiftId}" data-rskey="${esc(key)}" hidden></label>`;
 function logPickup(opt = {}) {
   const area = opt.area || PU_AREA[puToday(S.days[today()])] || "Lawrence";
   sheet(`<h3>Enter pick-ups${opt.area ? ` · ${esc(opt.area)}` : ""}</h3><form class="frm" id="pf"><label class="f">Date<input class="in" type="date" id="pu-day" value="${today()}" required></label>
@@ -881,6 +881,7 @@ function wire() {
     if (scan != null) { const { error: e3 } = await sb.rpc("set_run_figs", { p_shift: inp.dataset.rsphoto, p_scan: scan }); if (e3) toast(`Photo saved, but the scanner total didn't: ${e3.message}`, "err"); }
     toast(scan != null ? `Photo + scanner total (${scan}) saved ✓` : "Photo saved ✓", "ok"); await loadAll(); render(); });
   $$("[data-mailtrays]").forEach(b => b.onclick = e => { e.stopPropagation(); mailTraySheet(b.dataset.mailtrays); });
+  $$("[data-mailnil]").forEach(b => b.onclick = async e => { e.stopPropagation(); b.disabled = true; const { error } = await sb.rpc("mail_none", { p_shift: b.dataset.mailnil }); if (error) { b.disabled = false; return toast(error.message, "err"); } toast("Nil mail today ✓", "ok"); await loadAll(); render(); });
   $$("[data-pumin]").forEach(b => b.onclick = async e => { e.stopPropagation(); b.disabled = true; if (!(await puMinFee(today(), b.dataset.shift, b.dataset.pumin))) b.disabled = false; });
   $$("[data-puopen]").forEach(b => b.onclick = e => { e.stopPropagation(); logPickup({ area: puAreaOf(b.dataset.puopen), key: b.dataset.puopen, shift: b.dataset.shift }); });
   $$("[data-runmark]").forEach(b => b.onclick = async () => { b.disabled = true; const k = b.dataset.runmark;
