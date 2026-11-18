@@ -8,7 +8,7 @@
 // as { filename, b64 } instead of an email.
 import * as XLSX from "npm:xlsx@0.18.5";
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
-import { cfg, scoreFor, setEvidence, segTimes, addName, STATE_LABEL } from "https://cdn.jsdelivr.net/gh/legacy-projects-nz/taieri-post@dfa8bd353c94b3ab9b7ef0835ef5072c88516331/web/shared/score.js";
+import { cfg, scoreFor, setEvidence, segTimes, addName, STATE_LABEL } from "https://cdn.jsdelivr.net/gh/legacy-projects-nz/taieri-post@b574956fab3aa6c9ad4b6fd9d87df67e8c4d68c9/web/shared/score.js";
 import { nzNow as nz, addDays, dow, label } from "./core.js";
 
 const admin = () => createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
