@@ -4,7 +4,7 @@
 //   Done so far   – days up to today: real figures where the EOD / pick-ups are in, the model's estimate where not.
 //   Still to come – rostered days ahead use the roster (parcels/pick-ups estimated); days not rostered yet take each run's
 //                   average for that weekday from the last 4 rostered weeks. Public holidays earn nothing.
-// All figures excl GST, NZD.
+// All figures incl GST (15%), NZD; the excl GST total is shown under them. The target stays excl GST.
 import { esc, $, $$, today, addDays, dow, label } from "/shared/core.js";
 import { S, render, sheet, loadAll } from "/admin/admin.js";
 import { breakdown, isHoliday, model, GST, pickupsReady, loadPickupRange, STREAMS } from "/admin/money.js";
@@ -21,7 +21,7 @@ const SNAME = Object.fromEntries(STREAMS);
 // income per stream for one day: { stream: { fees, est, by: { run or source: $ } } }
 function dayIncome(d) {
   const out = {}; for (const r of breakdown(d)) { if (r.sort) continue; for (const l of r.feeLines) { if (!l.amt) continue; const k = l.src || "nzp"; const o = (out[k] ??= { fees: 0, est: false, by: {} });
-    o.fees += l.amt; o.est ||= !!l.est; const who = r.noRun ? r.run : runName(r.run); o.by[who] = (o.by[who] || 0) + l.amt; } }
+    const v = l.amt * (1 + GST); o.fees += v; o.est ||= !!l.est; const who = r.noRun ? r.run : runName(r.run); o.by[who] = (o.by[who] || 0) + v; } }
   return out;
 }
 // a weekday's usual income per run: average of the last 4 past rostered days on that weekday (not public holidays)
@@ -58,16 +58,16 @@ export function incomeTab() {
   const g = (v, est) => `<span class="${est ? "mn-est" : "mn-fin"}">${est ? "≈" : ""}${m0(v)}</span>`;
   return `<style>.mn-est{color:var(--ink3)}.mn-fin{color:var(--ok)}tr.mn-row{cursor:pointer}tr.mn-row:hover td{background:var(--soft)}</style>
   <div class="card"><div class="wkbar"><button class="ar" id="inc-prev" aria-label="Previous month">‹</button><b>${MON[+m.slice(5) - 1]} ${m.slice(0, 4)}</b><button class="ar" id="inc-next" aria-label="Next month">›</button>${m !== ym(t) ? `<button class="btn ghost sm" id="inc-now" style="flex:0 0 auto">This month</button>` : ""}</div>
-    <div class="tiles" style="margin-top:10px"><div class="tile"><div class="l">${past ? "Month" : "Month estimate"}</div><div class="v ${past && !X.tot.est ? "mn-fin" : "mn-est"}">${past && !X.tot.est ? "" : "≈"}${m0(month)}</div><div class="s">+ GST ${m0(month * GST)} = ${m0(month * (1 + GST))}</div></div>
+    <div class="tiles" style="margin-top:10px"><div class="tile"><div class="l">${past ? "Month" : "Month estimate"}</div><div class="v ${past && !X.tot.est ? "mn-fin" : "mn-est"}">${past && !X.tot.est ? "" : "≈"}${m0(month)}</div><div class="s">incl GST · excl GST ${m0(month / (1 + GST))}</div></div>
       ${future ? "" : `<div class="tile"><div class="l">Done so far</div><div class="v">${g(X.tot.done, X.tot.est)}</div><div class="s">${past ? "whole month" : `1–${+t.slice(8)} ${MON[+m.slice(5) - 1].slice(0, 3)}`}</div></div>`}
       ${past ? "" : `<div class="tile"><div class="l">Still to come</div><div class="v mn-est">≈${m0(X.tot.ahead)}</div><div class="s">${X.tplDays ? `${X.tplDays} day${X.tplDays === 1 ? "" : "s"} not rostered yet, from recent weeks` : "from the roster"}</div></div>`}
-      <div class="tile"><div class="l">Target</div><div class="v">${m0(M.target)}</div><div class="s ${month >= M.target ? "c-ok" : "c-crit"}">${month >= M.target ? "+" : "−"}${m0(Math.abs(month - M.target))}</div></div></div>
+      ${(ex => `<div class="tile"><div class="l">Target (excl GST)</div><div class="v">${m0(M.target)}</div><div class="s ${ex >= M.target ? "c-ok" : "c-crit"}">${ex >= M.target ? "+" : "−"}${m0(Math.abs(ex - M.target))} on ${m0(ex)} excl GST</div></div>`)(month / (1 + GST))}</div>
     ${X.list.length ? `<div class="scroll" style="margin-top:10px"><table class="dt"><tr><th>Income</th>${future ? "" : `<th align="right">So far</th>`}${past ? "" : `<th align="right">To come</th>`}<th align="right">Month</th><th align="right">Share</th></tr>
       ${X.list.map((r, i) => `<tr class="mn-row" data-incrow="${i}"><td><b>${esc(SNAME[r.k] || r.k)}</b></td>${future ? "" : `<td align="right">${g(r.done, r.doneEst)}</td>`}${past ? "" : `<td align="right">${r.ahead ? g(r.ahead, true) : `<span class="meta">—</span>`}</td>`}<td align="right"><b>${g(r.total, r.doneEst || r.ahead > 0)}</b></td><td align="right" class="meta">${month ? Math.round(r.total / month * 100) : 0}%</td></tr>`).join("")}
-      <tr><td><b>Total (excl GST)</b></td>${future ? "" : `<td align="right"><b>${g(X.tot.done, X.tot.est)}</b></td>`}${past ? "" : `<td align="right"><b>${g(X.tot.ahead, true)}</b></td>`}<td align="right"><b>${g(month, X.tot.est || X.tot.ahead > 0)}</b></td><td></td></tr>
-      <tr><td class="meta">Incl GST</td>${future ? "" : `<td align="right" class="meta">${m0(X.tot.done * (1 + GST))}</td>`}${past ? "" : `<td align="right" class="meta">${m0(X.tot.ahead * (1 + GST))}</td>`}<td align="right" class="meta">${m0(month * (1 + GST))}</td><td></td></tr></table></div>`
+      <tr><td><b>Total (incl GST)</b></td>${future ? "" : `<td align="right"><b>${g(X.tot.done, X.tot.est)}</b></td>`}${past ? "" : `<td align="right"><b>${g(X.tot.ahead, true)}</b></td>`}<td align="right"><b>${g(month, X.tot.est || X.tot.ahead > 0)}</b></td><td></td></tr>
+      <tr><td class="meta">Excl GST</td>${future ? "" : `<td align="right" class="meta">${m0(X.tot.done / (1 + GST))}</td>`}${past ? "" : `<td align="right" class="meta">${m0(X.tot.ahead / (1 + GST))}</td>`}<td align="right" class="meta">${m0(month / (1 + GST))}</td><td></td></tr></table></div>`
       : `<p class="empty">No income for this month yet.</p>`}
-    <p class="hint">Excl GST. Same rates as the Live board's Day budget (Income rates there). <span class="mn-fin">Green</span> = final (EOD and pick-ups in), <span class="mn-est">≈ grey</span> = estimate. Days not rostered yet use each run's average for that weekday from the last 4 weeks${X.hol ? ` · ${X.hol} public holiday${X.hol === 1 ? "" : "s"} this month earn nothing` : ""}. NZ Post parcels come from the nightly NZ Post email (the driver's EOD count until it lands). Tap a line for its runs and days.</p></div>`;
+    <p class="hint">Incl GST (15%). Same rates as the Live board's Day budget (Income rates there). <span class="mn-fin">Green</span> = final (EOD and pick-ups in), <span class="mn-est">≈ grey</span> = estimate. Days not rostered yet use each run's average for that weekday from the last 4 weeks${X.hol ? ` · ${X.hol} public holiday${X.hol === 1 ? "" : "s"} this month earn nothing` : ""}. NZ Post parcels come from the nightly NZ Post email (the driver's EOD count until it lands). Tap a line for its runs and days.</p></div>`;
 }
 
 export function wireIncome() {
@@ -77,9 +77,9 @@ export function wireIncome() {
   $("#inc-next")?.addEventListener("click", () => go(shiftMonth(m, 1)));
   $("#inc-now")?.addEventListener("click", () => go(null));
   $$("[data-incrow]").forEach(tr => tr.onclick = () => { const r = cur?.list[+tr.dataset.incrow]; if (!r) return;
-    sheet(`<style>.mn-est{color:var(--ink3)}.mn-fin{color:var(--ok)}</style><h3>${esc(SNAME[r.k] || r.k)}</h3><p class="meta">${MON[+cur.m.slice(5) - 1]} ${cur.m.slice(0, 4)} · excl GST</p>
+    sheet(`<style>.mn-est{color:var(--ink3)}.mn-fin{color:var(--ok)}</style><h3>${esc(SNAME[r.k] || r.k)}</h3><p class="meta">${MON[+cur.m.slice(5) - 1]} ${cur.m.slice(0, 4)} · incl GST</p>
       <table class="dt" style="width:100%;margin-bottom:10px"><tr><th>Run / source</th><th align="right">Month</th></tr>${Object.entries(r.by).sort((a, b) => b[1] - a[1]).map(([b, x]) => `<tr><td>${esc(b)}</td><td align="right">≈$${Math.round(x).toLocaleString()}</td></tr>`).join("")}</table>
       <table class="dt" style="width:100%"><tr><th>Day</th><th>Basis</th><th align="right">Income</th></tr>${r.lines.map(l => `<tr><td>${label(l.d)}</td><td class="meta">${esc(l.how)}</td><td align="right"><span class="${l.est ? "mn-est" : "mn-fin"}">${l.est ? "≈" : ""}$${l.fees.toFixed(2)}</span></td></tr>`).join("")}
-      <tr><td colspan="2"><b>Month</b></td><td align="right"><b>${m0(r.total)}</b></td></tr></table>
+      <tr><td colspan="2"><b>Month (incl GST)</b></td><td align="right"><b>${m0(r.total)}</b></td></tr><tr><td colspan="2" class="meta">Excl GST</td><td align="right" class="meta">${m0(r.total / (1 + GST))}</td></tr></table>
       <p class="hint">Per-day detail (parcels, rates, pick-ups) is on the Live board: pick the day and tap the run in Day budget.</p>`); });
 }
