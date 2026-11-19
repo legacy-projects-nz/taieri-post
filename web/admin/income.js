@@ -4,7 +4,7 @@
 //   Done so far   – days up to today: real figures where the EOD / pick-ups are in, the model's estimate where not.
 //   Still to come – rostered days ahead use the roster (parcels/pick-ups estimated); days not rostered yet take each run's
 //                   average for that weekday from the last 4 rostered weeks. Public holidays earn nothing.
-// All figures incl GST (15%), NZD; the excl GST total is shown under them. The target stays excl GST.
+// All figures incl GST (15%), NZD; the excl GST total is shown under them.
 import { esc, $, $$, today, addDays, dow, label } from "/shared/core.js";
 import { S, render, sheet, loadAll } from "/admin/admin.js";
 import { breakdown, isHoliday, model, GST, pickupsReady, loadPickupRange, STREAMS } from "/admin/money.js";
@@ -53,7 +53,7 @@ export function incomeTab() {
   const m = S.incMonth || ym(today()); const days = monthDays(m);
   const from = addDays(days[0], -63) < addDays(today(), -63) ? addDays(days[0], -63) : addDays(today(), -63), to = days[days.length - 1];
   if (!pickupsReady(from, to)) { loadPickupRange(from, to); return `<div class="card"><p class="meta">Loading ${MON[+m.slice(5) - 1]}'s income…</p></div>`; }
-  const X = cur = monthModel(m); const M = model(); const month = X.tot.done + X.tot.ahead; const t = today();
+  const X = cur = monthModel(m); const month = X.tot.done + X.tot.ahead; const t = today();
   const past = m < ym(t), future = m > ym(t);
   const g = (v, est) => `<span class="${est ? "mn-est" : "mn-fin"}">${est ? "≈" : ""}${m0(v)}</span>`;
   return `<style>.mn-est{color:var(--ink3)}.mn-fin{color:var(--ok)}tr.mn-row{cursor:pointer}tr.mn-row:hover td{background:var(--soft)}</style>
@@ -61,7 +61,7 @@ export function incomeTab() {
     <div class="tiles" style="margin-top:10px"><div class="tile"><div class="l">${past ? "Month" : "Month estimate"}</div><div class="v ${past && !X.tot.est ? "mn-fin" : "mn-est"}">${past && !X.tot.est ? "" : "≈"}${m0(month)}</div><div class="s">incl GST · excl GST ${m0(month / (1 + GST))}</div></div>
       ${future ? "" : `<div class="tile"><div class="l">Done so far</div><div class="v">${g(X.tot.done, X.tot.est)}</div><div class="s">${past ? "whole month" : `1–${+t.slice(8)} ${MON[+m.slice(5) - 1].slice(0, 3)}`}</div></div>`}
       ${past ? "" : `<div class="tile"><div class="l">Still to come</div><div class="v mn-est">≈${m0(X.tot.ahead)}</div><div class="s">${X.tplDays ? `${X.tplDays} day${X.tplDays === 1 ? "" : "s"} not rostered yet, from recent weeks` : "from the roster"}</div></div>`}
-      ${(ex => `<div class="tile"><div class="l">Target (excl GST)</div><div class="v">${m0(M.target)}</div><div class="s ${ex >= M.target ? "c-ok" : "c-crit"}">${ex >= M.target ? "+" : "−"}${m0(Math.abs(ex - M.target))} on ${m0(ex)} excl GST</div></div>`)(month / (1 + GST))}</div>
+</div>
     ${X.list.length ? `<div class="scroll" style="margin-top:10px"><table class="dt"><tr><th>Income</th>${future ? "" : `<th align="right">So far</th>`}${past ? "" : `<th align="right">To come</th>`}<th align="right">Month</th><th align="right">Share</th></tr>
       ${X.list.map((r, i) => `<tr class="mn-row" data-incrow="${i}"><td><b>${esc(SNAME[r.k] || r.k)}</b></td>${future ? "" : `<td align="right">${g(r.done, r.doneEst)}</td>`}${past ? "" : `<td align="right">${r.ahead ? g(r.ahead, true) : `<span class="meta">—</span>`}</td>`}<td align="right"><b>${g(r.total, r.doneEst || r.ahead > 0)}</b></td><td align="right" class="meta">${month ? Math.round(r.total / month * 100) : 0}%</td></tr>`).join("")}
       <tr><td><b>Total (incl GST)</b></td>${future ? "" : `<td align="right"><b>${g(X.tot.done, X.tot.est)}</b></td>`}${past ? "" : `<td align="right"><b>${g(X.tot.ahead, true)}</b></td>`}<td align="right"><b>${g(month, X.tot.est || X.tot.ahead > 0)}</b></td><td></td></tr>
