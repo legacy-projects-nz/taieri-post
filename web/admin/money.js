@@ -60,21 +60,38 @@ const perTxt = g => g.per === "month" ? `$${(+g.amt).toLocaleString()}/month ÷ 
 const periodWeeks = m => m.per === "month" ? WK_PER_MONTH : m.per === "week" ? 1 : 1 / (m.days || 5);
 function groupRate(g, m) {
   const G = GROUPS[g]; const pct = pctOf(m); if (!m.amt || pct >= 100) return null;
-  const E = evidence() || {}; const per = G.runs.map(c => ({ c, a: E[c]?.all?.parcels, n: E[c]?.all?.n || 0 })).filter(x => x.a != null);
+  const E = evidence() || {}; let per = G.runs.map(c => ({ c, a: E[c]?.all?.parcels, n: E[c]?.all?.n || 0, fw: feedWeek(c) })).filter(x => x.a != null || x.fw != null);
+  if (!G.alt && per.some(x => x.fw != null)) per = per.filter(x => x.fw != null);   // a run with no NZ Post code (WH, Saturday combined) carries its mates' coded parcels, already in their email totals
   if (!per.length) return { rate: 0, none: true };
   let wk, how;
-  if (G.alt) { const n = per.reduce((a, x) => a + x.n, 0); const avg = per.reduce((a, x) => a + x.a * x.n, 0) / n; wk = avg * (m.days || 1); how = `${avg.toFixed(1)} parcels a day × ${m.days} day${m.days > 1 ? "s" : ""}`; }
-  else { wk = per.reduce((a, x) => a + x.a * Math.min(RUN_DAYS[x.c] ?? m.days ?? 5, m.days ?? 5), 0); how = per.map(x => `${x.c} ${x.a.toFixed(1)} × ${Math.min(RUN_DAYS[x.c] ?? m.days ?? 5, m.days ?? 5)}d`).join(" + ") + " a week"; }
+  if (G.alt) { const pe = per.filter(x => x.a != null); if (!pe.length) return { rate: 0, none: true }; const n = pe.reduce((a, x) => a + x.n, 0); const avg = pe.reduce((a, x) => a + x.a * x.n, 0) / n; wk = avg * (m.days || 1); how = `${avg.toFixed(1)} parcels a day × ${m.days} day${m.days > 1 ? "s" : ""}`; }
+  else { const dd = x => Math.min(RUN_DAYS[x.c] ?? m.days ?? 5, m.days ?? 5);   // NZ Post email parcels a week where the run has them (last 4 weeks), otherwise the EOD average × days
+    wk = per.reduce((a, x) => a + (x.fw ?? x.a * dd(x)), 0); how = per.map(x => x.fw != null ? `${x.c} ${Math.round(x.fw)}/wk (NZ Post email, last 4 weeks)` : `${x.c} ${x.a.toFixed(1)} × ${dd(x)}d`).join(" + ") + " a week"; }
   const parcels = wk * periodWeeks(m); const share = m.amt * (100 - pct) / 100; if (!parcels) return { rate: 0, none: true };
   const baseTxt = m.base != null && m.base !== "" ? `$${(+m.amt).toLocaleString()} − $${(+m.base).toLocaleString()} base` : `${100 - pct}% of $${(+m.amt).toLocaleString()}`;
-  return { rate: share / parcels, parcels, share, how: `$${Math.round(share).toLocaleString()} (${baseTxt}/${m.per}) ÷ ${Math.round(parcels).toLocaleString()} parcels a ${m.per} (${how}, 8-week average)` };
+  return { rate: share / parcels, parcels, share, how: `$${Math.round(share).toLocaleString()} (${baseTxt}/${m.per}) ÷ ${Math.round(parcels).toLocaleString()} parcels a ${m.per} (${how})` };
 }
 const groupOf = code => Object.keys(GROUPS).find(g => GROUPS[g].runs.includes(code));
 // the per-parcel rate for a run: a figure typed in the editor wins, otherwise the one worked out from its group's total
 function rateFor(code, M) { const typed = +(M.parcel[code] || 0); if (typed) return { rate: typed, how: "typed in" };
   const g = groupOf(code); if (!g) return { rate: 0 }; const R = groupRate(g, M.groups[g]); return R && R.rate ? { rate: R.rate, how: R.how } : { rate: 0 }; }
 // parcels delivered on a run: the fixed figure if one was set on the EOD, otherwise what the driver posted; null = EOD not in yet
-const parcelsOf = shift => { if (!shift) return null; const ov = S.ovs.find(o => o.shift_id === shift.id); if (ov?.parcels != null) return +ov.parcels; const e = S.eodBy?.[shift.id]; return e?.parcels != null ? +e.parcels : null; };
+// NZ Post nightly email (nzpost_feed): parcels per run code a day. For NZ Post runs it is the parcel count income goes by (Nov 2026).
+const feedCode = run => S.C?.runCodes?.[run] || S.set?.runCodes?.[run] || null;
+const feedRow = (run, d) => { const fc = feedCode(run); return fc ? (S.feed || []).find(f => f.day === d && f.feed_code === fc) || null : null; };
+// usual NZ Post email parcels for a run on a weekday: same weekday over the last 8 weeks (2+ days), otherwise every day
+function feedAvg(run, d) { const fc = feedCode(run); if (!fc) return null; const lo = addDays(d, -56); const rows = (S.feed || []).filter(f => f.feed_code === fc && f.day < d && f.day >= lo); if (!rows.length) return null;
+  const wd = rows.filter(f => dow(f.day) === dow(d)); const use = wd.length >= 2 ? wd : rows; return { parcels: use.reduce((a, f) => a + (+f.items || 0), 0) / use.length, scope: wd.length >= 2 ? "weekday" : "all" }; }
+// NZ Post email parcels a week for a run (last 28 days ÷ 4), for the group per-parcel rate
+function feedWeek(run) { const fc = feedCode(run); if (!fc) return null; const t = today(), lo = addDays(t, -28); const rows = (S.feed || []).filter(f => f.feed_code === fc && f.day < t && f.day >= lo); return rows.length >= 5 ? rows.reduce((a, f) => a + (+f.items || 0), 0) / 4 : null; }
+// parcels delivered on a run: a fixed figure set on the EOD, then the NZ Post nightly email, then what the driver posted; null = not in yet
+const parcelsSrc = shift => { if (!shift) return null; const ov = S.ovs.find(o => o.shift_id === shift.id); if (ov?.parcels != null) return { n: +ov.parcels, src: "fixed" }; const f = feedRow(shift.run, shift.day); if (f) return { n: +f.items || 0, src: "NZ Post email" }; const e = S.eodBy?.[shift.id]; return e?.parcels != null ? { n: +e.parcels, src: "EOD" } : null; };
+const parcelsOf = shift => parcelsSrc(shift)?.n ?? null;
+// income streams for the Income tab
+export const STREAMS = [["nzp", "NZ Post (runs, Lawrence & food bag)"], ["tge", "TGE"], ["tgeSouth", "TGE South pick-ups"], ["rural", "Rural pick-ups · PH & NZC"], ["owaka", "Owaka pick-ups · PH & NZC"], ["dbx", "D>B other (Lawrence & Balclutha pick-ups, Owaka Medical, Telford)"]];
+const TGE_RUNS = ["S", "T", "SG"];
+const runStream = run => TGE_RUNS.includes(run) ? "tge" : "nzp";
+const areaStream = (area, tge) => tge ? (area === "South" ? "tgeSouth" : "tge") : area === "Rural" ? "rural" : /^Owaka/.test(area) ? "owaka" : area === "South" ? "tgeSouth" : "dbx";
 const tgeSouth = d => +(S.set?.tge_south?.[d] || 0);
 
 // NZ public holidays (observed dates) for a year, with Otago Anniversary for Dunedin. Matariki is set by law year by year.
@@ -148,17 +165,22 @@ function breakdown(d) {
   }
   // a run's figures are final once its EOD is in (or the day has gone), otherwise estimated
   const past = d < today(); const done = r => past || !!S.eodBy?.[r.shift?.id];
-  const add = (r, amt, line, est) => { r.fees += amt; if (est) r.feeEst = true; r.feeLines.push({ amt, line, est }); };
+  const add = (r, amt, line, est, src) => { r.fees += amt; if (est) r.feeEst = true; r.feeLines.push({ amt, line, est, src: src || runStream(r.run) }); };
   for (const r of rows) { if (r.sort) continue;
     for (const [g, G] of Object.entries(GROUPS)) { if (!G.runs.includes(r.run)) continue; const m = M.groups[g]; const pct = groupRate(g, m)?.none ? 100 : pctOf(m); const day = perDay(m) * pct / 100; if (!day) continue;
       const onRows = rows.filter(y => !y.sort && G.runs.includes(y.run)); const on = onRows.length; const sp = G.split; const wsum = sp ? onRows.reduce((a, y) => a + (sp[y.run] ?? 0), 0) : 0; const share = sp && wsum ? (sp[r.run] ?? 0) / wsum : 1 / on;
       add(r, day * share, `${g} base · ${m.base != null && m.base !== "" ? `$${(+m.base).toLocaleString()} of` : `${pct}% of`} ${perTxt(m)}${on > 1 ? (sp && wsum ? ` · ${Math.round(share * 100)}% to ${r.run}` : ` ÷ ${on} runs on`) : ""}`, !done(r)); }
     const hr = +(M.hourly[r.run] || 0); if (hr && r.hrs) add(r, r.hrs * hr, `${r.hrs.toFixed(2)} h × $${hr.toFixed(2)}/h`, !done(r) || r.hrsEst);
-    const RT = rateFor(r.run, M); const rate = RT.rate; if (rate) { const n = parcelsOf(r.shift); const rt = `$${rate.toFixed(2)}`; const why = RT.how && RT.how !== "typed in" ? ` · rate = ${RT.how}` : "";
-      const incl = ""; if (n != null) add(r, n * rate, `${n} parcels${incl} × ${rt}${why}`, false);
-      else { const ev = evidenceFor(r.run, d); if (ev?.parcels != null) add(r, Math.round(ev.parcels) * rate, `${Math.round(ev.parcels)} parcels${incl} × ${rt} (average ${ev.scope === "weekday" ? "for this weekday" : "of recent days"} until the EOD is in)${why}`, true); else if (EST_PARCELS[r.run]) add(r, EST_PARCELS[r.run] * rate, `${EST_PARCELS[r.run]} parcels${incl} × ${rt} (estimate until the EOD is in)`, true); else { r.feeEst = true; r.feeLines.push({ amt: 0, line: `parcels × ${rt} · no history yet`, est: true }); } } } }
+    const RT = rateFor(r.run, M); const g_ = groupOf(r.run); const mateFeed = !feedCode(r.run) && g_ && GROUPS[g_].runs.some(c => c !== r.run && feedRow(c, d));   // e.g. WH: its parcels are in PCB/RSB's NZ Post email counts, added below
+    const rate = mateFeed ? 0 : RT.rate; if (rate) { const P = parcelsSrc(r.shift); const n = P?.n ?? null; const rt = `$${rate.toFixed(2)}`; const why = RT.how && RT.how !== "typed in" ? ` · rate = ${RT.how}` : "";
+      const incl = P && P.src !== "EOD" ? ` (${P.src})` : ""; if (n != null) add(r, n * rate, `${n} parcels${incl} × ${rt}${why}`, false);
+      else { const ev = feedAvg(r.run, d) || evidenceFor(r.run, d); if (ev?.parcels != null) add(r, Math.round(ev.parcels) * rate, `${Math.round(ev.parcels)} parcels${incl} × ${rt} (average ${ev.scope === "weekday" ? "for this weekday" : "of recent days"} until the EOD is in)${why}`, true); else if (EST_PARCELS[r.run]) add(r, EST_PARCELS[r.run] * rate, `${EST_PARCELS[r.run]} parcels${incl} × ${rt} (estimate until the EOD is in)`, true); else { r.feeEst = true; r.feeLines.push({ amt: 0, line: `parcels × ${rt} · no history yet`, est: true }); } } } }
+  // NZ Post email parcels for a run that wasn't rostered that day (e.g. Flyer parcels taken out on TUA): paid on the group-mate that was on
+  for (const G of Object.values(GROUPS)) for (const c of G.runs) { if (byRun[c]) continue; const f = feedRow(c, d); if (!f || !+f.items) continue;
+    const host = G.runs.map(x => byRun[x]).find(Boolean); const RT = rateFor(c, M); if (!host || !RT.rate) continue;
+    add(host, +f.items * RT.rate, `${f.items} ${c} parcels (NZ Post email · ${c} not rostered, delivered on ${host.run}) × $${RT.rate.toFixed(2)}`, false, "nzp"); }
   // rural TGE parcels delivered on Outram / TUA / Flyer, from the EOD: a flat rate each
-  for (const r of rows) { if (r.sort || !TGE_RURAL_RUNS.includes(r.run)) continue; const n = +(S.eodBy?.[r.shift?.id]?.extra?.tge_rural || 0); if (n) add(r, n * M.tgeRural, `${n} rural TGE parcel${n === 1 ? "" : "s"} × $${(+M.tgeRural).toFixed(2)}`, false); }
+  for (const r of rows) { if (r.sort || !TGE_RURAL_RUNS.includes(r.run)) continue; const n = +(S.eodBy?.[r.shift?.id]?.extra?.tge_rural || 0); if (n) add(r, n * M.tgeRural, `${n} rural TGE parcel${n === 1 ? "" : "s"} × $${(+M.tgeRural).toFixed(2)}`, false, "tge"); }
   const feeRow = (area) => { for (const code of AREA_RUNS[area] || []) if (byRun[code]) return byRun[code];
     const k = "__" + area; if (!byRun[k]) { byRun[k] = { run: `${area} pick-ups`, driver: null, staff: 0, fees: 0, feeEst: false, feeLines: [], noRun: true }; rows.push(byRun[k]); } return byRun[k]; };
   const runOn = area => (AREA_RUNS[area] || []).map(c => byRun[c]).find(Boolean);
@@ -167,18 +189,18 @@ function breakdown(d) {
   const isT = p => p.customer === "TGE"; const sm = p => isT(p) ? M.tgeSmall : M.small, lg = p => isT(p) ? M.tgeLarge : M.large;
   const feeOf = p => (p.small || 0) * sm(p) + (p.large || 0) * lg(p) + (+p.min_fee || 0);
   const pu = {}; for (const p of cache[d]?.rows || []) { const k = p.area + "|" + (isT(p) ? "TGE" : "NZC/PH"); const a = (pu[k] ??= { area: p.area, tge: isT(p), small: 0, large: 0, min: 0 }); a.small += p.small || 0; a.large += p.large || 0; a.min += +p.min_fee || 0; }
-  for (const a of Object.values(pu)) { const S_ = a.tge ? M.tgeSmall : M.small, L_ = a.tge ? M.tgeLarge : M.large; const fee = a.small * S_ + a.large * L_ + a.min; if (fee) add(feeRow(a.area), fee, `${a.area} ${a.tge ? "TGE " : ""}pick-ups: ${a.small} small × $${S_}${a.large ? ` + ${a.large} large × $${L_}` : ""}${a.min ? ` + split fee $${a.min.toFixed(2)}` : ""}`, false); }
+  for (const a of Object.values(pu)) { const S_ = a.tge ? M.tgeSmall : M.small, L_ = a.tge ? M.tgeLarge : M.large; const fee = a.small * S_ + a.large * L_ + a.min; if (fee) add(feeRow(a.area), fee, `${a.area} ${a.tge ? "TGE " : ""}pick-ups: ${a.small} small × $${S_}${a.large ? ` + ${a.large} large × $${L_}` : ""}${a.min ? ` + split fee $${a.min.toFixed(2)}` : ""}`, false, areaStream(a.area, a.tge)); }
   const areasLogged = new Set(Object.values(pu).map(a => a.area));
   if (cache[d] && !cache[d].loading) for (const area of ["Rural", "Lawrence", "Owaka Rural", "Owaka Town", "South"]) { if (areasLogged.has(area)) continue; const r = runOn(area); if (!r || done(r)) continue;
     const by = {}; for (const p of cache[d].hist) { if (p.area !== area) continue; by[p.day] = (by[p.day] || 0) + feeOf(p); }
-    const e = avgDays(by, d); if (e) add(r, e, `${area} pick-ups (average of recent days)`, true); }
+    const e = avgDays(by, d); if (e) add(r, e, `${area} pick-ups (average of recent days)`, true, areaStream(area)); }
   // D>B fixed extras: Owaka Medical $10 a weekday, Telford mail $5 every day it runs, and the Balclutha depot $5 minimum on a day with no Balclutha pick-ups
   const db = byRun.DB; if (db) { const wd = dow(d) <= 4;   // Mon–Fri
-    if (wd) add(db, M.owakaMed, `Owaka Medical · $${M.owakaMed} a weekday`, false);
-    add(db, M.telford, `Telford mail · $${M.telford} a day`, false);
-    if (!areasLogged.has("Balclutha")) { if (done(db)) add(db, M.balMin, `Balclutha depot minimum · no pick-ups logged`, false); else if (!db.feeLines.some(l => /^Balclutha pick-ups/.test(l.line))) add(db, M.balMin, `Balclutha depot minimum (until pick-ups are logged)`, true); } }
+    if (wd) add(db, M.owakaMed, `Owaka Medical · $${M.owakaMed} a weekday`, false, "dbx");
+    add(db, M.telford, `Telford mail · $${M.telford} a day`, false, "dbx");
+    if (!areasLogged.has("Balclutha")) { if (done(db)) add(db, M.balMin, `Balclutha depot minimum · no pick-ups logged`, false, "dbx"); else if (!db.feeLines.some(l => /^Balclutha pick-ups/.test(l.line))) add(db, M.balMin, `Balclutha depot minimum (until pick-ups are logged)`, true, "dbx"); } }
   // TGE South typed-in total: only used on a day with no South TGE pick-ups logged (they're priced above instead)
-  const tge = tgeSouth(d); if (tge && !pu["South|TGE"]) add(feeRow("South"), tge, `TGE South total (typed in)`, false);
+  const tge = tgeSouth(d); if (tge && !pu["South|TGE"]) add(feeRow("South"), tge, `TGE South total (typed in)`, false, "tgeSouth");
   rows.sort((a, b) => (a.noRun ? 1 : 0) - (b.noRun ? 1 : 0) || (a.sort ? 1 : 0) - (b.sort ? 1 : 0) || (a.st ?? 0) - (b.st ?? 0));
   return rows;
 }

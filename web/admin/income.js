@@ -1,11 +1,13 @@
-// Income tab (owner only): this month's income run by run, from the same model as the Live board's Day budget (money.js).
+// Income tab (owner only): this month's income by income stream — NZ Post (runs, Lawrence & food bag), TGE, TGE South pick-ups,
+// Rural and Owaka PH & NZC pick-ups, D>B other — from the same model as the Live board's Day budget (money.js).
+// NZ Post parcels come from the nightly NZ Post email; pick-ups from the Pick-ups log.
 //   Done so far   – days up to today: real figures where the EOD / pick-ups are in, the model's estimate where not.
 //   Still to come – rostered days ahead use the roster (parcels/pick-ups estimated); days not rostered yet take each run's
 //                   average for that weekday from the last 4 rostered weeks. Public holidays earn nothing.
 // All figures excl GST, NZD.
 import { esc, $, $$, today, addDays, dow, label } from "/shared/core.js";
 import { S, render, sheet, loadAll } from "/admin/admin.js";
-import { breakdown, isHoliday, model, GST, pickupsReady, loadPickupRange } from "/admin/money.js";
+import { breakdown, isHoliday, model, GST, pickupsReady, loadPickupRange, STREAMS } from "/admin/money.js";
 
 const MON = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const m0 = n => (n < 0 ? "−$" : "$") + Math.round(Math.abs(n)).toLocaleString();
@@ -15,9 +17,11 @@ const shiftMonth = (m, n) => { let [y, mo] = m.split("-").map(Number); mo += n; 
 const runName = k => { const r = S.runsBy[k]; return r ? (r.label && r.label !== k ? `${k} · ${r.label}` : r.name && r.name !== k ? `${k} · ${r.name}` : k) : k; };
 const hasRoster = d => S.shifts.some(s => s.day === d);
 
-// income per run for one day: { run: { fees, est } } (sort rows and pay-only rows left out)
+const SNAME = Object.fromEntries(STREAMS);
+// income per stream for one day: { stream: { fees, est, by: { run or source: $ } } }
 function dayIncome(d) {
-  const out = {}; for (const r of breakdown(d)) { if (r.sort || !r.fees) continue; const o = (out[r.run] ??= { fees: 0, est: false }); o.fees += r.fees; o.est ||= !!r.feeEst; }
+  const out = {}; for (const r of breakdown(d)) { if (r.sort) continue; for (const l of r.feeLines) { if (!l.amt) continue; const k = l.src || "nzp"; const o = (out[k] ??= { fees: 0, est: false, by: {} });
+    o.fees += l.amt; o.est ||= !!l.est; const who = r.noRun ? r.run : runName(r.run); o.by[who] = (o.by[who] || 0) + l.amt; } }
   return out;
 }
 // a weekday's usual income per run: average of the last 4 past rostered days on that weekday (not public holidays)
@@ -25,20 +29,20 @@ const tplCache = {};
 function weekdayTemplate(w) {
   if (tplCache[w]) return tplCache[w]; const t = today(); const days = [];
   for (let d = addDays(t, -1); days.length < 4 && d >= addDays(t, -63); d = addDays(d, -1)) if (dow(d) === w && !isHoliday(d) && hasRoster(d)) days.push(d);
-  const sum = {}; for (const d of days) for (const [k, v] of Object.entries(dayIncome(d))) sum[k] = (sum[k] || 0) + v.fees;
-  return (tplCache[w] = { days, per: Object.fromEntries(Object.entries(sum).map(([k, v]) => [k, v / (days.length || 1)])) });
+  const sum = {}, by = {}; for (const d of days) for (const [k, v] of Object.entries(dayIncome(d))) { sum[k] = (sum[k] || 0) + v.fees; for (const [b, x] of Object.entries(v.by)) { (by[k] ??= {})[b] = (by[k][b] || 0) + x; } }
+  const n = days.length || 1; return (tplCache[w] = { days, per: Object.fromEntries(Object.entries(sum).map(([k, v]) => [k, { fees: v / n, by: Object.fromEntries(Object.entries(by[k] || {}).map(([b, x]) => [b, x / n])) }])) });
 }
 
 function monthModel(m) {
   const t = today(); const days = monthDays(m); for (const k in tplCache) delete tplCache[k];
-  const runs = {}; const R = k => (runs[k] ??= { done: 0, doneEst: false, ahead: 0, lines: [] });
+  const runs = {}; const R = k => (runs[k] ??= { done: 0, doneEst: false, ahead: 0, lines: [], by: {} }); const addBy = (r, by) => { for (const [b, x] of Object.entries(by)) r.by[b] = (r.by[b] || 0) + x; };
   let hol = 0, tplDays = 0;
   for (const d of days) {
     if (isHoliday(d)) { hol++; continue; }
-    if (hasRoster(d)) { for (const [k, v] of Object.entries(dayIncome(d))) { const r = R(k); if (d <= t) { r.done += v.fees; r.doneEst ||= v.est; } else r.ahead += v.fees; r.lines.push({ d, fees: v.fees, est: v.est || d > t, how: d > t ? "rostered" : v.est ? "estimate" : "final" }); } }
-    else if (d > t) { const T = weekdayTemplate(dow(d)); if (!T.days.length) continue; tplDays++; for (const [k, v] of Object.entries(T.per)) { const r = R(k); r.ahead += v; r.lines.push({ d, fees: v, est: true, how: `not rostered yet · average of ${T.days.length} past ${label(d).slice(0, 3)}s` }); } }
+    if (hasRoster(d)) { for (const [k, v] of Object.entries(dayIncome(d))) { const r = R(k); if (d <= t) { r.done += v.fees; r.doneEst ||= v.est; } else r.ahead += v.fees; addBy(r, v.by); r.lines.push({ d, fees: v.fees, est: v.est || d > t, how: d > t ? "rostered" : v.est ? "estimate" : "final" }); } }
+    else if (d > t) { const T = weekdayTemplate(dow(d)); if (!T.days.length) continue; tplDays++; for (const [k, v] of Object.entries(T.per)) { const r = R(k); r.ahead += v.fees; addBy(r, v.by); r.lines.push({ d, fees: v.fees, est: true, how: `not rostered yet · average of ${T.days.length} past ${label(d).slice(0, 3)}s` }); } }
   }
-  const list = Object.entries(runs).map(([k, r]) => ({ k, ...r, total: r.done + r.ahead })).sort((a, b) => b.total - a.total);
+  const order = STREAMS.map(([k]) => k); const list = Object.entries(runs).map(([k, r]) => ({ k, ...r, total: r.done + r.ahead })).sort((a, b) => order.indexOf(a.k) - order.indexOf(b.k));
   const tot = list.reduce((a, r) => ({ done: a.done + r.done, ahead: a.ahead + r.ahead, est: a.est || r.doneEst }), { done: 0, ahead: 0, est: false });
   return { m, days, list, tot, hol, tplDays };
 }
@@ -58,12 +62,12 @@ export function incomeTab() {
       ${future ? "" : `<div class="tile"><div class="l">Done so far</div><div class="v">${g(X.tot.done, X.tot.est)}</div><div class="s">${past ? "whole month" : `1–${+t.slice(8)} ${MON[+m.slice(5) - 1].slice(0, 3)}`}</div></div>`}
       ${past ? "" : `<div class="tile"><div class="l">Still to come</div><div class="v mn-est">≈${m0(X.tot.ahead)}</div><div class="s">${X.tplDays ? `${X.tplDays} day${X.tplDays === 1 ? "" : "s"} not rostered yet, from recent weeks` : "from the roster"}</div></div>`}
       <div class="tile"><div class="l">Target</div><div class="v">${m0(M.target)}</div><div class="s ${month >= M.target ? "c-ok" : "c-crit"}">${month >= M.target ? "+" : "−"}${m0(Math.abs(month - M.target))}</div></div></div>
-    ${X.list.length ? `<div class="scroll" style="margin-top:10px"><table class="dt"><tr><th>Run</th>${future ? "" : `<th align="right">So far</th>`}${past ? "" : `<th align="right">To come</th>`}<th align="right">Month</th><th align="right">Share</th></tr>
-      ${X.list.map((r, i) => `<tr class="mn-row" data-incrow="${i}"><td><b>${esc(runName(r.k))}</b></td>${future ? "" : `<td align="right">${g(r.done, r.doneEst)}</td>`}${past ? "" : `<td align="right">${r.ahead ? g(r.ahead, true) : `<span class="meta">—</span>`}</td>`}<td align="right"><b>${g(r.total, r.doneEst || r.ahead > 0)}</b></td><td align="right" class="meta">${month ? Math.round(r.total / month * 100) : 0}%</td></tr>`).join("")}
+    ${X.list.length ? `<div class="scroll" style="margin-top:10px"><table class="dt"><tr><th>Income</th>${future ? "" : `<th align="right">So far</th>`}${past ? "" : `<th align="right">To come</th>`}<th align="right">Month</th><th align="right">Share</th></tr>
+      ${X.list.map((r, i) => `<tr class="mn-row" data-incrow="${i}"><td><b>${esc(SNAME[r.k] || r.k)}</b></td>${future ? "" : `<td align="right">${g(r.done, r.doneEst)}</td>`}${past ? "" : `<td align="right">${r.ahead ? g(r.ahead, true) : `<span class="meta">—</span>`}</td>`}<td align="right"><b>${g(r.total, r.doneEst || r.ahead > 0)}</b></td><td align="right" class="meta">${month ? Math.round(r.total / month * 100) : 0}%</td></tr>`).join("")}
       <tr><td><b>Total (excl GST)</b></td>${future ? "" : `<td align="right"><b>${g(X.tot.done, X.tot.est)}</b></td>`}${past ? "" : `<td align="right"><b>${g(X.tot.ahead, true)}</b></td>`}<td align="right"><b>${g(month, X.tot.est || X.tot.ahead > 0)}</b></td><td></td></tr>
       <tr><td class="meta">Incl GST</td>${future ? "" : `<td align="right" class="meta">${m0(X.tot.done * (1 + GST))}</td>`}${past ? "" : `<td align="right" class="meta">${m0(X.tot.ahead * (1 + GST))}</td>`}<td align="right" class="meta">${m0(month * (1 + GST))}</td><td></td></tr></table></div>`
       : `<p class="empty">No income for this month yet.</p>`}
-    <p class="hint">Excl GST. Same rates as the Live board's Day budget (Income rates there). <span class="mn-fin">Green</span> = final (EOD and pick-ups in), <span class="mn-est">≈ grey</span> = estimate. Days not rostered yet use each run's average for that weekday from the last 4 weeks${X.hol ? ` · ${X.hol} public holiday${X.hol === 1 ? "" : "s"} this month earn nothing` : ""}. Tap a run for its days.</p></div>`;
+    <p class="hint">Excl GST. Same rates as the Live board's Day budget (Income rates there). <span class="mn-fin">Green</span> = final (EOD and pick-ups in), <span class="mn-est">≈ grey</span> = estimate. Days not rostered yet use each run's average for that weekday from the last 4 weeks${X.hol ? ` · ${X.hol} public holiday${X.hol === 1 ? "" : "s"} this month earn nothing` : ""}. NZ Post parcels come from the nightly NZ Post email (the driver's EOD count until it lands). Tap a line for its runs and days.</p></div>`;
 }
 
 export function wireIncome() {
@@ -73,7 +77,8 @@ export function wireIncome() {
   $("#inc-next")?.addEventListener("click", () => go(shiftMonth(m, 1)));
   $("#inc-now")?.addEventListener("click", () => go(null));
   $$("[data-incrow]").forEach(tr => tr.onclick = () => { const r = cur?.list[+tr.dataset.incrow]; if (!r) return;
-    sheet(`<style>.mn-est{color:var(--ink3)}.mn-fin{color:var(--ok)}</style><h3>${esc(runName(r.k))}</h3><p class="meta">${MON[+cur.m.slice(5) - 1]} ${cur.m.slice(0, 4)} · excl GST</p>
+    sheet(`<style>.mn-est{color:var(--ink3)}.mn-fin{color:var(--ok)}</style><h3>${esc(SNAME[r.k] || r.k)}</h3><p class="meta">${MON[+cur.m.slice(5) - 1]} ${cur.m.slice(0, 4)} · excl GST</p>
+      <table class="dt" style="width:100%;margin-bottom:10px"><tr><th>Run / source</th><th align="right">Month</th></tr>${Object.entries(r.by).sort((a, b) => b[1] - a[1]).map(([b, x]) => `<tr><td>${esc(b)}</td><td align="right">≈$${Math.round(x).toLocaleString()}</td></tr>`).join("")}</table>
       <table class="dt" style="width:100%"><tr><th>Day</th><th>Basis</th><th align="right">Income</th></tr>${r.lines.map(l => `<tr><td>${label(l.d)}</td><td class="meta">${esc(l.how)}</td><td align="right"><span class="${l.est ? "mn-est" : "mn-fin"}">${l.est ? "≈" : ""}$${l.fees.toFixed(2)}</span></td></tr>`).join("")}
       <tr><td colspan="2"><b>Month</b></td><td align="right"><b>${m0(r.total)}</b></td></tr></table>
       <p class="hint">Per-day detail (parcels, rates, pick-ups) is on the Live board: pick the day and tap the run in Day budget.</p>`); });
