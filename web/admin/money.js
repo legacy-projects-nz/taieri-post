@@ -88,9 +88,10 @@ function feedWeek(run) { const fc = feedCode(run); if (!fc) return null; const t
 const parcelsSrc = shift => { if (!shift) return null; const ov = S.ovs.find(o => o.shift_id === shift.id); if (ov?.parcels != null) return { n: +ov.parcels, src: "fixed" }; const f = feedRow(shift.run, shift.day); if (f) return { n: +f.items || 0, src: "NZ Post email" }; const e = S.eodBy?.[shift.id]; return e?.parcels != null ? { n: +e.parcels, src: "EOD" } : null; };
 const parcelsOf = shift => parcelsSrc(shift)?.n ?? null;
 // income streams for the Income tab
-export const STREAMS = [["nzp", "NZ Post (runs, Lawrence & food bag)"], ["tge", "TGE"], ["tgeSouth", "TGE South pick-ups"], ["rural", "Rural pick-ups · PH & NZC"], ["owaka", "Owaka pick-ups · PH & NZC"], ["dbx", "D>B other (Lawrence & Balclutha pick-ups, Owaka Medical, Telford)"]];
+export const STREAMS = [["wh", "NZ Post · West Harbour (RSB & PCB)"], ["nzp", "NZ Post · TP (TUA, Flyer, Outram, Lawrence & food bag)"], ["tge", "TGE"], ["tgeSouth", "TGE South pick-ups"], ["rural", "Rural pick-ups · PH & NZC"], ["owaka", "Owaka pick-ups · PH & NZC"], ["dbx", "D>B other (Lawrence & Balclutha pick-ups, Owaka Medical, Telford)"]];
 const TGE_RUNS = ["S", "T", "SG"];
-const runStream = run => TGE_RUNS.includes(run) ? "tge" : "nzp";
+const WH_RUNS = ["PCB", "RSB", "WH"];
+const runStream = run => TGE_RUNS.includes(run) ? "tge" : WH_RUNS.includes(run) ? "wh" : "nzp";
 const areaStream = (area, tge) => tge ? (area === "South" ? "tgeSouth" : "tge") : area === "Rural" ? "rural" : /^Owaka/.test(area) ? "owaka" : area === "South" ? "tgeSouth" : "dbx";
 const tgeSouth = d => +(S.set?.tge_south?.[d] || 0);
 
@@ -178,7 +179,7 @@ function breakdown(d) {
   // NZ Post email parcels for a run that wasn't rostered that day (e.g. Flyer parcels taken out on TUA): paid on the group-mate that was on
   for (const G of Object.values(GROUPS)) for (const c of G.runs) { if (byRun[c]) continue; const f = feedRow(c, d); if (!f || !+f.items) continue;
     const host = G.runs.map(x => byRun[x]).find(Boolean); const RT = rateFor(c, M); if (!host || !RT.rate) continue;
-    add(host, +f.items * RT.rate, `${f.items} ${c} parcels (NZ Post email · ${c} not rostered, delivered on ${host.run}) × $${RT.rate.toFixed(2)}`, false, "nzp"); }
+    add(host, +f.items * RT.rate, `${f.items} ${c} parcels (NZ Post email · ${c} not rostered, delivered on ${host.run}) × $${RT.rate.toFixed(2)}`, false, runStream(c)); }
   // rural TGE parcels delivered on Outram / TUA / Flyer, from the EOD: a flat rate each
   for (const r of rows) { if (r.sort || !TGE_RURAL_RUNS.includes(r.run)) continue; const n = +(S.eodBy?.[r.shift?.id]?.extra?.tge_rural || 0); if (n) add(r, n * M.tgeRural, `${n} rural TGE parcel${n === 1 ? "" : "s"} × $${(+M.tgeRural).toFixed(2)}`, false, "tge"); }
   const feeRow = (area) => { for (const code of AREA_RUNS[area] || []) if (byRun[code]) return byRun[code];
