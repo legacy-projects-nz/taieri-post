@@ -88,11 +88,12 @@ function feedWeek(run) { const fc = feedCode(run); if (!fc) return null; const t
 const parcelsSrc = shift => { if (!shift) return null; const ov = S.ovs.find(o => o.shift_id === shift.id); if (ov?.parcels != null) return { n: +ov.parcels, src: "fixed" }; const f = feedRow(shift.run, shift.day); if (f) return { n: +f.items || 0, src: "NZ Post email" }; const e = S.eodBy?.[shift.id]; return e?.parcels != null ? { n: +e.parcels, src: "EOD" } : null; };
 const parcelsOf = shift => parcelsSrc(shift)?.n ?? null;
 // income streams for the Income tab
-export const STREAMS = [["wh", "NZ Post · West Harbour (RSB & PCB)"], ["nzp", "NZ Post · TP (TUA, Flyer, Outram, Lawrence & food bag)"], ["tge", "TGE"], ["tgeSouth", "TGE South pick-ups"], ["rural", "Rural pick-ups · PH & NZC"], ["owaka", "Owaka pick-ups · PH & NZC"], ["dbx", "D>B other (Lawrence & Balclutha pick-ups, Owaka Medical, Telford)"]];
+export const STREAMS = [["wh", "NZ Post · West Harbour (RSB & PCB)"], ["nzp", "NZ Post · TP (TUA, Flyer, Outram, Lawrence & food bag)"], ["tge", "TGE"], ["tgeSouth", "TGE South pick-ups"], ["ruralPH", "Rural pick-ups · Post Haste"], ["ruralNZC", "Rural pick-ups · NZ Couriers"], ["owakaPH", "Owaka pick-ups · Post Haste"], ["owakaNZC", "Owaka pick-ups · NZ Couriers"], ["dbx", "D>B other (Lawrence & Balclutha pick-ups, Owaka Medical, Telford)"]];
 const TGE_RUNS = ["S", "T", "SG"];
 const WH_RUNS = ["PCB", "RSB", "WH"];
 const runStream = run => TGE_RUNS.includes(run) ? "tge" : WH_RUNS.includes(run) ? "wh" : "nzp";
-const areaStream = (area, tge) => tge ? (area === "South" ? "tgeSouth" : "tge") : area === "Rural" ? "rural" : /^Owaka/.test(area) ? "owaka" : area === "South" ? "tgeSouth" : "dbx";
+const areaStream = (area, tge, cu) => { if (tge) return area === "South" ? "tgeSouth" : "tge"; const c = cu === "PH" ? "PH" : "NZC";
+  return area === "Rural" ? "rural" + c : /^Owaka/.test(area) ? "owaka" + c : area === "South" ? "tgeSouth" : "dbx"; };
 const tgeSouth = d => +(S.set?.tge_south?.[d] || 0);
 
 // NZ public holidays (observed dates) for a year, with Otago Anniversary for Dunedin. Matariki is set by law year by year.
@@ -189,12 +190,13 @@ function breakdown(d) {
   // pick-ups: NZC + Post Haste at $small / $large, TGE at $tgeSmall / $tgeLarge. Logged → final; none logged yet on a run that's on → estimate.
   const isT = p => p.customer === "TGE"; const sm = p => isT(p) ? M.tgeSmall : M.small, lg = p => isT(p) ? M.tgeLarge : M.large;
   const feeOf = p => (p.small || 0) * sm(p) + (p.large || 0) * lg(p) + (+p.min_fee || 0);
-  const pu = {}; for (const p of cache[d]?.rows || []) { const k = p.area + "|" + (isT(p) ? "TGE" : "NZC/PH"); const a = (pu[k] ??= { area: p.area, tge: isT(p), small: 0, large: 0, min: 0 }); a.small += p.small || 0; a.large += p.large || 0; a.min += +p.min_fee || 0; }
-  for (const a of Object.values(pu)) { const S_ = a.tge ? M.tgeSmall : M.small, L_ = a.tge ? M.tgeLarge : M.large; const fee = a.small * S_ + a.large * L_ + a.min; if (fee) add(feeRow(a.area), fee, `${a.area} ${a.tge ? "TGE " : ""}pick-ups: ${a.small} small × $${S_}${a.large ? ` + ${a.large} large × $${L_}` : ""}${a.min ? ` + split fee $${a.min.toFixed(2)}` : ""}`, false, areaStream(a.area, a.tge)); }
+  const pu = {}; for (const p of cache[d]?.rows || []) { const cu = isT(p) ? "TGE" : p.customer || "NZC"; const k = p.area + "|" + cu; const a = (pu[k] ??= { area: p.area, cu, tge: isT(p), small: 0, large: 0, min: 0 }); a.small += p.small || 0; a.large += p.large || 0; a.min += +p.min_fee || 0; }
+  for (const a of Object.values(pu)) { const S_ = a.tge ? M.tgeSmall : M.small, L_ = a.tge ? M.tgeLarge : M.large; const fee = a.small * S_ + a.large * L_ + a.min; if (fee) add(feeRow(a.area), fee, `${a.area} ${a.cu} pick-ups: ${a.small} small × $${S_}${a.large ? ` + ${a.large} large × $${L_}` : ""}${a.min ? ` + split fee $${a.min.toFixed(2)}` : ""}`, false, areaStream(a.area, a.tge, a.cu)); }
   const areasLogged = new Set(Object.values(pu).map(a => a.area));
   if (cache[d] && !cache[d].loading) for (const area of ["Rural", "Lawrence", "Owaka Rural", "Owaka Town", "South"]) { if (areasLogged.has(area)) continue; const r = runOn(area); if (!r || done(r)) continue;
-    const by = {}; for (const p of cache[d].hist) { if (p.area !== area) continue; by[p.day] = (by[p.day] || 0) + feeOf(p); }
-    const e = avgDays(by, d); if (e) add(r, e, `${area} pick-ups (average of recent days)`, true, areaStream(area)); }
+    const byCu = {}; for (const p of cache[d].hist) { if (p.area !== area) continue; const cu = isT(p) ? "TGE" : p.customer || "NZC"; const by = (byCu[cu] ??= {}); by[p.day] = (by[p.day] || 0) + feeOf(p); }
+    const days = new Set(Object.values(byCu).flatMap(b => Object.keys(b)));   // average over every day the area had pick-ups, so a customer missing on a day counts as $0
+    for (const [cu, by] of Object.entries(byCu)) { for (const k of days) by[k] ??= 0; const e = avgDays(by, d); if (e) add(r, e, `${area} ${cu} pick-ups (average of recent days)`, true, areaStream(area, cu === "TGE", cu)); } }
   // D>B fixed extras: Owaka Medical $10 a weekday, Telford mail $5 every day it runs, and the Balclutha depot $5 minimum on a day with no Balclutha pick-ups
   const db = byRun.DB; if (db) { const wd = dow(d) <= 4;   // Mon–Fri
     if (wd) add(db, M.owakaMed, `Owaka Medical · $${M.owakaMed} a weekday`, false, "dbx");
