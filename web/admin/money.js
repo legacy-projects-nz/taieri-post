@@ -88,12 +88,12 @@ function feedWeek(run) { const fc = feedCode(run); if (!fc) return null; const t
 const parcelsSrc = shift => { if (!shift) return null; const ov = S.ovs.find(o => o.shift_id === shift.id); if (ov?.parcels != null) return { n: +ov.parcels, src: "fixed" }; const f = feedRow(shift.run, shift.day); if (f) return { n: +f.items || 0, src: "NZ Post email" }; const e = S.eodBy?.[shift.id]; return e?.parcels != null ? { n: +e.parcels, src: "EOD" } : null; };
 const parcelsOf = shift => parcelsSrc(shift)?.n ?? null;
 // income streams for the Income tab
-export const STREAMS = [["wh", "NZ Post West Harbour", "RSB, PCB and the Saturday combined run. Full amount, before Gina's share."], ["nzp", "NZ Post TP", "TUA, Flyer, Outram, Lawrence and food bag."], ["tge", "TGE", "TGE S, T and Surge, plus rural TGE parcels on Outram, TUA and Flyer."], ["tgeSouth", "TGE South", "South TGE pick-ups."], ["ruralPH", "Rural PH", "Rural Post Haste pick-ups."], ["ruralNZC", "Rural NZC", "Rural NZ Couriers pick-ups."], ["owakaPH", "Owaka PH", "Owaka Post Haste pick-ups."], ["owakaNZC", "Owaka NZC", "Owaka NZ Couriers pick-ups, Owaka Medical and Telford mail."], ["dbx", "D>B Other", "Lawrence and Balclutha pick-ups, and the Balclutha minimum."]];
+export const STREAMS = [["wh", "NZ Post West Harbour", "RSB, PCB and the Saturday combined run. Full amount, before Gina's share."], ["nzp", "NZ Post TP", "TUA, Flyer, Outram, Lawrence and food bag."], ["tge", "TGE", "TGE S, T and Surge, plus rural TGE parcels on Outram, TUA and Flyer."], ["tgeSouth", "TGE South", "South TGE pick-ups."], ["ruralPH", "Rural PH", "Rural Post Haste pick-ups."], ["ruralNZC", "Rural NZC", "Rural NZ Couriers pick-ups."], ["owakaPH", "Owaka PH", "Owaka and Balclutha Post Haste pick-ups."], ["owakaNZC", "Owaka NZC", "Owaka and Balclutha NZ Couriers pick-ups, Owaka Medical, Telford mail and the Balclutha minimum."], ["lawPH", "Lawrence PH", "Lawrence Post Haste pick-ups."], ["lawNZC", "Lawrence NZC", "Lawrence NZ Couriers pick-ups."]];
 const TGE_RUNS = ["S", "T", "SG"];
 const WH_RUNS = ["PCB", "RSB", "WH"];
 const runStream = run => TGE_RUNS.includes(run) ? "tge" : WH_RUNS.includes(run) ? "wh" : "nzp";
 const areaStream = (area, tge, cu) => { if (tge) return area === "South" ? "tgeSouth" : "tge"; const c = cu === "PH" ? "PH" : "NZC";
-  return area === "Rural" ? "rural" + c : /^Owaka/.test(area) ? "owaka" + c : area === "South" ? "tgeSouth" : "dbx"; };
+  return area === "Rural" ? "rural" + c : area === "Lawrence" ? "law" + c : area === "South" ? "tgeSouth" : "owaka" + c; };   // Owaka areas and Balclutha → Owaka
 const tgeSouth = d => +(S.set?.tge_south?.[d] || 0);
 
 // NZ public holidays (observed dates) for a year, with Otago Anniversary for Dunedin. Matariki is set by law year by year.
@@ -201,7 +201,7 @@ function breakdown(d) {
   const db = byRun.DB; if (db) { const wd = dow(d) <= 4;   // Mon–Fri
     if (wd) add(db, M.owakaMed, `Owaka Medical · $${M.owakaMed} a weekday`, false, "owakaNZC");
     add(db, M.telford, `Telford mail · $${M.telford} a day`, false, "owakaNZC");
-    if (!areasLogged.has("Balclutha")) { if (done(db)) add(db, M.balMin, `Balclutha depot minimum · no pick-ups logged`, false, "dbx"); else if (!db.feeLines.some(l => /^Balclutha pick-ups/.test(l.line))) add(db, M.balMin, `Balclutha depot minimum (until pick-ups are logged)`, true, "dbx"); } }
+    if (!areasLogged.has("Balclutha")) { if (done(db)) add(db, M.balMin, `Balclutha depot minimum · no pick-ups logged`, false, "owakaNZC"); else if (!db.feeLines.some(l => /^Balclutha pick-ups/.test(l.line))) add(db, M.balMin, `Balclutha depot minimum (until pick-ups are logged)`, true, "owakaNZC"); } }
   // TGE South typed-in total: only used on a day with no South TGE pick-ups logged (they're priced above instead)
   const tge = tgeSouth(d); if (tge && !pu["South|TGE"]) add(feeRow("South"), tge, `TGE South total (typed in)`, false, "tgeSouth");
   rows.sort((a, b) => (a.noRun ? 1 : 0) - (b.noRun ? 1 : 0) || (a.sort ? 1 : 0) - (b.sort ? 1 : 0) || (a.st ?? 0) - (b.st ?? 0));
