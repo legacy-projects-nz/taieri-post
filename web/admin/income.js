@@ -17,7 +17,10 @@ const shiftMonth = (m, n) => { let [y, mo] = m.split("-").map(Number); mo += n; 
 const runName = k => { const r = S.runsBy[k]; return r ? (r.label && r.label !== k ? `${k} · ${r.label}` : r.name && r.name !== k ? `${k} · ${r.name}` : k) : k; };
 const hasRoster = d => S.shifts.some(s => s.day === d);
 
-const SNAME = Object.fromEntries(STREAMS);
+const SNAME = Object.fromEntries(STREAMS.map(([k, t]) => [k, t])); const SINFO = Object.fromEntries(STREAMS.map(([k, , i]) => [k, i]));
+const IB_CSS = `.ib{width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:var(--soft);color:var(--accent);font:700 12px var(--fd);line-height:1;padding:0;margin-left:6px;cursor:pointer;vertical-align:middle}`;
+const ib = k => `<button type="button" class="ib" data-incinfo="${k}" aria-label="More info">i</button>`;
+const INFO = { _: ["Monthly Estimate", "Incl GST (15%). Actual figures to date plus an estimate for the rest of the month. Days not rostered yet use each run's average for that weekday from the last 4 weeks. Public holidays earn nothing. NZ Post parcels come from the nightly NZ Post email (the driver's EOD count until it lands). Tap a line for its runs and days."] };
 // income per stream for one day: { stream: { fees, est, by: { run or source: $ } } }
 function dayIncome(d) {
   const out = {}; for (const r of breakdown(d)) { if (r.sort) continue; for (const l of r.feeLines) { if (!l.amt) continue; const k = l.src || "nzp"; const o = (out[k] ??= { fees: 0, est: false, by: {} });
@@ -56,14 +59,14 @@ export function incomeTab() {
   const X = cur = monthModel(m); const month = X.tot.done + X.tot.ahead; const t = today();
   const past = m < ym(t), future = m > ym(t);
   const g = (v, est) => `<span class="${est ? "mn-est" : "mn-fin"}">${est ? "≈" : ""}${m0(v)}</span>`;
-  return `<style>.mn-est{color:var(--ink3)}.mn-fin{color:var(--ok)}tr.mn-row{cursor:pointer}tr.mn-row:hover td{background:var(--soft)}</style>
+  return `<style>${IB_CSS}.mn-est{color:var(--ink3)}.mn-fin{color:var(--ok)}tr.mn-row{cursor:pointer}tr.mn-row:hover td{background:var(--soft)}</style>
   <div class="card"><div class="wkbar"><button class="ar" id="inc-prev" aria-label="Previous month">‹</button><b>${MON[+m.slice(5) - 1]} ${m.slice(0, 4)}</b><button class="ar" id="inc-next" aria-label="Next month">›</button>${m !== ym(t) ? `<button class="btn ghost sm" id="inc-now" style="flex:0 0 auto">This month</button>` : ""}</div>
-    <div class="tiles" style="margin-top:10px"><div class="tile"><div class="l">Monthly Estimate</div><div class="v ${past && !X.tot.est ? "mn-fin" : "mn-est"}">${past && !X.tot.est ? "" : "≈"}${m0(month)}</div><div class="s">incl GST</div></div></div>
+    <div class="tiles" style="margin-top:10px"><div class="tile"><div class="l">Monthly Estimate${ib("_")}</div><div class="v ${past && !X.tot.est ? "mn-fin" : "mn-est"}">${past && !X.tot.est ? "" : "≈"}${m0(month)}</div></div></div>
     ${X.list.length ? `<div class="scroll" style="margin-top:10px"><table class="dt"><tr><th>Income</th><th align="right">Monthly Estimate</th></tr>
-      ${X.list.map((r, i) => `<tr class="mn-row" data-incrow="${i}"><td><b>${esc(SNAME[r.k] || r.k)}</b></td><td align="right"><b>${g(r.total, r.doneEst || r.ahead > 0)}</b></td></tr>`).join("")}
+      ${X.list.map((r, i) => `<tr class="mn-row" data-incrow="${i}"><td><b>${esc(SNAME[r.k] || r.k)}</b>${SINFO[r.k] ? ib(r.k) : ""}</td><td align="right"><b>${g(r.total, r.doneEst || r.ahead > 0)}</b></td></tr>`).join("")}
       <tr><td><b>Total</b></td><td align="right"><b>${g(month, X.tot.est || X.tot.ahead > 0)}</b></td></tr></table></div>`
       : `<p class="empty">No income for this month yet.</p>`}
-    <p class="hint">Incl GST (15%). Actual figures to date plus an estimate for the rest of the month. Days not rostered yet use each run's average for that weekday from the last 4 weeks${X.hol ? ` · ${X.hol} public holiday${X.hol === 1 ? "" : "s"} this month earn nothing` : ""}. NZ Post parcels come from the nightly NZ Post email (the driver's EOD count until it lands). Tap a line for its runs and days.</p></div>`;
+  </div>`;
 }
 
 export function wireIncome() {
@@ -72,10 +75,11 @@ export function wireIncome() {
   $("#inc-prev")?.addEventListener("click", () => go(shiftMonth(m, -1)));
   $("#inc-next")?.addEventListener("click", () => go(shiftMonth(m, 1)));
   $("#inc-now")?.addEventListener("click", () => go(null));
+  $$("[data-incinfo]").forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.incinfo; const [t, body] = k === "_" ? INFO._ : [SNAME[k], SINFO[k]]; sheet(`<h3>${esc(t)}</h3><p>${esc(body)}</p>`); });
   $$("[data-incrow]").forEach(tr => tr.onclick = () => { const r = cur?.list[+tr.dataset.incrow]; if (!r) return;
-    sheet(`<style>.mn-est{color:var(--ink3)}.mn-fin{color:var(--ok)}</style><h3>${esc(SNAME[r.k] || r.k)}</h3><p class="meta">${MON[+cur.m.slice(5) - 1]} ${cur.m.slice(0, 4)} · incl GST</p>
+    sheet(`<style>.mn-est{color:var(--ink3)}.mn-fin{color:var(--ok)}</style><h3>${esc(SNAME[r.k] || r.k)}</h3><p class="meta">${MON[+cur.m.slice(5) - 1]} ${cur.m.slice(0, 4)}</p>
       <table class="dt" style="width:100%;margin-bottom:10px"><tr><th>Run / source</th><th align="right">Month</th></tr>${Object.entries(r.by).sort((a, b) => b[1] - a[1]).map(([b, x]) => `<tr><td>${esc(b)}</td><td align="right">≈$${Math.round(x).toLocaleString()}</td></tr>`).join("")}</table>
       <table class="dt" style="width:100%"><tr><th>Day</th><th>Basis</th><th align="right">Income</th></tr>${r.lines.map(l => `<tr><td>${label(l.d)}</td><td class="meta">${esc(l.how)}</td><td align="right"><span class="${l.est ? "mn-est" : "mn-fin"}">${l.est ? "≈" : ""}$${l.fees.toFixed(2)}</span></td></tr>`).join("")}
       <tr><td colspan="2"><b>Month (incl GST)</b></td><td align="right"><b>${m0(r.total)}</b></td></tr><tr><td colspan="2" class="meta">Excl GST</td><td align="right" class="meta">${m0(r.total / (1 + GST))}</td></tr></table>
-      <p class="hint">Per-day detail (parcels, rates, pick-ups) is on the Live board: pick the day and tap the run in Day budget.</p>`); });
+`); });
 }
