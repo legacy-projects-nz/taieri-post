@@ -98,7 +98,20 @@ Deno.serve(async (req) => {
     const { data: m } = await sb.from("messages").select("*").eq("id", body.message_id).maybeSingle(); if (!m) return json({ error: "no message" }, 404);
     if (m.sender !== caller.id && !can("roster")) return json({ error: "no" }, 403);
     const { data: rs } = await sb.from("message_recipients").select("person").eq("message_id", m.id);
-    const n = await push(sb, sec, set, (rs || []).map(r => r.person), { title: "Milton meet time changed · please confirm", body: m.body.slice(0, 160), url: "/", tag: "milton-" + m.id });
+    const n = await push(sb, sec, set, (rs || []).map(r => r.person), { title: "Meet-up set · please confirm", body: m.body.slice(0, 160), url: "/", tag: "milton-" + m.id });
+    return json({ ok: true, pushed: n });
+  }
+  if (body.type === "law_pickups") {   // D>B driver entered the morning's Lawrence pick-ups: push the totals to that day's Lawrence driver(s)
+    const day = String(body.day || nz().date);
+    const { data: sh } = await sb.from("shifts").select("run,driver").eq("day", day).in("run", ["DB", "LAW"]);
+    const db = (sh || []).filter((x: any) => x.run === "DB" && x.driver).map((x: any) => x.driver);
+    if (!db.includes(caller.id) && !can("roster")) return json({ error: "no" }, 403);
+    const law = [...new Set((sh || []).filter((x: any) => x.run === "LAW" && x.driver && x.driver !== caller.id).map((x: any) => x.driver))];
+    if (!law.length || !db.length) return json({ ok: true, pushed: 0 });
+    const { data: rows } = await sb.from("pickups").select("customer,small,large").eq("day", day).eq("area", "Lawrence").is("min_fee", null).in("customer", ["PH", "NZC"]).in("driver", db);
+    const tot = (c?: string) => (rows || []).filter((r: any) => !c || r.customer === c).reduce((a: any, r: any) => ({ s: a.s + (r.small || 0), l: a.l + (r.large || 0) }), { s: 0, l: 0 });
+    const t = tot(), ph = tot("PH"), nzc = tot("NZC");
+    const n = await push(sb, sec, set, law as string[], { title: `📦 Lawrence pick-ups: ${t.s} small · ${t.l} big`, body: `Post Haste ${ph.s} small · ${ph.l} big · NZ Couriers ${nzc.s} small · ${nzc.l} big`, url: "/", tag: "lawpu-" + day });
     return json({ ok: true, pushed: n });
   }
   if (body.type === "entry") {

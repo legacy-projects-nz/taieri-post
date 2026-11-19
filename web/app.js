@@ -27,6 +27,7 @@ S.open = {};   // which folded boxes are open this visit (not saved: everything 
   window.addEventListener("hashchange", async () => { try { await viewAs(); await loadAll(); render(); } catch (e) { reportError("viewas", e); toast("Couldn't load that just now. Try again.", "err"); } });
   live(["extra_time", "shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons", "breaks", "van_washes", "sod_requests", "hazards", "hazard_acks"], debounce(async () => { await loadAll(); render(true); }, 400), "drv");
   setInterval(() => render(true), 60000);
+  setInterval(async () => { if (document.hidden || !S.shifts?.some(z => z.day === today() && z.run === "LAW")) return; const r = await sb.rpc("law_pickups", { p_day: today() }); if (!r.error) { S.lawPu = r.data || []; render(true); } }, 120000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadAll().then(() => render(true)); } });
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => { });
   // pick up new versions without a manual refresh: compare app.js's ETag now and whenever the app comes back to the front
@@ -91,6 +92,7 @@ async function loadAllNow() {
   const mh = S.C.rules.mailHelpers?.[m];
   S.helpShifts = mh?.length ? (await soft(sb.from("shifts").select("*").in("run", mh).eq("day", t).neq("driver", m), [])).filter(s => s.driver) : [];
   S.extra = xt || [];
+  S.lawPu = S.shifts.some(z => z.day === t && z.run === "LAW") ? await soft(sb.rpc("law_pickups", { p_day: t }), null) : null;   // D>B driver's Lawrence pick-ups (PH + NZC) for the Lawrence driver
   S.sods = sods; S.eods = eods; S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || []; S.sodReqs = sr || []; S.hazards = hz || []; S.hzAckOn = Array.isArray(ha); S.hzAcks = Object.fromEntries((ha || []).map(a => [a.hazard_id, a.acked_at]));   // confirmations only once the table exists
   setEvidence(S.shifts, S.eods);
   S.days = dayShifts(S.shifts, S.runsBy, m);
@@ -193,6 +195,7 @@ function renderNow() {
     ${S.loadErr ? `<p class="hint" style="margin:0 0 8px;color:var(--crit)">No connection. Showing what loaded at ${fmtT(nzNow(new Date(S.loadedAt)).min)}. Trying again on its own.</p>` : ""}
     ${part("Do these first", () => carryCard())}
     ${part("SOD / EOD", () => quickBar(T, n))}
+    ${part("Lawrence", () => lawBar(T))}
     ${dayDone ? part("Next shift", () => nextShiftCard(nextDay, n)) : part("Today", () => todayCard(T, nextDay, n))}
     ${part("Van use", () => vanUseCard())}
     ${part("Mail trays · other runs", () => mailHelpCard())}
@@ -216,6 +219,7 @@ function renderNow() {
     <p class="foot">Signed in as ${esc((S.viewer || S.me).email || "")}</p>
   </div>`;
   try { folds(); } catch (e) { reportError("folds", e); }
+  try { lawPuPop(); } catch (e) { reportError("lawPuPop", e); }
   try { wire(); } catch (e) { reportError("wire", e); }
   try { fitQb(); document.fonts?.ready.then(() => fitQb()); } catch (e) { reportError("fitQb", e); }
 }
@@ -607,7 +611,7 @@ function tasksCard(D, n, next, bare = false) {
     const items = []; const covered = new Set();
     for (const r of rulesFor(x, D.day)) { const key = r.done_key || r.addon || null; if (r.addon) covered.add(r.addon); const gp = !!key?.startsWith("tw_") && /game plan/i.test(r.name); const planned = gp && Object.keys(plan).length > 0;
       const meetEdit = code === "DB" && key === "milton";   // D>B driver sets the day's Milton drop-off time; it goes to the Lawrence driver
-      items.push({ key, title: r.name, short: r.short, code: r.code, desc: meetEdit ? `${r.note || ""} Different time? Change it here and the Lawrence driver gets it straight away.`.trim() : r.note || (key && !key.startsWith("tw_") ? (S.addons.find(a => a.id === key)?.name || "") : ""), time: winTxt(r), opens: toMin(r.opens), closes: toMin(r.closes), doneAt: key ? done[key] : null, planned, meetEdit, meetVal: String(x.shift.milton_at || r.closes || "").slice(0, 5) }); }
+      items.push({ key, title: r.name, short: r.short, code: r.code, desc: meetEdit ? `${r.note || ""} Tap 📍 to pick Milton or Balclutha and the time; the Lawrence driver gets it straight away.`.trim() : r.note || (key && !key.startsWith("tw_") ? (S.addons.find(a => a.id === key)?.name || "") : ""), time: winTxt(r), opens: toMin(r.opens), closes: toMin(r.closes), doneAt: key ? done[key] : null, planned, meetEdit, meetVal: String(x.shift.milton_at || r.closes || "").slice(0, 5) }); }
     for (const id of x.shift.addons || []) { if (covered.has(id)) continue; const o = S.addons.find(a => a.id === id); if (!o) continue;   // tw_ tasks without a timed rule (e.g. NZQA pick up) show here too
       items.push({ key: id, title: o.name, desc: plan[id] ? `planned ${fmtT(toMin(plan[id]))}` : o.minutes ? `${o.minutes} min allowed on the run` : "add-on on this run", time: "any time", opens: null, closes: null, doneAt: done[id], planned: false }); }
     const nDone = items.filter(t => t.doneAt || t.planned).length;
@@ -617,7 +621,7 @@ function tasksCard(D, n, next, bare = false) {
         if (el >= 45) { cls = "over"; st = "overdue · 45 min into the run"; } else if (el >= 0) { cls = "late"; st = `run started · ${45 - el} min left`; } else { cls = "pend"; st = "not done yet"; } }
       else if (isT) { if (t.closes != null && n.min > t.closes) { cls = "over"; st = `overdue · was due ${fmtT(t.closes)}`; } else if (t.closes != null && t.closes - n.min <= 15) { cls = "soon"; st = `due in ${t.closes - n.min} min`; } else { cls = "pend"; st = "not done yet"; } }
       const pu = puAreaOf(t.key); const btn = isT && !isDone && t.key && (!S.viewAs || S.viewer?.isStaff) ? (isPhotoTask(t.key) ? rsBtn(x.shift.id, t.key) : pu ? `<div class="row" style="flex:0 0 auto;gap:6px">${puBtn(t.key, x.shift.id)}${noneBtn(t.key, x.shift.id)}</div>` : `<button class="btn sm accent" data-done="${esc(t.key)}" data-shift="${x.shift.id}">Done</button>`) : isT && isDone && pu && !S.viewAs ? puEditBtn(t.key, x.shift.day) : "";
-      const meet = t.meetEdit && !isDone && D.day >= n.date && (!S.viewAs || S.viewer?.isStaff) ? `<label class="meta" style="display:flex;flex-direction:column;gap:2px;flex:0 0 112px">Milton time<input class="in" type="time" step="300" style="min-height:40px" value="${esc(t.meetVal)}" data-meet="${x.shift.id}" aria-label="Milton drop-off time"></label>` : "";
+      const meet = t.meetEdit && !isDone && D.day >= n.date && (!S.viewAs || S.viewer?.isStaff) ? `<button type="button" class="btn sm ghost" style="flex:0 0 auto;min-height:34px" data-meetset="${x.shift.id}" title="Set where and when to meet the Lawrence driver">📍 ${x.shift.milton_at ? `${esc(x.shift.meet_place === "Balclutha" ? "Bal" : "Mil")} ${fmtT(toMin(t.meetVal))}` : "Set"}</button>` : "";
       const when = t.key === "tw_twrunsheet" && (cls === "over" || cls === "late") ? (cls === "over" ? "✗ 45 min" : `${45 - (n.min - x.st)} min`) : cls === "over" ? `✗ ${fmtT(t.closes)}` : cls === "soon" ? `${t.closes - n.min} min` : t.time === "any time" ? "" : t.time;
       return `<div class="tk tk1 ${cls}"><div class="tkt"><span class="t">${esc(t.short || tkShort(t.key, t.title))}</span>${when ? `<span class="tkw">${esc(when)}</span>` : ""}${t.code ? `<span class="tkc">🔑 ${esc(t.code)}</span>` : ""}</div>${meet}${btn}</div>`; };
     return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${items.length && isT ? `${nDone}/${items.length} done` : ""}</span></div>${isT ? estLine(x, D) : ""}
@@ -780,6 +784,7 @@ function editPickupArea(area, day) {
       if (!ops.length) { close(); return toast("No changes", "ok"); }
       if (!any && lines.length && !confirmClear) { confirmClear = true; return toast("Everything's 0, so this deletes all of them. Tap Save again to confirm.", "err"); }
       const res = await Promise.all(ops); const err = res.find(r => r.error)?.error; if (err) return toast(err.message, "err");
+      if (area === "Lawrence") lawPuPing(day);
       close(); toast("Pick-ups updated ✓", "ok"); await loadAll(); render(); });
   });
 }
@@ -806,8 +811,55 @@ function logPickup(opt = {}) {
       const { error } = await sb.from("pickups").insert(rows);
       if (error) return toast(error.message, "err");
       if (opt.key && opt.shift && rows.some(r => r.area === opt.area)) { const { error: e2 } = await sb.rpc("task_done", { p_shift: opt.shift, p_addon: opt.key }); if (e2) toast(`Pick-ups saved, but the task couldn't be ticked: ${e2.message}`, "err"); }
+      if (rows.some(r => r.area === "Lawrence")) lawPuPing(g("pu-day"));
       close(); toast("Pick-ups saved ✓", "ok"); await loadAll(); render(); }); });
 }
+/* ---------- Lawrence: meet-up place/time (D>B sets it) and the morning's Lawrence pick-ups (D>B enters them) ---------- */
+const lawShift = T => (T?.segs || []).find(x => x.shift.run === "LAW")?.shift || null;
+const lawTot = () => { const L = S.lawPu || []; return { small: L.reduce((a, r) => a + (r.small || 0), 0), large: L.reduce((a, r) => a + (r.large || 0), 0), n: L.length }; };
+function lawBar(T) {
+  const sh = lawShift(T); if (!sh) return "";
+  const t = lawTot(); const pl = sh.meet_place || "Milton";
+  const pu = t.n ? `<button class="btn qb done" id="law-pu"><b data-s="${t.small} S · ${t.large} B">📦 ${t.small} small · ${t.large} big</b><small>Lawrence pick-ups</small></button>` : `<button class="btn qb off" id="law-pu"><b data-s="📦 LAW PUs">📦 LAW pick-ups</b><small>not in yet</small></button>`;
+  const mt = sh.milton_at ? `<button class="btn qb accent" id="law-meet"><b data-s="${esc(pl === "Balclutha" ? "Bal" : "Mil")} ${fmtT(toMin(sh.milton_at))}">📍 ${esc(pl)} ${fmtT(toMin(sh.milton_at))}</b><small>meet-up</small></button>` : `<button class="btn qb off" id="law-meet"><b data-s="📍 Meet-up">📍 Meet-up</b><small>not set yet</small></button>`;
+  return `<div class="qbar">${pu}${mt}</div>`;
+}
+function lawPuSheet(auto = false) {
+  const t = lawTot(); const by = c => (S.lawPu || []).find(r => r.customer === c) || { small: 0, large: 0 }; const at = (S.lawPu || []).map(r => r.logged_at).sort().pop();
+  sheet(`<h3>📦 Lawrence pick-ups${auto ? " · new" : ""}</h3>${t.n ? `<p style="font:800 26px var(--fd);margin:4px 0">${t.small} small · ${t.large} big</p><p class="meta">Post Haste ${by("PH").small} small · ${by("PH").large} big<br>NZ Couriers ${by("NZC").small} small · ${by("NZC").large} big${at ? `<br>Entered ${fmtTime(at)}` : ""}</p>` : `<p class="hint">The D>B driver hasn't entered today's Lawrence pick-ups yet. You'll get a notification when they do.</p>`}<button class="btn full" id="lp-ok">Got it</button>`, (bg, close) => { bg.querySelector("#lp-ok").onclick = () => { lawPuSeen(); close(); }; });
+}
+const lawPuSig = () => { const t = lawTot(); return t.n ? `${t.small}|${t.large}` : ""; };
+function lawPuSeen() { try { localStorage.setItem("tp-lawpu", JSON.stringify({ [today()]: lawPuSig() })); } catch { } }
+/** pop the Lawrence pick-ups up once whenever new totals come in */
+function lawPuPop() {
+  if (S.viewAs || !S.lawPu?.length || document.querySelector(".sheet-bg")) return; const sig = lawPuSig();
+  let seen = ""; try { seen = JSON.parse(localStorage.getItem("tp-lawpu") || "{}")[today()] || ""; } catch { }
+  if (sig && sig !== seen) { lawPuSeen(); lawPuSheet(true); }
+}
+function lawMeetSheet() {
+  const sh = lawShift(S.days[today()]); if (!sh) return;
+  sheet(`<h3>📍 Meet-up</h3>${sh.milton_at ? `<p style="font:800 26px var(--fd);margin:4px 0">${esc(sh.meet_place || "Milton")} · ${fmtT(toMin(sh.milton_at))}</p><p class="meta">Meet the D>B driver there with your Lawrence load.</p>` : `<p class="hint">The D>B driver hasn't set today's meet-up yet. It's usually Milton at 10:30 until they do. You'll get a notification.</p>`}<button class="btn full" id="lm-ok">OK</button>`, (bg, close) => { bg.querySelector("#lm-ok").onclick = close; });
+}
+/** D>B driver: pick Milton or Balclutha and the time, then save; the Lawrence driver gets it */
+function meetSheet(shiftId) {
+  const sh = S.shifts.find(z => z.id === shiftId); if (!sh) return;
+  let pl = sh.meet_place || "Milton"; const tm = String(sh.milton_at || "10:30").slice(0, 5);
+  sheet(`<h3>📍 Meet-up with Lawrence</h3><p class="hint">${label(sh.day)} · pick where and when, then Save. The Lawrence driver gets it straight away.</p><form class="frm" id="mt">
+    <div class="full row" style="gap:8px">${["Milton", "Balclutha"].map(p => `<button type="button" class="btn ${p === pl ? "accent" : "ghost"}" data-mtp="${p}" style="flex:1 1 0">${p}</button>`).join("")}</div>
+    <label class="f full">Time<input class="in" type="time" step="300" id="mt-t" value="${esc(tm)}" required></label>
+    <button class="btn full" type="submit">Save &amp; send to Lawrence</button></form>`, (bg, close) => {
+    bg.querySelectorAll("[data-mtp]").forEach(b => b.onclick = () => { pl = b.dataset.mtp; bg.querySelectorAll("[data-mtp]").forEach(x => { x.classList.toggle("accent", x.dataset.mtp === pl); x.classList.toggle("ghost", x.dataset.mtp !== pl); }); });
+    bg.querySelector("#mt").addEventListener("submit", async e => { e.preventDefault(); const v = bg.querySelector("#mt-t").value; if (!v) return toast("Pick a time", "err");
+      const btn = bg.querySelector("[type=submit]"); btn.disabled = true;
+      const { data, error } = await sb.rpc("set_meet", { p_shift: sh.id, p_time: v, p_place: pl }); btn.disabled = false;
+      if (error) return toast(error.message, "err");
+      sh.milton_at = v; sh.meet_place = pl; let sent = false;
+      if (data?.message_id) { try { const r = await sb.functions.invoke("notify", { body: { type: "milton_time", message_id: data.message_id } }); sent = !r.error; } catch { } }
+      close(); toast(data?.law?.length ? `${pl} ${fmtT(toMin(v))} saved${sent ? " · Lawrence driver notified" : " · in the Lawrence driver's app"}` : `${pl} ${fmtT(toMin(v))} saved (nobody on Lawrence that day yet)`, "ok"); render(); });
+  });
+}
+/** after the D>B driver saves Lawrence pick-ups, push the totals to the Lawrence driver */
+function lawPuPing(day) { if (!S.shifts.some(z => z.day === day && z.run === "DB" && z.driver === S.me.id)) return; sb.functions.invoke("notify", { body: { type: "law_pickups", day } }).catch(() => { }); }
 function accessCard() {
   const body = (S.access?.body || "").trim(); const canEdit = !!S.viewer?.can?.("people");
   if (!body && !canEdit) return "";
@@ -862,12 +914,9 @@ function wire() {
   $$("[data-eodedit]").forEach(b => b.onclick = () => eodForm(b.dataset.eodedit, !!b.dataset.sort, true));
   $$("[data-addon]").forEach(c => c.onchange = async () => { const shift = S.shifts.find(s => s.id === c.dataset.shift); const set = new Set(shift.addons || []); c.checked ? set.add(c.dataset.addon) : set.delete(c.dataset.addon); const { error } = await sb.rpc("set_my_addons", { p_shift: shift.id, p_addons: [...set] }); if (error) { toast(error.message, "err"); c.checked = !c.checked; } else { shift.addons = [...set]; render(); } });
   $$("[data-plan]").forEach(i => i.onchange = async () => { const shift = S.shifts.find(s => s.id === i.dataset.shift); const plan = { ...(shift.plan || {}), [i.dataset.plan]: i.value }; const { error } = await sb.rpc("set_my_plan", { p_shift: shift.id, p_plan: plan }); if (error) toast(error.message, "err"); else { shift.plan = plan; toast("Saved", "ok"); } });
-  $$("[data-meet]").forEach(i => i.onchange = async () => { const shift = S.shifts.find(s => s.id === i.dataset.meet); if (!shift || !i.value) return;
-    i.disabled = true; const { data, error } = await sb.rpc("set_milton_time", { p_shift: shift.id, p_time: i.value }); i.disabled = false;
-    if (error) { toast(error.message, "err"); i.value = String(shift.milton_at || "").slice(0, 5); return; }
-    shift.milton_at = i.value; let sent = false;
-    if (data?.message_id) { try { const r = await sb.functions.invoke("notify", { body: { type: "milton_time", message_id: data.message_id } }); sent = !r.error; } catch { } }
-    toast(data?.law?.length ? `Milton ${fmtT(toMin(i.value))} saved${sent ? " · Lawrence driver notified" : " · in the Lawrence driver's app"}` : `Milton ${fmtT(toMin(i.value))} saved (nobody on Lawrence that day yet)`, "ok"); render(); });
+  $$("[data-meetset]").forEach(b => b.onclick = e => { e.stopPropagation(); meetSheet(b.dataset.meetset); });
+  $("#law-pu")?.addEventListener("click", () => lawPuSheet());
+  $("#law-meet")?.addEventListener("click", () => lawMeetSheet());
   $("#access-edit")?.addEventListener("click", editAccess);
   $("#pu-log")?.addEventListener("click", () => logPickup());
   $$("[data-puarea]").forEach(b => b.onclick = e => { e.stopPropagation(); editPickupArea(b.dataset.puarea, b.dataset.puday); });
