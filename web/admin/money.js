@@ -88,7 +88,7 @@ function feedWeek(run) { const fc = feedCode(run); if (!fc) return null; const t
 const parcelsSrc = shift => { if (!shift) return null; const ov = S.ovs.find(o => o.shift_id === shift.id); if (ov?.parcels != null) return { n: +ov.parcels, src: "fixed" }; const f = feedRow(shift.run, shift.day); if (f) return { n: +f.items || 0, src: "NZ Post email" }; const e = S.eodBy?.[shift.id]; return e?.parcels != null ? { n: +e.parcels, src: "EOD" } : null; };
 const parcelsOf = shift => parcelsSrc(shift)?.n ?? null;
 // income streams for the Income tab
-export const STREAMS = [["wh", "NZ Post · West Harbour (RSB & PCB)"], ["nzp", "NZ Post · TP (TUA, Flyer, Outram, Lawrence & food bag)"], ["tge", "TGE"], ["tgeSouth", "TGE South pick-ups"], ["ruralPH", "Rural pick-ups · Post Haste"], ["ruralNZC", "Rural pick-ups · NZ Couriers"], ["owakaPH", "Owaka pick-ups · Post Haste"], ["owakaNZC", "Owaka · NZ Couriers (incl. Owaka Medical & Telford)"], ["dbx", "D>B other (Lawrence & Balclutha pick-ups)"]];
+export const STREAMS = [["wh", "NZ Post · West Harbour (RSB & PCB)"], ["nzp", "NZ Post · TP (TUA, Flyer, Outram, Lawrence & Food Bag)"], ["tge", "TGE"], ["tgeSouth", "TGE South"], ["ruralPH", "Rural Pick-Ups · Post Haste"], ["ruralNZC", "Rural Pick-Ups · NZ Couriers"], ["owakaPH", "Owaka Pick-Ups · Post Haste"], ["owakaNZC", "Owaka Pick-Ups · NZ Couriers (Incl. Owaka Medical & Telford)"], ["dbx", "D>B Other (Lawrence & Balclutha Pick-Ups)"]];
 const TGE_RUNS = ["S", "T", "SG"];
 const WH_RUNS = ["PCB", "RSB", "WH"];
 const runStream = run => TGE_RUNS.includes(run) ? "tge" : WH_RUNS.includes(run) ? "wh" : "nzp";
