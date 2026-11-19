@@ -88,7 +88,7 @@ function feedWeek(run) { const fc = feedCode(run); if (!fc) return null; const t
 const parcelsSrc = shift => { if (!shift) return null; const ov = S.ovs.find(o => o.shift_id === shift.id); if (ov?.parcels != null) return { n: +ov.parcels, src: "fixed" }; const f = feedRow(shift.run, shift.day); if (f) return { n: +f.items || 0, src: "NZ Post email" }; const e = S.eodBy?.[shift.id]; return e?.parcels != null ? { n: +e.parcels, src: "EOD" } : null; };
 const parcelsOf = shift => parcelsSrc(shift)?.n ?? null;
 // income streams for the Income tab
-export const STREAMS = [["wh", "NZ Post · West Harbour (RSB & PCB)"], ["nzp", "NZ Post · TP (TUA, Flyer, Outram, Lawrence & food bag)"], ["tge", "TGE"], ["tgeSouth", "TGE South pick-ups"], ["ruralPH", "Rural pick-ups · Post Haste"], ["ruralNZC", "Rural pick-ups · NZ Couriers"], ["owakaPH", "Owaka pick-ups · Post Haste"], ["owakaNZC", "Owaka pick-ups · NZ Couriers"], ["dbx", "D>B other (Lawrence & Balclutha pick-ups, Owaka Medical, Telford)"]];
+export const STREAMS = [["wh", "NZ Post · West Harbour (RSB & PCB)"], ["nzp", "NZ Post · TP (TUA, Flyer, Outram, Lawrence & food bag)"], ["tge", "TGE"], ["tgeSouth", "TGE South pick-ups"], ["ruralPH", "Rural pick-ups · Post Haste"], ["ruralNZC", "Rural pick-ups · NZ Couriers"], ["owakaPH", "Owaka pick-ups · Post Haste"], ["owakaNZC", "Owaka · NZ Couriers (incl. Owaka Medical & Telford)"], ["dbx", "D>B other (Lawrence & Balclutha pick-ups)"]];
 const TGE_RUNS = ["S", "T", "SG"];
 const WH_RUNS = ["PCB", "RSB", "WH"];
 const runStream = run => TGE_RUNS.includes(run) ? "tge" : WH_RUNS.includes(run) ? "wh" : "nzp";
@@ -199,8 +199,8 @@ function breakdown(d) {
     for (const [cu, by] of Object.entries(byCu)) { for (const k of days) by[k] ??= 0; const e = avgDays(by, d); if (e) add(r, e, `${area} ${cu} pick-ups (average of recent days)`, true, areaStream(area, cu === "TGE", cu)); } }
   // D>B fixed extras: Owaka Medical $10 a weekday, Telford mail $5 every day it runs, and the Balclutha depot $5 minimum on a day with no Balclutha pick-ups
   const db = byRun.DB; if (db) { const wd = dow(d) <= 4;   // Mon–Fri
-    if (wd) add(db, M.owakaMed, `Owaka Medical · $${M.owakaMed} a weekday`, false, "dbx");
-    add(db, M.telford, `Telford mail · $${M.telford} a day`, false, "dbx");
+    if (wd) add(db, M.owakaMed, `Owaka Medical · $${M.owakaMed} a weekday`, false, "owakaNZC");
+    add(db, M.telford, `Telford mail · $${M.telford} a day`, false, "owakaNZC");
     if (!areasLogged.has("Balclutha")) { if (done(db)) add(db, M.balMin, `Balclutha depot minimum · no pick-ups logged`, false, "dbx"); else if (!db.feeLines.some(l => /^Balclutha pick-ups/.test(l.line))) add(db, M.balMin, `Balclutha depot minimum (until pick-ups are logged)`, true, "dbx"); } }
   // TGE South typed-in total: only used on a day with no South TGE pick-ups logged (they're priced above instead)
   const tge = tgeSouth(d); if (tge && !pu["South|TGE"]) add(feeRow("South"), tge, `TGE South total (typed in)`, false, "tgeSouth");
