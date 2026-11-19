@@ -10,6 +10,7 @@ import { actBtns, allBar, addMark } from "/admin/settle.js";
 import { routesTab, wireRoutes } from "/admin/routes.js";
 import { allowancesTab, wireAllowances } from "/admin/allowances.js";
 import { pickupsTab, wirePickups } from "/admin/pickups.js";
+import { incomeTab, wireIncome } from "/admin/income.js";
 import { sickDefault, paidPill, SIX_MONTHS_NOTE } from "/admin/sick.js";
 import { liveTab as liveTab2, wireLive as wireLive2, sickHours } from "/admin/live.js";
 import { bind } from "/admin/detail.js";
@@ -55,7 +56,8 @@ async function loadAllNow() {
   if (S.tsRange === "custom" && S.tsFrom && S.tsFrom < from) from = S.tsFrom;
   if (S.cmpFrom && S.cmpFrom < from) from = S.cmpFrom;
   if (S.labR?.to && S.labR.to > to) to = S.labR.to;   // Labour: next fortnight
-  if (S.avDay && S.avDay > to) to = S.avDay;   // Live › Available: a day further ahead   // Scorecard › Efficiency / Sorting drill-down further back   // dashboard dates further back than usual
+  if (S.avDay && S.avDay > to) to = S.avDay;
+  if (S.incMonth) { const a = addDays(S.incMonth + "-01", -63), b = addDays(addDays(S.incMonth + "-01", 31).slice(0, 7) + "-01", -1); if (a < from) from = a; if (b > to) to = b; }   // Income tab: the month picked, plus 9 weeks before it for weekday averages   // Live › Available: a day further ahead   // Scorecard › Efficiency / Sorting drill-down further back   // dashboard dates further back than usual
   const [set, runs, vans, addons, rules, people, shifts, items, acks, sent, msgs, recips, leave, alerts, entries, marks, feed, ovs, locs, skills, notes, vchk] = await Promise.all([
     loadSettings(), q(sb.from("runs").select("*").order("sort")), q(sb.from("vans").select("*").order("plate")), q(sb.from("addons").select("*")), q(sb.from("timing_rules").select("*")),
     q(sb.from("people").select("*").order("name")),
@@ -99,7 +101,7 @@ async function loadAllNow() {
   setEvidence(S.shifts, S.eods);   // average figures per run & weekday → the estimate used until each EOD is in
 }
 
-const TABS = [["live", "Live", "scorecard"], ["runboard", "Run Board", "roster"], ["classic", "Run Board (classic)", "roster"], ["scorecard", "Scorecard", "scorecard"], ["fix", "Fix posts", "scorecard"], ["routes", "Routes", "alerts"], ["allowances", "Allowances", "roster"], ["pickups", "Pick-ups", "roster"], ["hazards", "Hazards", "roster"], ["messages", "Messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"], ["pay", "Penalties & pay", "people"]];
+const TABS = [["live", "Live", "scorecard"], ["runboard", "Run Board", "roster"], ["classic", "Run Board (classic)", "roster"], ["scorecard", "Scorecard", "scorecard"], ["fix", "Fix posts", "scorecard"], ["income", "Income", "owner"], ["routes", "Routes", "alerts"], ["allowances", "Allowances", "roster"], ["pickups", "Pick-ups", "roster"], ["hazards", "Hazards", "roster"], ["messages", "Messages", "messages"], ["leave", "Leave", "leave"], ["fleet", "Fleet", "fleet"], ["timing", "Timing rules", "timing"], ["people", "People", "people"], ["pay", "Penalties & pay", "people"]];
 /* tabs that live behind the ☰ button at the end of the tab bar */
 /* drivers' view-only Run Board: just what the board needs, from tables drivers may read (published weeks only) */
 async function loadReadOnly() {
@@ -114,7 +116,7 @@ async function loadReadOnly() {
   setAddonNames(addons); S.C = cfg(set); S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vansBy = Object.fromEntries(vans.map(v => [v.plate, v])); S.peopleBy = Object.fromEntries(people.map(p => [p.id, p]));
   S.drivers = people.filter(p => p.active); S.sodBy = Object.fromEntries(S.sods.map(x => [x.shift_id, x])); S.eodBy = {};
 }
-const MENU_TABS = ["classic", "allowances", "fleet", "timing", "pay"];
+const MENU_TABS = ["classic", "allowances", "hazards", "leave", "fleet", "timing", "people", "pay"];
 /* collapsible boxes: on every tab, every box after the first starts collapsed; tap its heading to open. Open/closed is kept while the page is open.
    "Shift right now" and "Add-ons right now" (ids rightnow*) can be collapsed too, wherever they sit, but start open.
    Live tab: the first four (Start times to sign off, Added hours, Shift right now, Add-ons right now) sit side by side in .top4 as four same-size boxes. */
@@ -136,25 +138,25 @@ function folds() {
 }
 export function render(soft = false) {
   if (soft && (document.activeElement?.matches("input,textarea,select") || $(".sheet-bg"))) return;
-  const n = nzNow(); const tabs = S.ro ? [["runboard", "Run Board"]] : TABS.filter(([, , a]) => S.me.can(a));
+  const n = nzNow(); const tabs = S.ro ? [["runboard", "Run Board"]] : TABS.filter(([, , a]) => a === "owner" ? !!S.me.isOwner : S.me.can(a));
   if (!tabs.some(([k]) => k === S.tab)) S.tab = tabs[0][0];
   const badge = { hazards: hazardBadge(), live: S.alerts.filter(a => !a.resolved_at).length + (S.me.isOwner || S.me.role === "admin" ? (S.sodReqs || []).filter(r => r.status === "pending").length : 0) + (S.me.isOwner ? (S.extra || []).filter(r => r.status === "pending").length : 0), leave: S.leave.filter(l => l.status === "pending").length, runboard: S.items.filter(i => i.roster_changes.status === "awaiting_approval").length, fix: S.me.can("scorecard") ? fixCount() : 0, alerts: S.alerts.filter(a => !a.resolved_at).length };
   app.innerHTML = `<div class="wrap">
-    <div class="top"><div><div class="brand">${S.ro ? `Taieri Post · view only · <a href="/" style="color:inherit">back to my app</a>` : "Taieri Ops"}</div><h1>${({ live: "Live board", runboard: "Run Board", classic: "Run Board (classic)", scorecard: "Driver Scorecard", fix: "Fix posts", routes: "Routes", allowances: "Back-up & on-call allowances", pickups: "Pick-ups to invoice", hazards: "Hazard register", alerts: "Alerts & timings", messages: "Messages", leave: "Leave", fleet: "Fleet", timing: "Timing rules", people: "People & settings", pay: "Penalties & pay" })[S.tab]}</h1></div>
-      <div class="upd">${S.me.can("scorecard") ? `<span class="row" style="gap:6px;justify-content:flex-end;margin-bottom:6px"><a class="btn ghost sm" href="/" style="flex:0 0 auto;text-decoration:none">Driver portals</a><button class="btn ghost sm" id="quick-err" style="flex:0 0 auto">+ Record</button></span>` : ""}<span class="dot live"></span>live · ${fmtT(n.min)}<br>${esc(first(S.me.name))} · <button class="linkbtn" id="signout">sign out</button></div></div>
-    <nav class="nav">${tabs.filter(([k]) => !MENU_TABS.includes(k)).map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? "on" : ""}">${l}${badge[k] ? `<span class="b ${k === "runboard" ? "warn" : ""}">${badge[k]}</span>` : ""}</button>`).join("")}${tabs.some(([k]) => MENU_TABS.includes(k)) ? `<button id="nav-menu" class="${MENU_TABS.includes(S.tab) ? "on" : ""}" aria-label="More pages" title="More">☰${MENU_TABS.includes(S.tab) ? ` ${tabs.find(([k]) => k === S.tab)?.[1] || ""}` : ""}</button>` : ""}</nav>
-    <div id="view">${(() => { try { return ({ live: liveTab2, runboard: runBoardTab, classic: classicTab, scorecard: scorecardTab, fix: fixTab, routes: routesTab, allowances: allowancesTab, pickups: pickupsTab, hazards: hazardsTab, alerts: alertsTab, messages: messagesTab, leave: leaveTab, fleet: fleetTab, timing: timingTab, people: peopleTab, pay: payTab })[S.tab](); } catch (e) { reportError("view:" + S.tab, e); return `<div class="card"><h2>This page hit a problem</h2><p class="hint">It couldn't be shown just now and the error has been logged. The other tabs still work.</p><button class="btn ghost sm" onclick="location.reload()">Reload</button></div>`; } })()}</div>
+    <div class="top"><div><div class="brand">${S.ro ? `Taieri Post · view only · <a href="/" style="color:inherit">back to my app</a>` : "Taieri Ops"}</div><h1>${({ live: "Live board", runboard: "Run Board", classic: "Run Board (classic)", scorecard: "Driver Scorecard", fix: "Fix posts", income: "Income", routes: "Routes", allowances: "Back-up & on-call allowances", pickups: "Pick-ups to invoice", hazards: "Hazard register", alerts: "Alerts & timings", messages: "Messages", leave: "Leave", fleet: "Fleet", timing: "Timing rules", people: "People & settings", pay: "Penalties & pay" })[S.tab]}</h1></div>
+      <div class="upd">${S.me.can("scorecard") ? `<span class="row" style="gap:6px;justify-content:flex-end;flex-wrap:nowrap;margin-bottom:6px"><a class="btn ghost sm" href="/" style="flex:0 0 auto;text-decoration:none">Driver portals</a><button class="btn ghost sm" id="quick-err" style="flex:0 0 auto">+ Record</button></span>` : ""}<span class="dot live"></span>live · ${fmtT(n.min)}<br>${esc(first(S.me.name))} · <button class="linkbtn" id="signout">sign out</button></div></div>
+    <nav class="nav">${tabs.filter(([k]) => !MENU_TABS.includes(k)).map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? "on" : ""}">${l}${badge[k] ? `<span class="b ${k === "runboard" ? "warn" : ""}">${badge[k]}</span>` : ""}</button>`).join("")}${tabs.some(([k]) => MENU_TABS.includes(k)) ? `<button id="nav-menu" class="${MENU_TABS.includes(S.tab) ? "on" : ""}" aria-label="More pages" title="More">☰${MENU_TABS.includes(S.tab) ? ` ${tabs.find(([k]) => k === S.tab)?.[1] || ""}` : ""}${(c => c ? `<span class="b">${c}</span>` : "")(tabs.filter(([k]) => MENU_TABS.includes(k)).reduce((x, [k]) => x + (+badge[k] || 0), 0))}</button>` : ""}</nav>
+    <div id="view">${(() => { try { return ({ live: liveTab2, runboard: runBoardTab, classic: classicTab, scorecard: scorecardTab, fix: fixTab, income: incomeTab, routes: routesTab, allowances: allowancesTab, pickups: pickupsTab, hazards: hazardsTab, alerts: alertsTab, messages: messagesTab, leave: leaveTab, fleet: fleetTab, timing: timingTab, people: peopleTab, pay: payTab })[S.tab](); } catch (e) { reportError("view:" + S.tab, e); return `<div class="card"><h2>This page hit a problem</h2><p class="hint">It couldn't be shown just now and the error has been logged. The other tabs still work.</p><button class="btn ghost sm" onclick="location.reload()">Reload</button></div>`; } })()}</div>
     <p class="foot">Safe. Sharp. Swift. · <a href="/">driver portal</a></p></div>`;
   $("#signout").onclick = signOut;
   $("#quick-err")?.addEventListener("click", () => errorCard());
   $$("[data-tab]").forEach(b => b.onclick = () => { S.tab = b.dataset.tab; location.hash = S.tab; render(); });
   $("#nav-menu")?.addEventListener("click", () => { const list = tabs.filter(([k]) => MENU_TABS.includes(k));
-    sheet(`<h3>More</h3><div class="list">${list.map(([k, l]) => `<button class="btn ${S.tab === k ? "" : "ghost"} full" data-menutab="${k}" style="justify-content:flex-start">${l}</button>`).join("")}</div>`, bg => {
+    sheet(`<h3>More</h3><div class="list">${list.map(([k, l]) => `<button class="btn ${S.tab === k ? "" : "ghost"} full" data-menutab="${k}" style="justify-content:flex-start">${l}${badge[k] ? ` <span class="pill warn" style="margin-left:6px">${badge[k]}</span>` : ""}</button>`).join("")}</div>`, bg => {
       bg.querySelectorAll("[data-menutab]").forEach(b => b.onclick = () => { closeSheets(); S.tab = b.dataset.menutab; location.hash = S.tab; render(); }); }); });
   // classic Run Board in its own full-size browser window (falls back to a new tab if pop-ups are blocked)
   $$("[data-popout]").forEach(a => a.onclick = e => { e.preventDefault(); const w = window.open(a.dataset.popout, "tp_classic", `popup=yes,width=${screen.availWidth},height=${screen.availHeight},left=0,top=0`); if (w) { try { w.moveTo(0, 0); w.resizeTo(screen.availWidth, screen.availHeight); } catch (_) { } w.focus(); } else window.open(a.dataset.popout, "_blank", "noopener"); });
   if (S.tab !== "live") { /* the live board draws its own map */ }
-  try { ({ live: wireLive2, runboard: wireRunBoard, classic: () => { }, scorecard: wireScorecard, fix: wireFix, routes: wireRoutes, allowances: wireAllowances, pickups: wirePickups, hazards: wireHazards, alerts: wireAlerts, messages: wireMessages, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople, pay: wirePay })[S.tab]?.(); } catch (e) { reportError("wire:" + S.tab, e); }
+  try { ({ live: wireLive2, runboard: wireRunBoard, classic: () => { }, scorecard: wireScorecard, fix: wireFix, income: wireIncome, routes: wireRoutes, allowances: wireAllowances, pickups: wirePickups, hazards: wireHazards, alerts: wireAlerts, messages: wireMessages, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople, pay: wirePay })[S.tab]?.(); } catch (e) { reportError("wire:" + S.tab, e); }
   try { wireRange(); folds(); bind($("#view")); } catch (e) { reportError("wire2:" + S.tab, e); }   // every tile, row and chip with a data-… attribute opens its detail sheet
 }
 

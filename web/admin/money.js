@@ -269,3 +269,18 @@ export function wireMoney(d) {
     const err = a.error || b.error; if (err) return toast(err.message, "err");
     S.set.tge_south = tge; S.set.money_model = mdl; toast("Saved", "ok"); render(true); });
 }
+
+// ── for the Income tab (income.js): the same per-day model, a month at a time ──
+export { breakdown, totals, isHoliday, model, GST };
+// pick-ups for a whole range in one query (instead of one per day): each day gets its own rows and the 8 weeks before it for estimates
+const rangeLoads = {};
+export function pickupsReady(from, to) { for (let d = from; d <= to; d = addDays(d, 1)) if (!cache[d] || cache[d].loading) return false; return true; }
+export async function loadPickupRange(from, to) {
+  const key = from + "|" + to; if (rangeLoads[key]) return rangeLoads[key];
+  return (rangeLoads[key] = (async () => {
+    try { const all = await q(sb.from("pickups").select("*").gte("day", addDays(from, -56)).lte("day", to).limit(20000));
+      for (let d = from; d <= to; d = addDays(d, 1)) { if (cache[d] && !cache[d].loading) continue; const lo = addDays(d, -56); cache[d] = { rows: all.filter(r => r.day === d), hist: all.filter(r => r.day < d && r.day >= lo) }; } }
+    catch (e) { delete rangeLoads[key]; for (let d = from; d <= to; d = addDays(d, 1)) if (!cache[d]) cache[d] = { rows: [], hist: [], err: e.message }; }
+    render(true);
+  })());
+}
