@@ -21,7 +21,7 @@ const hasRoster = d => S.shifts.some(s => s.day === d);
 const SNAME = Object.fromEntries(STREAMS.map(([k, t]) => [k, t])); const SINFO = Object.fromEntries(STREAMS.map(([k, , i]) => [k, i]));
 const IB_CSS = `.ib{width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:var(--soft);color:var(--accent);font:700 12px var(--fd);line-height:1;padding:0;margin-left:6px;cursor:pointer;vertical-align:middle}`;
 const ib = k => `<button type="button" class="ib" data-incinfo="${k}" aria-label="More info">i</button>`;
-const INFO = { _: ["Monthly Estimate", "Incl GST (15%). Actual figures to date plus an estimate for the rest of the month. Days not rostered yet use each run's average for that weekday from the last 4 weeks. Public holidays earn nothing. NZ Post parcels come from the nightly NZ Post email (the driver's EOD count until it lands). Tap a line for its runs and days."] };
+const INFO = { _: ["Monthly Estimate", "Incl GST (15%). Actual figures to date plus an estimate for the rest of the month. Days not rostered yet copy last week's roster for that weekday and price it like a rostered day. Public holidays earn nothing. NZ Post parcels come from the nightly NZ Post email (the driver's EOD count until it lands). Tap a line for its runs and days."] };
 // income per stream for one day: { stream: { fees, est, by: { run or source: $ } } }
 function dayIncome(d) {
   const out = {}; for (const r of breakdown(d)) { if (r.sort) continue; for (const l of r.feeLines) { if (!l.amt) continue; const k = l.src || "nzp"; const o = (out[k] ??= { fees: 0, est: false, by: {} });
@@ -37,6 +37,14 @@ function weekdayTemplate(w) {
   const n = days.length || 1; return (tplCache[w] = { days, per: Object.fromEntries(Object.entries(sum).map(([k, v]) => [k, { fees: v / n, by: Object.fromEntries(Object.entries(by[k] || {}).map(([b, x]) => [b, x / n])) }])) });
 }
 
+// a day not rostered yet: take the roster of the latest rostered same weekday (usually last week), copy it onto the day
+// and price it the same way as a rostered day (parcels and pick-ups from recent averages)
+function projectDay(d) {
+  let from = null; for (let k = 1; k <= 8 && !from; k++) { const p = addDays(d, -7 * k); if (hasRoster(p) && !isHoliday(p)) from = p; }
+  if (!from) return null;
+  const copy = S.shifts.filter(s => s.day === from).map(s => ({ ...s, id: `proj-${s.id}-${d}`, day: d, done: null }));
+  const n0 = S.shifts.length; S.shifts.push(...copy); try { return { from, inc: dayIncome(d) }; } finally { S.shifts.splice(n0, copy.length); }
+}
 function monthModel(m) {
   const t = today(); const days = monthDays(m); for (const k in tplCache) delete tplCache[k];
   const runs = {}; const R = k => (runs[k] ??= { done: 0, doneEst: false, ahead: 0, lines: [], by: {} }); const addBy = (r, by) => { for (const [b, x] of Object.entries(by)) r.by[b] = (r.by[b] || 0) + x; };
@@ -44,7 +52,7 @@ function monthModel(m) {
   for (const d of days) {
     if (isHoliday(d)) { hol++; continue; }
     if (hasRoster(d)) { for (const [k, v] of Object.entries(dayIncome(d))) { const r = R(k); if (d <= t) { r.done += v.fees; r.doneEst ||= v.est; } else r.ahead += v.fees; addBy(r, v.by); r.lines.push({ d, fees: v.fees, est: v.est || d > t, how: d > t ? "rostered" : v.est ? "estimate" : "final" }); } }
-    else if (d > t) { const T = weekdayTemplate(dow(d)); if (!T.days.length) continue; tplDays++; for (const [k, v] of Object.entries(T.per)) { const r = R(k); r.ahead += v.fees; addBy(r, v.by); r.lines.push({ d, fees: v.fees, est: true, how: `not rostered yet · average of ${T.days.length} past ${label(d).slice(0, 3)}s` }); } }
+    else if (d > t) { const P = projectDay(d); if (!P) continue; tplDays++; for (const [k, v] of Object.entries(P.inc)) { const r = R(k); r.ahead += v.fees; addBy(r, v.by); r.lines.push({ d, fees: v.fees, est: true, how: `not rostered yet · ${label(P.from).slice(0, 3)} ${label(P.from).slice(4)}'s roster` }); } }
   }
   const list = STREAMS.map(([k]) => { const r = runs[k] || { done: 0, doneEst: false, ahead: 0, lines: [], by: {} }; return { k, ...r, total: r.done + r.ahead }; });   // every income type listed, $0 where none
   const tot = list.reduce((a, r) => ({ done: a.done + r.done, ahead: a.ahead + r.ahead, est: a.est || r.doneEst }), { done: 0, ahead: 0, est: false });
@@ -86,7 +94,7 @@ export function wireIncome() {
   $$("[data-incrow]").forEach(tr => tr.onclick = () => { const r = cur?.list[+tr.dataset.incrow]; if (!r) return;
     sheet(`<style>.mn-est{color:var(--ink3)}.mn-fin{color:var(--ok)}</style><h3>${esc(SNAME[r.k] || r.k)}</h3><p class="meta">${MON[+cur.m.slice(5) - 1]} ${cur.m.slice(0, 4)}</p>
       <table class="dt" style="width:100%;margin-bottom:10px"><tr><th>Run / source</th><th align="right">Month</th></tr>${Object.entries(r.by).sort((a, b) => b[1] - a[1]).map(([b, x]) => `<tr><td>${esc(b)}</td><td align="right">≈$${Math.round(x).toLocaleString()}</td></tr>`).join("")}</table>
-      <table class="dt" style="width:100%"><tr><th>Day</th><th>Basis</th><th align="right">Income</th></tr>${r.lines.map(l => `<tr><td>${label(l.d)}</td><td class="meta">${esc(l.how)}</td><td align="right"><span class="${l.est ? "mn-est" : "mn-fin"}">${l.est ? "≈" : ""}$${l.fees.toFixed(2)}</span></td></tr>`).join("")}
+      <table class="dt" style="width:100%"><tr><th>Day</th><th>Basis</th><th align="right">Income</th></tr>${cur.days.map(d => r.lines.find(l => l.d === d) || { d, fees: 0, est: false, how: isHoliday(d) ? "public holiday" : hasRoster(d) || d <= today() ? "no income" : "not rostered" }).map(l => `<tr><td>${label(l.d)}</td><td class="meta">${esc(l.how)}</td><td align="right"><span class="${l.est ? "mn-est" : "mn-fin"}">${l.est ? "≈" : ""}$${l.fees.toFixed(2)}</span></td></tr>`).join("")}
       <tr><td colspan="2"><b>Month (incl GST)</b></td><td align="right"><b>${m0(r.total)}</b></td></tr><tr><td colspan="2" class="meta">Excl GST</td><td align="right" class="meta">${m0(r.total / (1 + GST))}</td></tr></table>
 `); });
 }

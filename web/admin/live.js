@@ -16,7 +16,7 @@ const tile = (l, v, s = "", cls = null, attrs = "") => `<${attrs ? "button" : "d
 
 export function liveTab() {
   const n = nzNow(); const t = n.date;
-  return `<div class="top4">${nowCard(n)}${availCard(S.avDay || t, n)}${breaksCard([t], n)}</div>
+  return `<div class="top4">${nowCard(n)}${availCard(S.avDay || t, n)}${onBreakCard()}</div>
     <div class="grid2"><div class="card"><h2>Live feed<span>today</span></h2>${feed(t)}</div><div class="card"><h2>Where everyone is<span>app open · grey = 10+ min old</span></h2><div class="map" id="map"></div></div></div>`;
 }
 // Admin tab: sign-offs and the to-do list (moved off Live)
@@ -265,6 +265,12 @@ function postsBoard(selScores, days, t) {
   return `<div class="scroll"><table class="dt"><tr><th>Driver</th>${days.map(d => `<th class="${d === t ? "c-accent" : ""}">${label(d).slice(0, 6)}</th>`).join("")}<th>On time</th><th>Late</th><th>Missing</th><th>Rate</th><th>Admin</th></tr>${selScores.filter(s => s.items.length).map(s => `<tr><td class="clk" data-driver="${s.driver}" title="Tap for ${esc(fnm(s.driver))}'s sheet"><b>${esc(nm(s.driver))}</b></td>${days.map(d => `<td style="white-space:nowrap">${s.items.filter(i => i.day === d).map(it => `<button class="chip ${it.st}" data-item="${esc(it.key)}" title="${esc(it.label)} · ${itemNote(it)}" style="width:14px;height:14px;padding:0;border-radius:3px;margin:1px"></button>`).join("")}</td>`).join("")}<td class="num">${s.onTime}</td><td class="num">${s.late}</td><td class="num">${s.missing}</td><td class="num">${s.closed ? Math.round(s.onTime / s.closed * 100) + "%" : "—"}</td><td class="c-${col(s.admin)}">${pct(s.admin)}</td></tr>`).join("")}</table></div><p class="hint">One square per required post · tap a square to review it</p>`;
 }
 /* ---- Breaks · who's on a break right now, and every break on the selected days (staff only) ---- */
+// Live: just who is on a break right now
+function onBreakCard() {
+  const open = (S.breaks || []).filter(b => !b.ended_at).sort((a, b) => a.started_at.localeCompare(b.started_at));
+  const runOf = b => S.shifts.find(s => s.id === b.shift_id)?.run || ""; const mins = b => Math.max(0, Math.round((Date.now() - new Date(b.started_at)) / 60000));
+  return `<div class="card ${open.length ? "warnc" : ""}" id="onbreak"><h2><i class="ico">☕</i>On break<span>${open.length ? `${open.length} now` : "nobody"}</span></h2>${open.length ? `<div class="list">${open.map(b => `<div class="item warn"><div class="row" style="justify-content:space-between"><b>${esc(nm(b.driver))}</b><span class="meta">${esc(runOf(b))} · since ${fmtTime(b.started_at)} · ${mins(b)} min</span></div></div>`).join("")}</div>` : `<p class="empty">Nobody on a break.</p>`}</div>`;
+}
 function breaksCard(days, n) {
   const B = S.breaks || []; const dayOf = b => nzNow(new Date(b.started_at)).date; const mins = b => Math.max(0, Math.round(((b.ended_at ? new Date(b.ended_at) : new Date()) - new Date(b.started_at)) / 60000));
   const open = B.filter(b => !b.ended_at).sort((a, b) => a.started_at.localeCompare(b.started_at));
