@@ -147,6 +147,10 @@ function actualMins(r) {
     if (i < segs.length - 1 && st[i + 1] == null) st[i + 1] = en[i]; }
   const m = segs.map((_, i) => Math.max(0, en[i] - st[i])); return m.reduce((a, b) => a + b, 0) ? { m, st, en } : null;
 }
+// average rural TGE parcels a day on a run, from EODs in the 28 days before d that answered the question (days before the question was asked: any EODs that did; then all three runs)
+const tgeRuralAvg = (run, d) => { const from = addDays(d, -28); const vals = (c, any) => (S.eods || []).filter(e => e.extra?.tge_rural != null).map(e => ({ e, sh: S.shifts.find(x => x.id === e.shift_id) }))
+    .filter(o => o.sh && c.includes(o.sh.run) && (any || (o.sh.day < d && o.sh.day >= from))).map(o => +o.e.extra.tge_rural || 0);
+  let v = vals([run]); if (!v.length) v = vals([run], true); if (!v.length) v = vals(TGE_RURAL_RUNS, true); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0; };
 function breakdown(d) {
   const M = model(); const rows = []; const byRun = {};
   for (const drv of S.drivers) {
@@ -181,8 +185,11 @@ function breakdown(d) {
   for (const G of Object.values(GROUPS)) for (const c of G.runs) { if (byRun[c]) continue; const f = feedRow(c, d); if (!f || !+f.items) continue;
     const host = G.runs.map(x => byRun[x]).find(Boolean); const RT = rateFor(c, M); if (!host || !RT.rate) continue;
     add(host, +f.items * RT.rate, `${f.items} ${c} parcels (NZ Post email · ${c} not rostered, delivered on ${host.run}) × $${RT.rate.toFixed(2)}`, false, runStream(c)); }
-  // rural TGE parcels delivered on Outram / TUA / Flyer, from the EOD: a flat rate each
-  for (const r of rows) { if (r.sort || !TGE_RURAL_RUNS.includes(r.run)) continue; const n = +(S.eodBy?.[r.shift?.id]?.extra?.tge_rural || 0); if (n) add(r, n * M.tgeRural, `${n} rural TGE parcel${n === 1 ? "" : "s"} × $${(+M.tgeRural).toFixed(2)}`, false, "tgeRural"); }
+  // rural TGE parcels delivered on Outram / TUA / Flyer, from the EOD: a flat rate each.
+  // No figure for the day (EOD not in, or before the EOD asked) → estimate: that run's average from the last 28 days' EODs.
+  for (const r of rows) { if (r.sort || !TGE_RURAL_RUNS.includes(r.run)) continue; const v = S.eodBy?.[r.shift?.id]?.extra?.tge_rural; const rt = `$${(+M.tgeRural).toFixed(2)}`;
+    if (v != null) { const n = +v || 0; if (n) add(r, n * M.tgeRural, `${n} rural TGE parcel${n === 1 ? "" : "s"} × ${rt}`, false, "tgeRural"); continue; }
+    const a = tgeRuralAvg(r.run, d); if (a) add(r, a * M.tgeRural, `${a.toFixed(1)} rural TGE parcels (average of recent EODs, until the EOD is in) × ${rt}`, true, "tgeRural"); }
   const feeRow = (area) => { for (const code of AREA_RUNS[area] || []) if (byRun[code]) return byRun[code];
     const k = "__" + area; if (!byRun[k]) { byRun[k] = { run: `${area} pick-ups`, driver: null, staff: 0, fees: 0, feeEst: false, feeLines: [], noRun: true }; rows.push(byRun[k]); } return byRun[k]; };
   const runOn = area => (AREA_RUNS[area] || []).map(c => byRun[c]).find(Boolean);
