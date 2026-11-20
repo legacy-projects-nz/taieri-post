@@ -147,6 +147,7 @@ function demoBar() {
 /* ================= render ================= */
 /* ⓘ info buttons: tap for the full description in a pop-up, instead of explanation text on the page */
 const INFO = {
+  ask: ["Did you do these?", "<p>These tasks weren't ticked off on the day. Jeremy has asked whether you did them.</p><p><b>Yes, done</b> ticks it off but it counts as late. <b>No</b> records it as not done. Both carry the usual penalty, so tick tasks off on the day.</p><p>Answer these before you post your SOD.</p>"],
   carry: ["Do these first", "<p>These tasks weren't done on the day they were due.</p><p>Do each one and tap <b>Done</b> before you post your SOD. Your SOD won't be accepted until they're cleared.</p><p>Each one is recorded as done late, and the late entry is logged against that day.</p>"],
   backup: ["Back-up and on-call", "<p><b>On-call</b> (a day you're not rostered): check your phone 6:30–7:30am and confirm. Call-ins are made by 8am. If you're not needed you get the on-call allowance. If you're called in you're paid for the hours you work, with a 2-hour minimum.</p><p><b>Committed back-up</b> (a day you're working): you're committed to extra hours before or after your shift, up to the block shown. If you're not needed you get the back-up allowance. If you're called in you're paid for the hours worked instead.</p><p><b>Optional back-up</b>: extra hours before or after your shift if you want them. It's your call, and you're paid for hours worked only.</p><p>If your shift starts in the afternoon, check your phone 6:30–7:30am in case you're needed in the morning.</p><p>Allowances are worked out automatically and paid with your fortnightly pay.</p>"],
   scores: ["My scores", "<p>Your scores count from the scoring start date. Each tile shows this week, with the month underneath in grey. Tap a tile to see the working.</p><p><b>Admin</b>: SODs, EODs and tasks posted on time. <b>Efficiency</b>: your actual time against the expected time for your runs. <b>Accuracy</b>: mistakes recorded against you. <b>Safety</b>: driving and safety records.</p><p>Your pay band is set from your average efficiency over the pay fortnight.</p>"],
@@ -174,9 +175,15 @@ function carryOver() {
     const sat = dayName(s.day) === "Sat";
     const keys = new Set([...(s.addons || []), ...S.addons.filter(a => standingOn(a, s.run, s.day, S.rules)).map(a => a.id)]);
     for (const r of S.rules) if (r.active && r.done_key && keys.has(r.addon) && r.runs.includes(s.run) && r.days.includes(dow(s.day) + 1)) keys.add(r.done_key);
-    for (const k of keys) { const m = mk[`add|${s.id}|${k}`]; if (s.done?.[k] || (m && m.status !== "miss")) continue; out.push({ s, k, name: S.rules.find(r => r.done_key === k)?.name || addName(k) }); }
+    for (const k of keys) { const m = mk[`add|${s.id}|${k}`]; if (s.done?.[k] || (m && (m.status !== "miss" || m.by_person === s.driver))) continue; out.push({ s, k, name: S.rules.find(r => r.done_key === k)?.name || addName(k) }); }
   }
   return out.sort((a, b) => a.s.day.localeCompare(b.s.day));
+}
+// add-ons Jeremy has asked about (marks status 'ask'): the driver says if each was done
+function askList() { return (S.marks || []).filter(m => m.status === "ask" && m.driver === S.me.id && m.key?.startsWith("add|")).map(m => { const [, sid, ...kk] = m.key.split("|"); const k = kk.join("|"); const s = S.shifts.find(x => x.id === sid); return s && !s.done?.[k] ? { s, k, name: S.rules.find(r => r.done_key === k)?.name || addName(k) } : null; }).filter(Boolean).sort((a, b) => a.s.day.localeCompare(b.s.day)); }
+function askCard() {
+  const L = askList(); if (!L.length) return "";
+  return `<div class="card hot"><h2 class="c-crit">Did you do these? ${ib("ask")}<span>${L.length} asked</span></h2><div class="list">${L.map(({ s, k, name }) => `<div class="item crit"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(name)}</b><span class="meta"> · ${esc(s.run)} · ${label(s.day)}</span></span><span class="row" style="flex:0;gap:4px"><button class="btn sm" data-ans="${s.id}|${esc(k)}" data-yes="1" data-name="${esc(name)}">Yes, done</button><button class="btn sm ghost" data-ans="${s.id}|${esc(k)}" data-yes="0" data-name="${esc(name)}">No</button></span></div></div>`).join("")}</div></div>`;
 }
 function carryCard() {
   const L = carryOver(); if (!L.length) return "";
@@ -193,6 +200,7 @@ function renderNow() {
     ${demoBar()}${viewBar()}
     <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
     ${S.loadErr ? `<p class="hint" style="margin:0 0 8px;color:var(--crit)">No connection. Showing what loaded at ${fmtT(nzNow(new Date(S.loadedAt)).min)}. Trying again on its own.</p>` : ""}
+    ${part("Did you do these", () => askCard())}
     ${part("Do these first", () => carryCard())}
     ${part("SOD / EOD", () => quickBar(T, n))}
     ${part("Lawrence", () => lawBar(T))}
@@ -909,6 +917,9 @@ function wire() {
   $("#brk-end")?.addEventListener("click", e => { e.currentTarget.disabled = true; endBreak(); });
   $("#sod-edit")?.addEventListener("click", e => editSod(e.currentTarget.dataset.shift));
   $$("[data-sod-late]").forEach(b => b.onclick = () => sendSod(b.dataset.sodLate, true));
+  $$("[data-ans]").forEach(b => b.onclick = async () => { const [sid, ...kk] = b.dataset.ans.split("|"); const yes = b.dataset.yes === "1"; b.parentElement.querySelectorAll("button").forEach(x => x.disabled = true);
+    const { error } = await sb.rpc("task_answer", { p_shift: sid, p_addon: kk.join("|"), p_done: yes, p_name: b.dataset.name || null }); if (error) { b.parentElement.querySelectorAll("button").forEach(x => x.disabled = false); return toast(error.message, "err"); }
+    toast(yes ? "Thanks · ticked off, recorded as late" : "Thanks · recorded as not done", "ok"); await loadAll(); render(); });
   $$("[data-carry]").forEach(b => b.onclick = async () => { const [sid, k] = b.dataset.carry.split("|"); b.disabled = true; const { error } = await sb.rpc("task_done_late", { p_shift: sid, p_addon: k, p_name: b.dataset.name || null }); if (error) { b.disabled = false; return toast(error.message, "err"); } toast("Done · recorded as late", "ok"); await loadAll(); render(); });
   $$("[data-eod]").forEach(b => b.onclick = () => eodForm(b.dataset.eod, !!b.dataset.sort));
   $$("[data-eodedit]").forEach(b => b.onclick = () => eodForm(b.dataset.eodedit, !!b.dataset.sort, true));
@@ -1073,6 +1084,7 @@ const opt = (list, val) => list.map(([v, l]) => `<option value="${esc(v)}" ${v =
 
 async function sendSod(shiftId, lateMode = false) {
   const shift = S.shifts.find(s => s.id === shiftId); const D = S.days[shift.day];
+  if (!lateMode && !S.viewAs && askList().length) { window.scrollTo(0, 0); return toast("Answer the tasks you were asked about first, then post your SOD", "err"); }
   if (!lateMode && !S.viewAs && carryOver().length) { window.scrollTo(0, 0); return toast("Do the red tasks from an earlier day first, then post your SOD", "err"); }
   const runs = D.segs.filter(x => !x.sort).map(x => x.shift.run); const van = D.segs.map(x => x.shift.van).find(Boolean) || null;
   const runId = runs.map(r => S.C.runCodes[r] || r).join(" + ");

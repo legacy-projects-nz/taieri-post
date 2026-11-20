@@ -47,10 +47,16 @@ function addTodo() {
   }
   return out.sort((a, b) => b.s.day.localeCompare(a.s.day) || nm(a.s.driver).localeCompare(nm(b.s.driver)));
 }
+// add-ons the owner has asked the driver about (marks status 'ask'), still waiting for an answer
+function askedAdds() { return (S.marks || []).filter(m => m.status === "ask" && m.key?.startsWith("add|")).map(m => { const [, sid, ...kk] = m.key.split("|"); return { m, s: S.shifts.find(x => x.id === sid), k: kk.join("|") }; }).filter(x => x.s && !x.s.done?.[x.k]); }
+async function askDriver(pairs) { if (!pairs.length) return; const at = new Date().toISOString();
+  const { error } = await sb.from("marks").upsert(pairs.map(({ sid, k }) => ({ key: addKey(sid, k), driver: S.shifts.find(x => x.id === sid)?.driver || null, status: "ask", reviewed: false, note: "Asked the driver if it was done", by_person: S.me.id, at })));
+  if (error) return toast(error.message, "err"); toast(pairs.length > 1 ? `Asked about ${pairs.length}` : "Asked · they'll answer next time they open the app", "ok"); await loadAll(); render(); }
 function addSection() {
-  const L = addTodo();
-  return `<div class="card"><h2>Add-ons not done<span>${L.length || "all clear"}</span></h2><p class="hint">${HINT} A <b>Not done</b> task goes to the top of the driver's app in red the next day, to do before their SOD.</p>${allBar(L.length)}
-    ${byDay(L, i => i.s.day).map(([day, items]) => `<h4 style="margin:12px 0 4px">${label(day, true)}</h4><div class="list">${items.map(({ s, k }) => `<div class="item warn"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(nm(s.driver))}</b> · ${esc(s.run)}<span class="meta"> ${esc(keyName(k))}</span></span>${btnRow(actBtns("add", `data-sid="${s.id}" data-k="${esc(k)}"`))}</div></div>`).join("")}</div>`).join("") || `<p class="empty">✓ Nothing to fix.</p>`}</div>`;
+  const L = addTodo(); const A = askedAdds();
+  return `<div class="card"><h2>Add-ons not done<span>${L.length || (A.length ? `${A.length} asked` : "all clear")}</span></h2><p class="hint">${HINT} <b>Ask driver</b>: next time they open the app they say if it was done — yes counts as late, no as not done, both with the penalty.</p>${L.length ? `<div class="row" style="gap:4px;align-items:center;margin:6px 0"><button type="button" class="btn ghost sm" id="ask-all">Ask drivers about all ${L.length}</button></div>` : ""}${allBar(L.length)}
+    ${byDay(L, i => i.s.day).map(([day, items]) => `<h4 style="margin:12px 0 4px">${label(day, true)}</h4><div class="list">${items.map(({ s, k }) => `<div class="item warn"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(nm(s.driver))}</b> · ${esc(s.run)}<span class="meta"> ${esc(keyName(k))}</span></span>${btnRow(`<button type="button" class="btn sm ghost" data-ask="${s.id}|${esc(k)}">Ask driver</button>` + actBtns("add", `data-sid="${s.id}" data-k="${esc(k)}"`))}</div></div>`).join("")}</div>`).join("") || (A.length ? "" : `<p class="empty">✓ Nothing to fix.</p>`)}
+    ${A.length ? `<h4 style="margin:12px 0 4px">Asked · waiting for the driver</h4><div class="list">${A.map(({ m, s, k }) => `<div class="item"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(nm(s.driver))}</b> · ${esc(s.run)} · ${label(s.day)}<span class="meta"> ${esc(keyName(k))} · asked ${ago(m.at)}</span></span>${btnRow(actBtns("add", `data-sid="${s.id}" data-k="${esc(k)}"`))}</div></div>`).join("")}</div>` : ""}</div>`;
 }
 
 /* ---------- 3. Roster changes a driver hasn't confirmed ---------- */
@@ -119,6 +125,8 @@ function findItem(key) {
 export function wireFix() {
   wireAlerts(); wireAdmin(); wireScorecard();
   $("#fx-both")?.addEventListener("change", e => { both = e.target.checked; render(); });
+  $$("[data-ask]").forEach(b => b.onclick = () => { b.disabled = true; const [sid, ...kk] = b.dataset.ask.split("|"); askDriver([{ sid, k: kk.join("|") }]); });
+  $("#ask-all")?.addEventListener("click", e => { e.target.disabled = true; askDriver(addTodo().map(({ s, k }) => ({ sid: s.id, k }))); });
   $$("[data-fxshift]").forEach(b => b.onclick = () => { const [drv, day] = b.dataset.fxshift.split("|"); shiftSheet(drv, day); });
   $$('[data-fx="fix"]').forEach(b => b.onclick = () => { const it = findItem(b.dataset.key); if (it) it.kind === "SOD" ? sodSheet(it) : eodFix(it); });
 }
