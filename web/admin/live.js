@@ -4,6 +4,7 @@ import { sodStart, scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, ownerBre
 import { S, sheet, opt, nm, fnm, loadAll, render, scoreData, alertRow, fn, teamRange, rangeBar, teamStats } from "/admin/admin.js";
 import { itemKeyFor } from "/admin/detail.js";
 import { actBtns, addMark } from "/admin/settle.js";
+import { eodEdit } from "/admin/scorecard.js";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 /** The week the live board is showing: this week by default, back 8 weeks or forward 1 */
@@ -232,7 +233,7 @@ function actionCentre(scores, n) {
   const lic = S.drivers.filter(p => [p.licence_expiry, p.dg_expiry].some(d => d && (new Date(d) - new Date(t)) / 86400000 <= R.dueSoonDays));
   const vans = S.vans.filter(v => v.active && v.plate !== "OTHER" && ([v.wof_due, v.rego_due].some(d => d && (new Date(d) - new Date(t)) / 86400000 <= R.dueSoonDays) || v.wof_failed || (!v.no_ruc && v.ruc_paid_to && v.odometer && v.ruc_paid_to - v.odometer <= R.rucSoonKm)));
   const alerts = S.alerts.filter(a => !a.resolved_at).length;
-  const rows = [[reviews, "Reviews to do", "posts to confirm or excuse", "scorecard", reviews ? "warn" : ""], [overdue, "Overdue right now", "SOD/EOD not in yet today", "fix", overdue ? "crit" : ""], [pending, "Missing EOD figures", "runs that can't be scored yet", "scorecard", pending ? "warn" : ""], [aw, "Roster changes to approve", "made by Alejandro", "runboard", aw ? "warn" : ""], [unc, "Roster changes not confirmed", "drivers haven't tapped Got it", "runboard", unc ? "crit" : ""], [leave, "Leave requests waiting", "approve or decline", "leave", leave ? "warn" : ""], [mist, "Mistakes logged this week", "Driver Mistakes Record", "scorecard", mist ? "crit" : ""], [lic.length, "Licences & DG due", lic.map(p => first(p.name)).slice(0, 3).join(", "), "people", lic.length ? "warn" : ""], [vans.length, "Vehicles due", "WOF, rego, RUCs", "fleet", vans.length ? "warn" : ""], [alerts, "Open alerts", "resolve or let them clear", "alerts", alerts ? "warn" : ""]].filter(r => r[0]);
+  const rows = [[reviews, "Reviews to do", "posts to confirm or excuse", "scorecard", reviews ? "warn" : ""], [overdue, "Overdue right now", "SOD/EOD not in yet today", "fix", overdue ? "crit" : ""], [pending, "Missing EOD figures", "runs that can't be scored yet · tap to fix or ask", "pending", pending ? "warn" : ""], [aw, "Roster changes to approve", "made by Alejandro", "runboard", aw ? "warn" : ""], [unc, "Roster changes not confirmed", "drivers haven't tapped Got it", "runboard", unc ? "crit" : ""], [leave, "Leave requests waiting", "approve or decline", "leave", leave ? "warn" : ""], [mist, "Mistakes logged this week", "Driver Mistakes Record", "scorecard", mist ? "crit" : ""], [lic.length, "Licences & DG due", lic.map(p => first(p.name)).slice(0, 3).join(", "), "people", lic.length ? "warn" : ""], [vans.length, "Vehicles due", "WOF, rego, RUCs", "fleet", vans.length ? "warn" : ""], [alerts, "Open alerts", "resolve or let them clear", "alerts", alerts ? "warn" : ""]].filter(r => r[0]);
   return `<div class="card" id="todo"><h2>To do<span>${rows.length ? `${rows.length} item${rows.length > 1 ? "s" : ""}` : "all done"}</span></h2>${rows.length ? `<div class="list">${rows.map(([c, l, s, tab, cls]) => `<button class="item ${cls}" data-go="${tab}" style="border:0;color:inherit;text-align:left;cursor:pointer"><div class="row" style="justify-content:space-between"><b>${esc(l)}</b><span class="pill ${cls || "grey"}">${c}</span></div><div class="meta">${esc(s)}</div></button>`).join("")}</div>` : `<p class="empty">✓ All complete<br><span class="meta">No reviews, overdue posts, approvals or mistakes waiting.</span></p>`}</div>`;
 }
 
@@ -340,8 +341,22 @@ async function decideSodReq(id, ok) {
 }
 
 /* ---- wiring ---- */
+// runs that can't be scored yet (EOD figures missing), by the driver responsible: Edit their EOD, or ask them to fill it in
+function pendingRuns() { const t = today(); const wk = monOf(t); const D = scoreData(); const out = [];
+  for (const d of S.drivers) for (const e of scoreFor(d.id, wk, addDays(wk, 6), D, S.C).effDays.filter(e => e.pending && e.day < t)) for (const r of e.rows || []) if (r.need?.length) out.push({ drv: d.id, day: e.day, code: r.shift?.run || r.code, need: r.need, eod: r.eod, shift: r.shift });
+  return out; }
+function pendingSheet() {
+  const L = pendingRuns(); const by = {}; for (const r of L) (by[r.drv] ??= []).push(r);
+  sheet(`<h3>Runs that can't be scored yet</h3>${L.length ? Object.entries(by).map(([d, rs]) => `<div class="item warn" style="margin-bottom:8px"><div class="row" style="justify-content:space-between;align-items:center"><b>${esc(nm(d))}</b><button class="btn sm ghost" data-pask="${d}">Ask ${esc(first(nm(d)))}</button></div>
+    ${rs.map((r, i) => `<div class="row" style="justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding-top:6px;margin-top:6px"><span>${esc(r.code)} · ${label(r.day)}<span class="meta"> · missing ${esc(r.need.join(", "))}</span></span>${r.eod ? `<button class="btn sm" data-pedit="${d}|${i}">Edit</button>` : `<span class="meta">no EOD</span>`}</div>`).join("")}</div>`).join("") : `<p class="empty">✓ Every run can be scored.</p>`}`, bg => {
+    bg.querySelectorAll("[data-pedit]").forEach(b => b.onclick = () => { const [d, i] = b.dataset.pedit.split("|"); const r = by[d]?.[+i]; if (r?.eod) eodEdit(r.eod); });
+    bg.querySelectorAll("[data-pask]").forEach(b => b.onclick = async () => { b.disabled = true; const d = b.dataset.pask; const rs = by[d] || [];
+      const body = `Hi ${first(nm(d))}, I can't score ${rs.length > 1 ? "these runs" : "this run"} yet because some EOD figures are missing:\n${rs.map(r => `• ${r.code} · ${label(r.day)}: ${r.need.join(", ")}`).join("\n")}\nPlease open the EOD in the app and fill them in. Thanks, ${first(S.me.name)}`;
+      try { const msg = await q(sb.from("messages").insert({ sender: S.me.id, body, needs_confirm: true }).select().single()); await q(sb.from("message_recipients").insert({ message_id: msg.id, person: d })); fn("notify", { type: "message", message_id: msg.id }).catch(() => { }); toast(`Asked ${first(nm(d))}`, "ok"); b.textContent = "Asked ✓"; }
+      catch (e) { b.disabled = false; toast(e.message, "err"); } }); });
+}
 export function wireAdmin() {
-  $$("[data-go]").forEach(b => b.onclick = () => { S.tab = b.dataset.go; location.hash = S.tab; render(); });
+  $$("[data-go]").forEach(b => b.onclick = () => { if (b.dataset.go === "pending") return pendingSheet(); S.tab = b.dataset.go; location.hash = S.tab; render(); });
   $$("[data-sreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideSodReq(b.dataset.sreq, b.dataset.ok === "1"); });
   $$("[data-xreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideXt(b.dataset.xreq, b.dataset.ok === "1"); });
 }
