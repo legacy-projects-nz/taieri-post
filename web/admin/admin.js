@@ -4,7 +4,6 @@ import { requireUser } from "/shared/auth.js";
 import { AREAS, AREA_LABEL } from "/shared/config.js";
 import { cfg, dayShifts, itemsFor, scoreFor, payBand, money, fortnight, itemNote, STATE_LABEL, addName, segTimes, setEvidence, setAddonNames, meetRule, meetOn, eodState } from "/shared/score.js";
 import { runBoardTab, wireRunBoard } from "/admin/runboard.js";
-import { wirePhotos } from "/admin/photos.js";
 import { scorecardTab, wireScorecard, formulasTab, reportsTab, recordsTab } from "/admin/scorecard.js";
 import { fixTab, wireFix, fixCount } from "/admin/fix.js";
 import { actBtns, allBar, addMark } from "/admin/settle.js";
@@ -156,7 +155,7 @@ export function render(soft = false) {
   // classic Run Board in its own full-size browser window (falls back to a new tab if pop-ups are blocked)
   $$("[data-popout]").forEach(a => a.onclick = e => { e.preventDefault(); const w = window.open(a.dataset.popout, "tp_classic", `popup=yes,width=${screen.availWidth},height=${screen.availHeight},left=0,top=0`); if (w) { try { w.moveTo(0, 0); w.resizeTo(screen.availWidth, screen.availHeight); } catch (_) { } w.focus(); } else window.open(a.dataset.popout, "_blank", "noopener"); });
   if (S.tab !== "live") { /* the live board draws its own map */ }
-  try { ({ live: wireLive2, runboard: wireRunBoard, classic: () => { }, scorecard: wireScorecard, formulas: wireScorecard, reports: wireScorecard, records: () => { wireScorecard(); wirePhotos(); }, timings: wireAlerts, fix: wireFix, income: wireIncome, routes: wireRoutes, allowances: wireAllowances, pickups: wirePickups, hazards: wireHazards, alerts: wireAlerts, messages: wireMessages, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople, pay: wirePay })[S.tab]?.(); } catch (e) { reportError("wire:" + S.tab, e); }
+  try { ({ live: wireLive2, runboard: wireRunBoard, classic: () => { }, scorecard: wireScorecard, formulas: wireScorecard, reports: wireScorecard, records: wireScorecard, timings: wireAlerts, fix: wireFix, income: wireIncome, routes: wireRoutes, allowances: wireAllowances, pickups: wirePickups, hazards: wireHazards, alerts: wireAlerts, messages: wireMessages, leave: wireLeave, fleet: wireFleet, timing: wireTiming, people: wirePeople, pay: wirePay })[S.tab]?.(); } catch (e) { reportError("wire:" + S.tab, e); }
   try { wireRange(); folds(); bind($("#view")); } catch (e) { reportError("wire2:" + S.tab, e); }   // every tile, row and chip with a data-… attribute opens its detail sheet
 }
 
