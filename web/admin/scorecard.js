@@ -7,6 +7,7 @@ import { dayRow } from "/admin/detail.js";
 import { labourWeek, labourRange } from "/admin/live.js";
 import { wagesView, wireWages } from "/admin/wages.js";
 import { sortingView } from "/admin/sorting.js";
+import { photosCard } from "/admin/photos.js";
 import { hoursCard } from "/admin/live.js";
 import { cmp, cmpDays, cmpHas, cmpRun, cmpBar, wireCmp, cmpWeeks } from "/admin/compare.js";
 import { actBtns } from "/admin/settle.js";
@@ -20,7 +21,7 @@ function weekScores() { const from = S.week, to = addDays(S.week, 6); const D = 
 // Scorecard tab: scores only. Review + mistakes live on Admin, labour & wages on Income, formulas and reports in the ☰ menu.
 export function scorecardTab() { const { scores, team } = weekScores(); return `${weekBar()}${dash(scores, team)}${effView()}`; }
 export function scoreAdmin() { const { scores } = weekScores(); return review(scores); }
-export function recordsTab() { return entriesView(); }
+export function recordsTab() { return entriesView() + photosCard(); }
 export function scoreIncome() { return labour() + hoursCard(S.week) + wagesView(); }
 export function formulasTab() { return sortingView() + formulasView(); }
 export function reportsTab() { const { scores } = weekScores(); return `${weekBar()}${reports(scores)}`; }
