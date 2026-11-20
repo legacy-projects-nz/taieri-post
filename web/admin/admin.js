@@ -124,7 +124,7 @@ function folds() {
   cards.forEach((c, i) => {
     const h = c.querySelector(":scope > h2"); if (!h) return;
     let key = S.tab + "|" + (c.id || [...h.childNodes].filter(x => x.nodeType === 3).map(x => x.textContent).join("").trim() || i);
-    const empty = !c.querySelector("#map") && c.id !== "daybudget" && !!c.querySelector(".empty") && !c.querySelector(".list, table, .tiles, svg, .dgrid, .item"); key += empty ? "|e" : "|f";
+    const empty = !c.querySelector("#map") && !["daybudget", "avail", "incmonth"].includes(c.id) && !!c.querySelector(".empty") && !c.querySelector(".list .item, table tr + tr, .tiles, svg, .dgrid > *, [data-go]"); key += empty ? "|e" : "|f";
     if (!(key in S.open)) S.open[key] = !empty;   // boxes with something in them start open, empty ones collapsed (and they flip when that changes)   // top four: Right now boxes open, sign-off / added hours open only when something is waiting
     c.classList.add("fold"); c.classList.toggle("shut", !S.open[key]);
     h.setAttribute("role", "button"); h.tabIndex = 0; h.setAttribute("aria-expanded", String(!!S.open[key]));

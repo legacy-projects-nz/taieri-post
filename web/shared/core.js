@@ -129,3 +129,9 @@ export async function pushState() { if (!("serviceWorker" in navigator) || !("Pu
 // Only shift and van changes need the driver to confirm; add-on/note-only changes go straight onto their portal.
 export function needsConfirm(i) { const a = i?.after || null, b = i?.before || null; if (!a?.driver || !b?.driver) return true;
   return ["driver", "trainee", "van", "start_at", "end_at", "bu_kind", "bu_block"].some(k => (a[k] ?? null) !== (b[k] ?? null)); }
+
+/** shrink a phone photo before upload: ≤1600px on the long side, JPEG. A 3–4 MB phone photo comes out around 250–400 KB.
+ *  Already-small photos are left alone; if anything fails the original is uploaded. */
+export async function shrinkPhoto(f, max = 1600, quality = 0.75) { try { if (!f?.type?.startsWith("image/")) return f; const bm = await createImageBitmap(f); const k = Math.min(1, max / Math.max(bm.width, bm.height)); if (k === 1 && f.size < 4e5) return f;
+  const c = document.createElement("canvas"); c.width = Math.round(bm.width * k); c.height = Math.round(bm.height * k); c.getContext("2d").drawImage(bm, 0, 0, c.width, c.height);
+  const b = await new Promise(r => c.toBlob(r, "image/jpeg", quality)); return b && b.size < f.size ? new File([b], "photo.jpg", { type: "image/jpeg" }) : f; } catch { return f; } }

@@ -1,5 +1,5 @@
 // Taieri Post · driver app
-import { needsConfirm, DEMO, sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, longLabel, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, enablePush, pushState, nzToIso, settings as loadSettings, signOut, errCtx, reportError } from "/shared/core.js";
+import { needsConfirm, shrinkPhoto, DEMO, sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, longLabel, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, enablePush, pushState, nzToIso, settings as loadSettings, signOut, errCtx, reportError } from "/shared/core.js";
 import { requireUser } from "/shared/auth.js";
 import { VAPID_PUBLIC } from "/shared/config.js";
 import { resetDemo, newRuns } from "/shared/demo.js";
@@ -937,8 +937,8 @@ function wire() {
     let note = null; if (ad?.photo_note) { note = await photoNote(ad); if (note === undefined) { inp.value = ""; return; } }
     let scan = null; if (rk === "tw_twrunsheet" && sh && mailRun(S.C, sh.run)) { scan = await scanTotal(sh); if (scan === undefined) { inp.value = ""; return; } }
     if (lab) lab.style.opacity = ".5"; toast("Uploading photo…");
-    const path = `${sh?.driver || S.me.id}/${sh?.day || today()}/${inp.dataset.rsphoto}-${rk}-${Date.now()}.${(f.name.split(".").pop() || "jpg").toLowerCase()}`;
-    const { error } = await sb.storage.from("runsheets").upload(path, f, { upsert: true, contentType: f.type || "image/jpeg" });
+    const f1 = await shrinkPhoto(f); const path = `${sh?.driver || S.me.id}/${sh?.day || today()}/${inp.dataset.rsphoto}-${rk}-${Date.now()}.jpg`;
+    const { error } = await sb.storage.from("runsheets").upload(path, f1, { upsert: true, contentType: f1.type || "image/jpeg" });
     if (error) { if (lab) lab.style.opacity = ""; return toast(`Photo didn't upload: ${error.message}`, "err"); }
     const { error: e2 } = await sb.rpc("task_photo_done", { p_shift: inp.dataset.rsphoto, p_addon: rk, p_path: path, p_note: note });
     if (e2) { if (lab) lab.style.opacity = ""; return toast(e2.message, "err"); }
@@ -1012,10 +1012,6 @@ function scanTotal(sh) {
 }
 /* ---------- Mail tray photo: up to 6 photos → slots with mail counted (mail stops) → driver checks the number → saved ---------- */
 const MAIL_KEY = "tw_mailtrays";
-/** shrink a phone photo to ≤2000px JPEG before upload (keeps the tray count fast and under the photo size limit) */
-async function shrinkPhoto(f, max = 2000) { try { const bm = await createImageBitmap(f); const k = Math.min(1, max / Math.max(bm.width, bm.height)); if (k === 1 && f.size < 3e6) return f;
-  const c = document.createElement("canvas"); c.width = Math.round(bm.width * k); c.height = Math.round(bm.height * k); c.getContext("2d").drawImage(bm, 0, 0, c.width, c.height);
-  const b = await new Promise(r => c.toBlob(r, "image/jpeg", 0.85)); return b ? new File([b], "tray.jpg", { type: "image/jpeg" }) : f; } catch { return f; } }
 function mailTraySheet(shiftId) {
   const sh = S.shifts.find(z => z.id === shiftId) || (S.helpShifts || []).find(z => z.id === shiftId); if (!sh) return; const files = [];
   const slot = i => files[i] ? `<div style="position:relative"><img src="${files[i].url}" alt="tray photo ${i + 1}" style="width:96px;height:96px;object-fit:cover;border-radius:8px"><button type="button" class="btn ghost sm" data-mtdel="${i}" style="position:absolute;top:2px;right:2px;min-height:24px;padding:0 6px">×</button></div>`
@@ -1032,7 +1028,7 @@ function mailTraySheet(shiftId) {
       bg.querySelectorAll("[data-mtdel]").forEach(b => b.onclick = () => { files.splice(+b.dataset.mtdel, 1); paths.length = 0; counted = false; draw(); }); };
     draw();
     const upload = async () => { if (paths.length === files.length) return true; paths.length = 0;
-      for (const [i, x] of files.entries()) { const f = await shrinkPhoto(x.f, 1600); const path = `${S.me.id}/${sh.day}/${sh.id}-${MAIL_KEY}-${Date.now()}-${i + 1}.${(f.name.split(".").pop() || "jpg").toLowerCase()}`;
+      for (const [i, x] of files.entries()) { const f = await shrinkPhoto(x.f, 1600, 0.85); const path = `${S.me.id}/${sh.day}/${sh.id}-${MAIL_KEY}-${Date.now()}-${i + 1}.${(f.name.split(".").pop() || "jpg").toLowerCase()}`;
         const { error } = await sb.storage.from("runsheets").upload(path, f, { upsert: true, contentType: f.type || "image/jpeg" }); if (error) { toast(`Photo didn't upload: ${error.message}`, "err"); paths.length = 0; return false; } paths.push(path); }
       return true; };
     const ai = bg.querySelector("#mt-ai"), nOut = bg.querySelector("#mt-n");
@@ -1276,7 +1272,7 @@ function vehicleCheckForm() {
     bg.querySelectorAll(".chk input").forEach(i => i.onchange = () => i.parentElement.classList.toggle("on", i.checked));
     bg.querySelector("#vf").onsubmit = async e => { e.preventDefault(); const b = bg.querySelector("button[type=submit]"); b.disabled = true; b.textContent = "Uploading…";
       try { const g = id => bg.querySelector("#" + id); const files = [...g("photos").files]; const van = g("van").value; const wk = monOf(n.date); const paths = [];
-        for (const [i, f] of files.entries()) { const path = `${van}/${wk}/${S.me.id}-${i + 1}-${Date.now()}.${(f.name.split(".").pop() || "jpg").toLowerCase()}`; const { error } = await sb.storage.from("vchk").upload(path, f, { upsert: true }); if (error) throw error; paths.push(path); }
+        for (const [i, f0] of files.entries()) { const f = await shrinkPhoto(f0); const path = `${van}/${wk}/${S.me.id}-${i + 1}-${Date.now()}.jpg`; const { error } = await sb.storage.from("vchk").upload(path, f, { upsert: true }); if (error) throw error; paths.push(path); }
         const { error } = await sb.from("vehicle_checks").upsert({ van, driver: S.me.id, week_start: wk, odometer: +g("odo").value || null, rucs_left: g("ruc").value ? +g("ruc").value : null, washed: g("washed").checked, tyres_ok: g("tyres").checked, vault_ok: g("vault").checked, bodywork: g("body").value || null, service_due: g("service").value || null, notes: g("notes").value || null, photos: paths, at: new Date().toISOString() }, { onConflict: "van,week_start" }); if (error) throw error;
         close(); toast("Vehicle check sent ✓", "ok"); } catch (err) { toast(err.message, "err"); b.disabled = false; b.textContent = "Send check"; } };
   });

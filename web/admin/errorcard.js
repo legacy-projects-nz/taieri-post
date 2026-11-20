@@ -1,5 +1,5 @@
 // Quick "Record an error" card: driver, issue, description, % off (preset, changeable). Saved as a Mistake entry.
-import { sb, q, today, esc, $, toast } from "/shared/core.js";
+import { sb, q, today, esc, $, toast, shrinkPhoto } from "/shared/core.js";
 import { S, sheet, opt, nm, loadAll, render, fn } from "/admin/admin.js";
 
 export const ERROR_ISSUES = ["Parcels", "Driving", "Admin", "Communication", "Vehicle", "Safety", "Timing", "Receivers", "Keys", "Mail", "Other"];
@@ -24,7 +24,7 @@ export function errorCard(driver = "") {
       const btn = bg.querySelector("button[type=submit]"); const files = [...bg.querySelector("#qe-photos").files]; const photos = [];
       btn.disabled = true; btn.textContent = files.length ? "Uploading…" : "Saving…";
       const fail = m => { toast(m, "err"); btn.disabled = false; btn.textContent = "Save error"; };
-      for (const [i, f] of files.entries()) { const path = `${g("qe-drv")}/${g("qe-day")}/${Date.now()}-${i + 1}.${(f.name.split(".").pop() || "jpg").toLowerCase()}`; const { error } = await sb.storage.from("errs").upload(path, f, { upsert: true }); if (error) return fail(error.message); photos.push(path); }
+      for (const [i, f0] of files.entries()) { const f = await shrinkPhoto(f0); const path = `${g("qe-drv")}/${g("qe-day")}/${Date.now()}-${i + 1}.jpg`; const { error } = await sb.storage.from("errs").upload(path, f, { upsert: true }); if (error) return fail(error.message); photos.push(path); }
       const { error } = await sb.from("entries").insert({ driver: g("qe-drv"), day: g("qe-day"), kind: "mistake", title: issue, note: desc || null, issue, pct_off: pct, show_driver: show, created_by: S.me.id, photos });
       if (error) return fail(error.message);
       toast("Error recorded", "ok"); close(); fn("notify", { type: "entry", driver: g("qe-drv"), title: issue, kind: "mistake" }).catch(() => { }); await loadAll(); render();
