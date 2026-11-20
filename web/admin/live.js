@@ -17,7 +17,9 @@ const tile = (l, v, s = "", cls = null, attrs = "") => `<${attrs ? "button" : "d
 
 export function liveTab() {
   const n = nzNow(); const t = n.date;
-  return `<div class="top4">${nowCard(n)}${availCard(S.avDay || t, n)}${onBreakCard()}</div>
+  const boss = S.me.isOwner || S.me.role === "admin"; const nSod = boss ? (S.sodReqs || []).filter(r => r.status === "pending").length : 0, nXt = S.me.isOwner ? (S.extra || []).filter(r => r.status === "pending").length : 0;
+  const signBar = nSod + nXt ? `<button class="btn sm" data-go="fix" style="margin-bottom:10px">⏱ ${[nSod ? `${nSod} start time${nSod > 1 ? "s" : ""}` : "", nXt ? `${nXt} hours` : ""].filter(Boolean).join(" · ")} to sign off → Admin</button>` : "";
+  return `${signBar}<div class="top4">${nowCard(n)}${availCard(S.avDay || t, n)}${onBreakCard()}</div>
     <div class="grid2"><div class="card"><h2>Live feed<span>today</span></h2>${feed(t)}</div><div class="card"><h2>Where everyone is<span>app open · grey = 10+ min old</span></h2><div class="map" id="map"></div></div></div>`;
 }
 // Admin tab: sign-offs and the to-do list (moved off Live)
@@ -361,6 +363,7 @@ export function wireAdmin() {
   $$("[data-xreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideXt(b.dataset.xreq, b.dataset.ok === "1"); });
 }
 export function wireLive() {
+  $$("[data-go]").forEach(b => b.onclick = () => { S.tab = b.dataset.go; location.hash = S.tab; render(); });
   $("#av-go")?.addEventListener("click", async () => { const d = $("#av-day").value || null; S.avFrom = $("#av-from").value || null; S.avTo = $("#av-to").value || null; S.avDay = d;
     if (d && !S.shifts.some(s => s.day === d)) { if (!S.cmpFrom || d < S.cmpFrom) S.cmpFrom = d; await loadAll(); } render(); });
   $("#av-now")?.addEventListener("click", () => { S.avDay = S.avFrom = S.avTo = null; render(); });
