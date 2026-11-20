@@ -70,7 +70,7 @@ export function incomeTab() {
   const past = m < ym(t), future = m > ym(t);
   const g = (v, est) => `<span class="${est ? "mn-est" : "mn-fin"}">${est ? "≈" : ""}${m0(v)}</span>`;
   return `${moneyCard(dd, dayNav)}<style>${IB_CSS}.mn-est{color:var(--ink3)}.mn-fin{color:var(--ok)}tr.mn-row{cursor:pointer}tr.mn-row:hover td{background:var(--soft)}</style>
-  <div class="card"><div class="wkbar"><button class="ar" id="inc-prev" aria-label="Previous month">‹</button><b>${MON[+m.slice(5) - 1]} ${m.slice(0, 4)}</b><button class="ar" id="inc-next" aria-label="Next month">›</button>${m !== ym(t) ? `<button class="btn ghost sm" id="inc-now" style="flex:0 0 auto">This month</button>` : ""}</div>
+  <div class="card" id="incmonth"><h2>Monthly estimate<span>incl GST</span></h2><div class="wkbar"><button class="ar" id="inc-prev" aria-label="Previous month">‹</button><b>${MON[+m.slice(5) - 1]} ${m.slice(0, 4)}</b><button class="ar" id="inc-next" aria-label="Next month">›</button>${m !== ym(t) ? `<button class="btn ghost sm" id="inc-now" style="flex:0 0 auto">This month</button>` : ""}</div>
     <div class="tiles" style="margin-top:10px"><div class="tile"><div class="l">Monthly Estimate${ib("_")}</div><div class="v ${past && !X.tot.est ? "mn-fin" : "mn-est"}">${past && !X.tot.est ? "" : "≈"}${m0(month)}</div></div></div>
     ${X.list.length ? `<div class="scroll" style="margin-top:10px"><table class="dt"><tr><th>Income</th><th align="right">Monthly Estimate</th></tr>
       ${X.list.map((r, i) => `<tr class="mn-row" data-incrow="${i}"><td><b>${esc(SNAME[r.k] || r.k)}</b>${SINFO[r.k] ? ib(r.k) : ""}</td><td align="right"><b>${g(r.total, r.doneEst || r.ahead > 0)}</b></td></tr>`).join("")}

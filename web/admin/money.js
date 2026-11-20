@@ -218,7 +218,7 @@ const totals = rows => rows.reduce((a, r) => ({ fees: a.fees + r.fees, staff: a.
 
 const cls = est => est ? "mn-est" : "mn-fin";                         // grey = estimate, green = final
 const amt = (v, est) => `<span class="${cls(est)}">${est ? "≈" : ""}${money(v)}</span>`;
-const STYLE = `<style>.mn-est{color:var(--ink3)}.mn-fin{color:var(--ok)}tr.mn-row{cursor:pointer}tr.mn-row:hover td{background:var(--soft)}button.tile.mn-t{cursor:pointer;text-align:left;border:0;color:inherit}.mn-h{margin:14px 0 6px;font-size:14px}table.mn-tb{width:100%;table-layout:fixed}table.mn-tb td:nth-child(n+2),table.mn-tb th:nth-child(n+2){width:92px;white-space:nowrap}table.mn-tb td:first-child{overflow-wrap:anywhere}</style>`;
+const STYLE = `<style>.mn-est{color:var(--ink3)}.mn-fin{color:var(--ok)}tr.mn-row{cursor:pointer}tr.mn-row:hover td{background:var(--soft)}button.tile.mn-t{cursor:pointer;text-align:left;border:0;color:inherit}.mn-h{margin:14px 0 6px;font-size:14px;font-weight:700;cursor:pointer}details.mn-sec>summary{list-style-position:inside}table.mn-tb{width:100%;table-layout:fixed}table.mn-tb td:nth-child(n+2),table.mn-tb th:nth-child(n+2){width:92px;white-space:nowrap}table.mn-tb td:first-child{overflow-wrap:anywhere}</style>`;
 
 let cur = { d: null, rows: [] };
 export function moneyCard(d, nav = "") {
@@ -238,12 +238,12 @@ export function moneyCard(d, nav = "") {
       <button class="tile mn-t" data-mnall="1"><div class="l">Business costs</div><div class="v mn-est">≈${money(C)}</div><div class="s">${money0(costMonth())}/month ÷ ${COST_DAYS} days · Xero + cashflow</div>${yearLine(Y.costs, `${money0(costMonth())}/month × 12`)}</button>
       <button class="tile mn-t" data-mnall="1"><div class="l">Left after costs</div><div class="v ${cls(T.fe || T.se || C > 0)}">${T.fe || T.se || C > 0 ? "≈" : ""}${money(T.fees - T.staff - C)}</div><div class="s">income − staff − costs, before GST</div>${yearLine(Y.left, yHow)}</button>
       <button class="tile mn-t" data-mnweek="${wk}"><div class="l">Month at this pace</div><div class="v ${cls(wkEst)}">${wkEst ? "≈" : ""}${money0(month)}</div><div class="s">week of ${label(wk)}: ${money0(wkFees)} in · ${money0(wkStaff)} staff · ${money0(wkCost)} costs · ≈${money0(monthProfit)}/month left · target ${money0(M.target)}/month (${month >= M.target ? "+" : "−"}${money0(Math.abs(month - M.target))}) · month = year ÷ 12</div>${yearLine(Y.fees, yHow)}</button></div>
-    ${rows.length ? `<h3 class="mn-h">Income per run</h3><div class="scroll"><table class="dt mn-tb"><tr><th>Run</th><th align="right">Excl GST</th><th align="right">Incl GST</th></tr>${inRows.map(([r, i]) => inRow(r, i)).join("")}
-      <tr class="mn-row" data-mnall="1"><td><b>Total income</b></td><td align="right"><b>${amt(T.fees, T.fe)}</b></td><td align="right"><b>${amt(T.fees * (1 + GST), T.fe)}</b></td></tr></table></div>
-      <h3 class="mn-h">Costs per run</h3><div class="scroll"><table class="dt mn-tb"><tr><th>Run</th><th align="right">Staff</th><th></th></tr>${coRows.map(([r, i]) => coRow(r, i)).join("")}
+    ${rows.length ? `<details class="mn-sec" open><summary class="mn-h">Income per run</summary><div class="scroll"><table class="dt mn-tb"><tr><th>Run</th><th align="right">Excl GST</th><th align="right">Incl GST</th></tr>${inRows.map(([r, i]) => inRow(r, i)).join("")}
+      <tr class="mn-row" data-mnall="1"><td><b>Total income</b></td><td align="right"><b>${amt(T.fees, T.fe)}</b></td><td align="right"><b>${amt(T.fees * (1 + GST), T.fe)}</b></td></tr></table></div></details>
+      <details class="mn-sec" open><summary class="mn-h">Costs per run</summary><div class="scroll"><table class="dt mn-tb"><tr><th>Run</th><th align="right">Staff</th><th></th></tr>${coRows.map(([r, i]) => coRow(r, i)).join("")}
       <tr class="mn-row" data-mnall="1"><td><b>Staff total</b></td><td align="right"><b>${amt(T.staff, T.se)}</b></td><td></td></tr>
       <tr class="mn-row" data-mnall="1"><td>Business costs</td><td align="right">${amt(C, true)}</td><td></td></tr>
-      <tr class="mn-row" data-mnall="1"><td><b>Total costs</b></td><td align="right"><b>${amt(T.staff + C, true)}</b></td><td></td></tr></table></div>
+      <tr class="mn-row" data-mnall="1"><td><b>Total costs</b></td><td align="right"><b>${amt(T.staff + C, true)}</b></td><td></td></tr></table></div></details>
       <div class="scroll"><table class="dt mn-tb"><tr class="mn-row" data-mnall="1"><td><b>Left after costs</b></td><td align="right"><b>${amt(T.fees - T.staff - C, T.fe || T.se || C > 0)}</b></td><td></td></tr></table></div>` : `<p class="meta">Nobody rostered and no pick-ups on this day.</p>`}
     <form class="row" id="mn-f" style="margin-top:8px;align-items:flex-end"><label class="f" style="flex:1 1 160px">TGE total · South (excl GST)<input class="in" id="mn-tge" inputmode="decimal" value="${tgeSouth(d) || ""}" placeholder="0.00"></label>
       <button class="btn sm" type="submit" style="flex:0 0 auto">Save</button>
