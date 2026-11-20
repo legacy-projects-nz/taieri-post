@@ -1,6 +1,6 @@
 // Photo storage (owner, on ☰ Records): shrinks photos that went up full size before uploads were shrunk on the phone.
 // Runs in this browser: downloads each big photo, shrinks it (≤1600px JPEG) and puts it back in the same place.
-// Photos older than 12 months are deleted automatically every night (edge function "cleanup").
+// Old photos are deleted every night by type (edge function "cleanup").
 import { sb, esc, $, toast, shrinkPhoto } from "/shared/core.js";
 import { S } from "/admin/admin.js";
 
@@ -9,7 +9,7 @@ const BIG = 6e5;   // anything over ~600 KB gets shrunk
 
 export function photosCard() {
   if (!S.me.isOwner) return "";
-  return `<div class="card" id="photos"><h2>Photo storage<span>kept 12 months</span></h2>
+  return `<div class="card" id="photos"><h2>Photo storage<span>trays &amp; mail 1 month · runsheet &amp; bay 6 weeks · vehicle checks 12 months · mistakes while employed + 12 months</span></h2>
     <p class="hint">New photos are shrunk on the phone before upload. This shrinks the older full-size ones (about 2–3 MB each down to about 300 KB). Keep this page open while it runs.</p>
     <div class="row" style="gap:6px;align-items:center"><button class="btn sm" id="ph-go">Shrink old photos</button><span class="meta" id="ph-st"></span></div></div>`;
 }
