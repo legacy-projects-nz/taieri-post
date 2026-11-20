@@ -117,16 +117,15 @@ async function loadReadOnly() {
   S.drivers = people.filter(p => p.active); S.sodBy = Object.fromEntries(S.sods.map(x => [x.shift_id, x])); S.eodBy = {};
 }
 const MENU_TABS = ["classic", "records", "timings", "formulas", "reports", "routes", "pickups", "messages", "allowances", "hazards", "leave", "fleet", "timing", "people", "pay"];
-/* collapsible boxes: on every tab, every box after the first starts collapsed; tap its heading to open. Open/closed is kept while the page is open.
-   "Shift right now" and "Add-ons right now" (ids rightnow*) can be collapsed too, wherever they sit, but start open.
-   Live tab: the first four (Start times to sign off, Added hours, Shift right now, Add-ons right now) sit side by side in .top4 as four same-size boxes. */
+/* collapsible boxes: every box can be collapsed by tapping its heading. A box with something in it starts open; an empty one starts collapsed. */
 S.open ??= {};
 function folds() {
   const cards = $$("#view .card").filter(c => !c.parentElement.closest(".card"));
   cards.forEach((c, i) => {
-    const top = !!c.closest(".top4"); if (i === 0 && !top && !c.id.startsWith("rightnow")) return; const h = c.querySelector(":scope > h2"); if (!h) return;
-    const key = S.tab + "|" + (c.id || [...h.childNodes].filter(x => x.nodeType === 3).map(x => x.textContent).join("").trim() || i);
-    if (!(key in S.open)) S.open[key] = S.tab === "live" || c.id.startsWith("rightnow") || c.id === "sodreq" || c.id === "xtreq" || c.id === "todo" || c.id === "daybudget" || (top && c.classList.contains("hot"));   // top four: Right now boxes open, sign-off / added hours open only when something is waiting
+    const h = c.querySelector(":scope > h2"); if (!h) return;
+    let key = S.tab + "|" + (c.id || [...h.childNodes].filter(x => x.nodeType === 3).map(x => x.textContent).join("").trim() || i);
+    const empty = !c.querySelector("#map") && c.id !== "daybudget" && !!c.querySelector(".empty") && !c.querySelector(".list, table, .tiles, svg, .dgrid, .item"); key += empty ? "|e" : "|f";
+    if (!(key in S.open)) S.open[key] = !empty;   // boxes with something in them start open, empty ones collapsed (and they flip when that changes)   // top four: Right now boxes open, sign-off / added hours open only when something is waiting
     c.classList.add("fold"); c.classList.toggle("shut", !S.open[key]);
     h.setAttribute("role", "button"); h.tabIndex = 0; h.setAttribute("aria-expanded", String(!!S.open[key]));
     const ch = document.createElement("i"); ch.className = "fchev" + (h.querySelector(":scope > span") ? "" : " solo"); ch.setAttribute("aria-hidden", "true"); h.appendChild(ch);
