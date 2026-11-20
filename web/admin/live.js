@@ -1,10 +1,8 @@
-// Live board: the old Scorecard dashboard, live. Day chips, KPIs, receivers & pick-ups, important points, team scores + labour,
-// add-ons & timings board, hours by day, admin action centre, roster changes not confirmed, drivers grid, posts board + live feed, map.
+// Live board: what is happening right now — shift right now, add-ons right now, available drivers & vans, unpaid breaks, live feed and the map.
 import { sb, q, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, toast, pill, first, col, pct, isSort, avg, sum } from "/shared/core.js";
 import { sodStart, scoreFor, fortnight, itemNote, STATE_LABEL, effCalc, ownerBreakHrs, band, fortnightBand, payBand, money, dayShifts, segTimes, addName, meetRule, meetOn, XT_KINDS, extraMins } from "/shared/score.js";
 import { S, sheet, opt, nm, fnm, loadAll, render, scoreData, alertRow, fn, teamRange, rangeBar, teamStats } from "/admin/admin.js";
 import { itemKeyFor } from "/admin/detail.js";
-import { moneyCard, wireMoney } from "/admin/money.js";
 import { actBtns, addMark } from "/admin/settle.js";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -17,36 +15,16 @@ const chip = it => `<button class="chip ${it.st} ${it.mark?.status ? "man" : ""}
 const tile = (l, v, s = "", cls = null, attrs = "") => `<${attrs ? "button" : "div"} class="tile" ${attrs}><div class="l">${l}</div><div class="v ${cls || (typeof v === "number" || v == null ? "c-" + col(v) : "")}">${typeof v === "number" || v == null ? pct(v) : v}</div>${s ? `<div class="s">${s}</div>` : ""}</${attrs ? "button" : "div"}>`;
 
 export function liveTab() {
-  const n = nzNow(); const t = n.date; const wk = liveWk(); const days = sel(); const one = days.length === 1; const R = S.C.rules; const D = scoreData();
-  const from = days[0], to = days[days.length - 1];
-  const drivers = S.drivers.filter(d => !d.pay_exclude || true);
-  const scores = drivers.map(d => scoreFor(d.id, wk, addDays(wk, 6), D, S.C));                     // week to date (team tiles, drivers grid)
-  const selScores = drivers.map(d => scoreFor(d.id, from, to, D, S.C));                             // selected days (posts, KPIs)
-  const items = selScores.flatMap(s => s.items);
-  const closed = items.filter(i => !["due", "wait", "over", "exc"].includes(i.st)); const ok = closed.filter(i => i.st === "ok").length;
-  const over = items.filter(i => i.st === "over"), due = items.filter(i => i.st === "due"), late = items.filter(i => i.st === "late"), miss = items.filter(i => i.st === "miss");
-  const rostered = new Set(S.shifts.filter(s => days.includes(s.day) && s.driver && s.run !== "BU").map(s => s.driver)).size;
-  const team = k => avg(scores.filter(s => !S.peopleBy[s.driver]?.pay_exclude && (s.closed || s.effDays.length || s.accDays.length)).map(s => s[k]));
-
-  // day picker on one line: M T W T F S S (today underlined), then Today and Week
-  const chips = `<div class="seg-btns dayline">${DAYS.map((d, i) => { const dd = addDays(wk, i); return `<button data-day="${dd}" class="${days.includes(dd) ? "on" : ""}${dd === t ? " tdy" : ""}" title="${label(dd)}" aria-label="${label(dd)}${dd === t ? ", today" : ""}">${d[0]}</button>`; }).join("")}<button data-days="today" class="wide ${one && days[0] === t ? "on" : ""}">Today</button><button data-days="week" class="wide ${days.length === 7 ? "on" : ""}">Week</button></div><p class="hint" style="margin:0">Tap days to add or remove them.</p>`;
-  const k = kind => `data-kpi="${kind}" data-days="${days.join(",")}" title="Tap to see which posts"`;
-  const kpi = one ? `<div class="tiles">${tile("Posts due so far", String(items.length - due.length), `of ${items.length} for ${label(days[0])}`, "", k("due"))}${tile("On time", String(ok), closed.length ? `${Math.round(ok / closed.length * 100)}% of posts` : "no posts yet", "c-ok", k("ok"))}${tile("Late", String(late.length), `late = −${R.perEvent}% Admin`, late.length ? "c-crit" : "c-ok", k("late"))}${tile("Overdue now", String(over.length + miss.length), miss.length ? `${miss.length} missing` : "chased automatically when on", over.length + miss.length ? "c-crit" : "c-ok", k("over"))}</div>`
-    : `<div class="tiles">${tile("Team on-time rate", closed.length ? ok / closed.length * 100 : null, `${ok} of ${closed.length} posts on time`, null, k("rate"))}${tile("Late", String(late.length), "posted after the due time", late.length ? "c-crit" : "c-ok", k("late"))}${tile("Missing", String(miss.length), "never posted", miss.length ? "c-crit" : "c-ok", k("miss"))}${tile("Drivers rostered", String(rostered), "tracked this week", "", k("rostered"))}</div>`;
-
-  const cur = monOf(t);
-  return `<div class="top4">${sodReqCard()}${xtCard()}${nowCard(n)}</div>${weekNav(wk)}${wk > cur ? `<p class="hint" style="margin:0 0 6px">Next week: the planned roster. Nothing is posted yet, so scores fill in as the days come.</p>` : ""}<div class="card">${chips}${kpi}</div>
-    ${availCard(S.avDay || (one ? days[0] : t), n)}
-    ${addonBoard(one ? days[0] : t, n)}
-    ${moneyCard(one ? days[0] : t)}
-    <div class="grid2">${important(scores, n)}${teamAndLabour(scores, team, wk)}</div>
-    <div class="grid2">${hoursByDay(wk)}${actionCentre(scores, n)}</div>
-    ${notConfirmed(n)}
-    ${breaksCard(days, n)}
-    ${driversGrid(scores, wk)}
-    <div class="card"><h2>${one ? `Posts for ${label(days[0])}` : "Posts by driver and day"}<span>tap a chip to review</span></h2>${postsBoard(selScores, days, t)}</div>
-    <div class="grid2"><div class="card"><h2>Live feed<span>today</span></h2>${feed(t)}</div><div class="card"><h2>Where everyone is<span>between SOD and EOD · app open</span></h2><div class="map" id="map"></div><p class="hint">Dots update every couple of minutes while a driver's app is on screen. Grey = older than 10 minutes.</p></div></div>`;
+  const n = nzNow(); const t = n.date;
+  return `<div class="top4">${nowCard(n)}${availCard(S.avDay || t, n)}${breaksCard([t], n)}</div>
+    <div class="grid2"><div class="card"><h2>Live feed<span>today</span></h2>${feed(t)}</div><div class="card"><h2>Where everyone is<span>app open · grey = 10+ min old</span></h2><div class="map" id="map"></div></div></div>`;
 }
+// Admin tab: sign-offs and the to-do list (moved off Live)
+export function adminTop() { const n = nzNow(); const wk = monOf(n.date); const D = scoreData();
+  const scores = S.drivers.map(d => scoreFor(d.id, wk, addDays(wk, 6), D, S.C));
+  return `${S.me.isOwner || S.me.role === "admin" ? `<div class="grid2">${sodReqCard()}${xtCard()}</div>` : ""}${actionCentre(scores, n)}`; }
+export function adminEnd() { return addonBoard(nzNow().date, nzNow()); }
+export function hoursCard(wk) { return hoursByDay(wk); }
 
 /* ---- Available · vans not in use and drivers free on the day (gaps of an hour or more, vans 5am–6pm, drivers 6am–5pm).
    Drivers who are never on call (Jeremy, James S, Jack, Pat, Peter) and anyone on approved leave are left out. ---- */
@@ -156,37 +134,6 @@ function addonBoard(day, n) {
 }
 
 /* ---- Important points ---- */
-function important(scores, n) {
-  const t = n.date; const wk = monOf(t); const P = []; const R = S.C.rules;
-  const dismissed = new Set(S.marks.filter(m => m.key.startsWith("imp|") && m.status === "exc").map(m => m.key));
-  for (const s of scores) { const d = S.peopleBy[s.driver]; if (d.pay_exclude || !(s.closed || s.effDays.length)) continue;
-    if (s.admin != null && s.admin < 90) P.push({ lv: s.admin < 85 ? "crit" : "warn", who: d.name, t: `Admin ${Math.round(s.admin)}%`, d: `${s.late} late, ${s.missing} missing posts`, w: 100 - s.admin, sig: `${d.id}|admin` });
-    if (s.eff != null && s.eff < 80) P.push({ lv: s.eff < 70 ? "crit" : "warn", who: d.name, t: `Efficiency ${Math.round(s.eff)}%`, d: "runs taking longer than the formula allows", w: 100 - s.eff, sig: `${d.id}|eff` });
-    if (s.acc != null && s.acc < 95) P.push({ lv: s.acc < 90 ? "crit" : "warn", who: d.name, t: `Accuracy ${Math.round(s.acc)}%`, d: s.nMist ? `${s.nMist} mistake${s.nMist > 1 ? "s" : ""} logged` : "NZ Post scan compliance", w: 100 - s.acc, sig: `${d.id}|acc` });
-    for (const e of s.effDays) if (!e.pending && !e.manual) for (const r of e.rows) if (r.perf != null && r.perf < 75 && r.taken) P.push({ lv: "warn", who: d.name, t: `${r.code} ${label(e.day)}`, d: `${r.taken.toFixed(1)} h vs ${(r.allowed / 60).toFixed(1)} h expected (${Math.round(r.perf)}%${r.est ? ", est" : ""})`, w: 100 - r.perf, sig: `${d.id}|${r.code}|${e.day}` }); }
-  // vehicle checks this week (after Thursday 5pm)
-  const thuDue = dow(t) + 1 > R.vchkDay || (dow(t) + 1 === R.vchkDay && n.min >= toMin(R.vchkTime));
-  if (thuDue) for (const v of S.vans.filter(v => v.active && v.plate !== "OTHER")) if (!S.vchk.some(c => c.van === v.plate && c.week_start === wk) && S.shifts.some(s => s.day >= wk && s.day <= t && s.van === v.plate)) P.push({ lv: "warn", who: v.plate, t: `Vehicle check ${v.plate}`, d: "not done this week", w: 20, sig: `vchk|${wk}|${v.plate}` });
-  // licences / DG
-  for (const p of S.drivers) for (const [k, l] of [["licence_expiry", "Licence"], ["dg_expiry", "DG endorsement"]]) if (p[k]) { const dd = Math.round((new Date(p[k]) - new Date(t)) / 86400000); if (dd <= R.dueSoonDays) P.push({ lv: dd < 0 ? "crit" : "warn", who: p.name, t: `${l} ${dd < 0 ? "expired" : "expiring"}`, d: `${label(p[k], true)} · ${dd < 0 ? `${-dd} days ago` : `in ${dd} days`}`, w: dd < 0 ? 90 : 40, sig: `${p.id}|${k}|${dd < 0}` }); }
-  // fleet
-  for (const v of S.vans.filter(v => v.active && v.plate !== "OTHER")) { for (const [k, l] of [["wof_due", "WOF"], ["rego_due", "Rego"]]) if (v[k]) { const dd = Math.round((new Date(v[k]) - new Date(t)) / 86400000); if (dd <= R.dueSoonDays) P.push({ lv: dd < 0 ? "crit" : "warn", who: v.plate, t: `${l} ${dd < 0 ? "overdue" : "due soon"}`, d: `${label(v[k], true)}`, w: dd < 0 ? 85 : 35, sig: `${v.plate}|${k}|${dd < 0}` }); }
-    if (v.wof_failed) P.push({ lv: "crit", who: v.plate, t: "WOF failed", d: "needs a recheck", w: 85, sig: `${v.plate}|woff` });
-    if (!v.no_ruc && v.ruc_paid_to && v.odometer) { const left = v.ruc_paid_to - v.odometer; if (left <= R.rucSoonKm) P.push({ lv: left <= 0 ? "crit" : "warn", who: v.plate, t: left <= 0 ? "RUCs overdue" : "RUCs low", d: `${left.toLocaleString()} km left`, w: left <= 0 ? 85 : 35, sig: `${v.plate}|ruc|${left <= 0}` }); } }
-  // unconfirmed roster changes
-  const ackOf = {}; for (const a of S.acks) (ackOf[a.item_id] ??= {})[a.driver] = a;
-  const unc = {}; for (const i of S.items.filter(i => i.roster_changes.status === "sent" && i.day >= t)) for (const d of i.affects) { const a = ackOf[i.id]?.[d]; if (!a?.confirmed_at && !a?.dismissed_at) (unc[d] ??= []).push(i); }
-  for (const [d, L] of Object.entries(unc)) { const hrs = Math.round((Date.now() - new Date(L[0].roster_changes.sent_at)) / 3600e3); P.push({ lv: hrs > 24 ? "crit" : "warn", who: nm(d), t: "Roster change not confirmed", d: `${L.length} change${L.length > 1 ? "s" : ""} · ${hrs} h waiting`, w: hrs > 24 ? 80 : 45, sig: `${d}|ntc|${L.length}` }); }
-  // open alerts (missed things)
-  for (const a of S.alerts.filter(a => !a.resolved_at && a.created_at.slice(0, 10) >= addDays(t, -1) && ["timing_missed", "sod_late", "eod_late"].includes(a.kind))) P.push({ lv: "crit", who: a.driver ? fnm(a.driver) : "", t: a.title.replace(/^[^:]+: /, ""), d: a.body || "", w: 95, sig: `alert|${a.dedupe_key}` });
-  const live = P.filter(p => !dismissed.has("imp|" + p.sig)).sort((a, b) => (a.lv === b.lv ? b.w - a.w : a.lv === "crit" ? -1 : 1));
-  const top = live.slice(0, 5); const nd = P.length - live.length;
-  return `<div class="card"><h2>Important points<span>${top.length ? "the 5 most important this week, most urgent first" : `✓ nothing to look at`}</span></h2>
-    ${top.length ? `<div class="list">${top.map((p, i) => `<div class="item clk ${p.lv}" data-important="${esc(JSON.stringify({ sig: p.sig }))}" title="Tap for the detail behind this"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><b>${i + 1}. ${esc(p.who)}</b> · ${esc(p.t)}<div class="meta">${esc(p.d)}</div></div><button class="btn ghost sm" data-dismiss="imp|${esc(p.sig)}" title="Hide this until it changes">Dismiss</button></div></div>`).join("")}</div>` : ""}
-    ${nd ? `<button class="linkbtn" id="imp-undismiss">Bring back ${nd} dismissed</button>` : ""}</div>`;
-}
-
-/* ---- Team scores + Due within 14 days + Labour ---- */
 function teamAndLabour(scores, team, wk) {
   const W = S.C.weights; const R = S.C.rules; const t = today();
   const dueList = [];
@@ -268,7 +215,7 @@ function hoursByDay(wk) {
   const bars = L.rows.map((r, i) => { const x = 20 + i * 56; const y = v => H - 20 - (v / max) * (H - 40); const over = r.ec && r.a != null ? ((r.a - r.tr) - r.ec) / r.ec * 100 : null; const fill = r.hol ? "var(--van, #9085e9)" : over == null ? "var(--accent)" : over <= 0 ? "var(--ok)" : over <= 10 ? "var(--warn)" : "var(--crit)";
     return `<rect x="${x}" y="${y(r.e)}" width="${bw / 2}" height="${H - 20 - y(r.e)}" fill="${r.est ? "var(--warn)" : "var(--line)"}" opacity="${r.est ? .55 : 1}"/>${r.a != null ? `<rect x="${x + bw / 2}" y="${y(r.a)}" width="${bw / 2}" height="${H - 20 - y(r.a)}" fill="${fill}"/>` : ""}<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--ink3)">${DAYS[i]}</text>${over != null ? `<text x="${x + bw / 2}" y="${Math.min(y(r.a), y(r.e)) - 4}" text-anchor="middle" font-size="10" fill="var(--ink2)">${over > 0 ? "+" : ""}${Math.round(over)}%</text>` : ""}`; }).join("");
   const eCell = r => r.e ? `<span class="${r.est ? "c-warn" : ""}" title="${r.est ? `${r.est.toFixed(1)} h of this is estimated from past EODs (orange)` : "from the EOD figures"}">${r.est ? "≈" : ""}${r.e.toFixed(1)}</span>` : "—";
-  return `<div class="card"><h2>Hours tracking by day<span>expected (grey = from EOD figures · <span class="c-warn">orange = estimated</span>) vs actual (SOD → EOD)</span></h2><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${bars}</svg>
+  return `<div class="card"><h2>Hours tracking by day<span>expected vs actual</span></h2><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${bars}</svg>
     <div class="scroll"><table class="dt"><tr><th>Day</th><th>Expected</th><th>Actual</th><th>Training</th><th>Tracking</th><th>Spend</th></tr>${L.rows.map(r => { const v = r.ec && r.ta ? ((r.ta - r.tr) - r.ec) / r.ec * 100 : null; return `<tr class="clk" data-hoursday="${r.d}" title="Tap for everyone's hours that day"><td>${label(r.d).slice(0, 6)}${r.hol ? ` <span class="meta">${esc(r.hol.name)} · paid</span>` : ""}</td><td class="num">${eCell(r)}</td><td class="num">${r.a != null && !r.aest ? r.a.toFixed(1) : r.at ? `<span class="c-warn" title="${r.a ? r.a.toFixed(1) + " h from SOD → EOD, rest estimated" : r.d > today() ? "to come · expected" : "SOD/EOD not in · estimated"}">≈${r.at.toFixed(1)}</span>` : "—"}</td><td class="num">${r.tr ? r.tr.toFixed(1) : ""}</td><td class="c-${v == null ? "grey" : v <= 0 ? "ok" : v <= 10 ? "warn" : "crit"}">${v == null ? "—" : (v > 0 ? "+" : "") + Math.round(v) + "%"}</td><td class="num">$${Math.round(r.sp).toLocaleString()}</td></tr>`; }).join("")}<tr class="clk" data-labour="${wk}" title="Tap for the week by driver"><td><b>Week</b></td><td class="num"><b class="${L.estH ? "c-warn" : ""}">${L.estH ? "≈" : ""}${L.E.toFixed(1)}</b></td><td class="num"><b class="${L.Aest ? "c-warn" : ""}">${L.Aest ? "≈" : ""}${L.At.toFixed(1)}</b></td><td class="num">${L.train ? L.train.toFixed(1) : ""}</td><td class="c-${L.trk == null ? "grey" : L.trk <= 0 ? "ok" : L.trk <= 10 ? "warn" : "crit"}">${L.trk == null ? "—" : (L.trk > 0 ? "+" : "") + Math.round(L.trk) + "%"}</td><td class="num"><b>$${Math.round(L.spend).toLocaleString()}</b></td></tr></table></div><p class="hint">Expected is evidence-based: once a run's EOD is in it's the formula on those figures; until then it's the formula on the average figures that run has posted on that weekday, so it sharpens as more EODs come in. Actual is SOD → last EOD, less unpaid breaks; where the SOD or an EOD is missing it's <span class="c-warn">≈ estimated</span> (what is in + the roster for the rest, or the expected hours when nothing is in) until the posts arrive.</p></div>`;
 }
 
@@ -286,7 +233,7 @@ function actionCentre(scores, n) {
   const vans = S.vans.filter(v => v.active && v.plate !== "OTHER" && ([v.wof_due, v.rego_due].some(d => d && (new Date(d) - new Date(t)) / 86400000 <= R.dueSoonDays) || v.wof_failed || (!v.no_ruc && v.ruc_paid_to && v.odometer && v.ruc_paid_to - v.odometer <= R.rucSoonKm)));
   const alerts = S.alerts.filter(a => !a.resolved_at).length;
   const rows = [[reviews, "Reviews to do", "posts to confirm or excuse", "scorecard", reviews ? "warn" : ""], [overdue, "Overdue right now", "SOD/EOD not in yet today", "fix", overdue ? "crit" : ""], [pending, "Missing EOD figures", "runs that can't be scored yet", "scorecard", pending ? "warn" : ""], [aw, "Roster changes to approve", "made by Alejandro", "runboard", aw ? "warn" : ""], [unc, "Roster changes not confirmed", "drivers haven't tapped Got it", "runboard", unc ? "crit" : ""], [leave, "Leave requests waiting", "approve or decline", "leave", leave ? "warn" : ""], [mist, "Mistakes logged this week", "Driver Mistakes Record", "scorecard", mist ? "crit" : ""], [lic.length, "Licences & DG due", lic.map(p => first(p.name)).slice(0, 3).join(", "), "people", lic.length ? "warn" : ""], [vans.length, "Vehicles due", "WOF, rego, RUCs", "fleet", vans.length ? "warn" : ""], [alerts, "Open alerts", "resolve or let them clear", "alerts", alerts ? "warn" : ""]].filter(r => r[0]);
-  return `<div class="card"><h2>Admin<span>${rows.length ? "what needs you" : "all complete"}</span></h2>${rows.length ? `<div class="list">${rows.map(([c, l, s, tab, cls]) => `<button class="item ${cls}" data-go="${tab}" style="border:0;color:inherit;text-align:left;cursor:pointer"><div class="row" style="justify-content:space-between"><b>${esc(l)}</b><span class="pill ${cls || "grey"}">${c}</span></div><div class="meta">${esc(s)}</div></button>`).join("")}</div>` : `<p class="empty">✓ All complete<br><span class="meta">No reviews, overdue posts, approvals or mistakes waiting.</span></p>`}</div>`;
+  return `<div class="card" id="todo"><h2>To do<span>${rows.length ? `${rows.length} item${rows.length > 1 ? "s" : ""}` : "all done"}</span></h2>${rows.length ? `<div class="list">${rows.map(([c, l, s, tab, cls]) => `<button class="item ${cls}" data-go="${tab}" style="border:0;color:inherit;text-align:left;cursor:pointer"><div class="row" style="justify-content:space-between"><b>${esc(l)}</b><span class="pill ${cls || "grey"}">${c}</span></div><div class="meta">${esc(s)}</div></button>`).join("")}</div>` : `<p class="empty">✓ All complete<br><span class="meta">No reviews, overdue posts, approvals or mistakes waiting.</span></p>`}</div>`;
 }
 
 /* ---- Roster changes not confirmed ---- */
@@ -325,7 +272,7 @@ function breaksCard(days, n) {
   const runOf = b => S.shifts.find(s => s.id === b.shift_id)?.run || "";
   const now = open.length ? `<div class="list">${open.map(b => `<div class="item warn"><div class="row" style="justify-content:space-between"><b>☕ ${esc(nm(b.driver))}</b><span class="meta">${esc(runOf(b))} · since ${fmtTime(b.started_at)} · ${mins(b)} min</span></div></div>`).join("")}</div>` : `<p class="empty">Nobody on an unpaid break right now</p>`;
   const tbl = list.length ? `<div class="scroll"><table class="dt"><tr><th>Driver</th><th>Date</th><th>Run</th><th>Start</th><th>End</th><th>Length</th></tr>${list.map(b => `<tr><td><b>${esc(nm(b.driver))}</b></td><td>${label(dayOf(b))}</td><td>${esc(runOf(b))}</td><td class="mono">${fmtTime(b.started_at)}</td><td class="mono">${b.ended_at ? fmtTime(b.ended_at) : `<span class="c-warn">on break</span>`}</td><td class="mono">${mins(b)} min</td></tr>`).join("")}</table></div>` : `<p class="empty">No unpaid breaks on ${days.length === 1 ? label(days[0]) : "these days"}</p>`;
-  return `<div class="card ${open.length ? "warnc" : ""}"><h2>Unpaid breaks<span>${open.length ? `${open.length} on an unpaid break now` : "nobody on a break"}</span></h2>${now}<h3 style="margin:10px 0 4px;font-size:14px">${days.length === 1 ? label(days[0]) : `${label(days[0])} – ${label(days[days.length - 1])}`}</h3>${tbl}<p class="hint">Drivers tap Start unpaid break and End unpaid break in their app. Unpaid break time is taken off their hours, wages and labour spend. Only staff can see this.</p></div>`;
+  return `<div class="card ${open.length ? "warnc" : ""}"><h2>Unpaid breaks<span>${open.length ? `${open.length} on an unpaid break now` : "nobody on a break"}</span></h2>${now}<h3 style="margin:10px 0 4px;font-size:14px">${days.length === 1 ? label(days[0]) : `${label(days[0])} – ${label(days[days.length - 1])}`}</h3>${tbl}</div>`;
 }
 
 function feed(t) {
@@ -361,7 +308,7 @@ function sodReqCard() {
       ${canSign() ? `<div class="row" style="margin-top:6px"><label class="meta" style="display:flex;align-items:center;gap:4px">Started <input class="in" type="time" data-sstart="${r.id}" value="${t24(r.started)}" style="width:110px"></label><input class="in" data-sreply="${r.id}" placeholder="Reply to ${esc(first(nm(r.driver)))} (optional)" style="flex:2 1 160px"><button class="btn sm" data-sreq="${r.id}" data-ok="1">✓ Approve</button><button class="btn ghost sm" data-sreq="${r.id}" data-ok="0">Decline</button></div>` : `<div class="meta">Waiting for Jeremy or admin</div>`}`
       : `<div class="meta ${r.status === "approved" ? "c-ok" : "c-crit"}">${r.status === "approved" ? "✓ Approved · run times moved" : "✗ Declined · roster unchanged"}${r.decided_by ? ` by ${esc(fnm(r.decided_by))}` : ""}${r.reply ? ` · ${esc(r.reply)}` : ""}</div>
       ${r.status === "approved" && canSign() ? `<div class="row" style="margin-top:6px"><label class="meta" style="display:flex;align-items:center;gap:4px">Edit start <input class="in" type="time" data-sstart="${r.id}" value="${t24(r.started)}" style="width:110px"></label><button class="btn ghost sm" data-sreq="${r.id}" data-ok="1">Save start</button></div>` : ""}`}</div>`;
-  return `<div class="card ${pend.length ? "hot" : ""}" id="sodreq"><h2><i class="ico">⏱</i>Start times to sign off<span>${pend.length ? `${pend.length} waiting` : "nothing waiting"} · SOD more than ${S.C.rules.sodReqMins ?? 20} min off the roster</span></h2>
+  return `<div class="card ${pend.length ? "hot" : ""}" id="sodreq"><h2><i class="ico">⏱</i>Start times to sign off<span>${pend.length ? `${pend.length} waiting` : "nothing waiting"}</span></h2>
     ${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : `<p class="empty">✓ Nothing to sign off.</p>`}${recent.length ? `<details><summary>Recent decisions</summary><div class="list" style="margin-top:8px">${recent.map(row).join("")}</div></details>` : ""}</div>`;
 }
 function xtCard() {
@@ -370,7 +317,7 @@ function xtCard() {
     ${r.note ? `<div class="meta">“${esc(r.note)}”</div>` : ""}
     ${r.status === "pending" ? (S.me.isOwner ? `<div class="row" style="margin-top:6px"><input class="in" data-xreply="${r.id}" placeholder="Reply to ${esc(first(nm(r.driver)))} (optional)" style="flex:2 1 160px"><button class="btn sm" data-xreq="${r.id}" data-ok="1">✓ Approve</button><button class="btn ghost sm" data-xreq="${r.id}" data-ok="0">Decline</button></div>` : `<div class="meta">Waiting for Jeremy</div>`)
       : `<div class="meta ${r.status === "approved" ? "c-ok" : "c-crit"}">${r.status === "approved" ? (r.decided_by ? `✓ Approved by ${esc(fnm(r.decided_by))}` : "✓ Added") : `✗ Declined${r.decided_by ? ` by ${esc(fnm(r.decided_by))}` : ""}`}${r.reply ? ` · ${esc(r.reply)}` : ""}${S.me.isOwner && !r.decided_by ? ` · <button class="btn ghost sm" data-xreq="${r.id}" data-ok="0">Decline</button>` : ""}</div>`}</div>`;
-  return `<div class="card ${pend.length ? "hot" : ""}" id="xtreq"><h2><i class="ico">＋</i>Added hours<span>${pend.length ? `${pend.length} to approve` : "nothing waiting"} · logged with ＋ Hours in the driver app</span></h2>
+  return `<div class="card ${pend.length ? "hot" : ""}" id="xtreq"><h2><i class="ico">＋</i>Hours to sign off<span>${pend.length ? `${pend.length} to approve` : "nothing waiting"}</span></h2>
     ${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : `<p class="empty">✓ Nothing to approve.</p>`}${recent.length ? `<details><summary>Recent</summary><div class="list" style="margin-top:8px">${recent.map(row).join("")}</div></details>` : ""}</div>`;
 }
 async function decideXt(id, ok) {
@@ -387,17 +334,19 @@ async function decideSodReq(id, ok) {
 }
 
 /* ---- wiring ---- */
+export function wireAdmin() {
+  $$("[data-go]").forEach(b => b.onclick = () => { S.tab = b.dataset.go; location.hash = S.tab; render(); });
+  $$("[data-sreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideSodReq(b.dataset.sreq, b.dataset.ok === "1"); });
+  $$("[data-xreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideXt(b.dataset.xreq, b.dataset.ok === "1"); });
+}
 export function wireLive() {
   $("#av-go")?.addEventListener("click", async () => { const d = $("#av-day").value || null; S.avFrom = $("#av-from").value || null; S.avTo = $("#av-to").value || null; S.avDay = d;
     if (d && !S.shifts.some(s => s.day === d)) { if (!S.cmpFrom || d < S.cmpFrom) S.cmpFrom = d; await loadAll(); } render(); });
   $("#av-now")?.addEventListener("click", () => { S.avDay = S.avFrom = S.avTo = null; render(); });
-  { const ds = sel(); wireMoney(ds.length === 1 ? ds[0] : today()); }
   $$("[data-day]").forEach(b => b.onclick = () => { const d = b.dataset.day; const cur = sel(); S.daySel = cur.includes(d) ? (cur.length > 1 ? cur.filter(x => x !== d) : cur) : [...cur, d].sort(); render(); });
   $$("[data-days]").forEach(b => b.onclick = () => { const today_ = b.dataset.days === "today"; if (today_) S.liveWk = monOf(today()); const wk = liveWk(); S.daySel = today_ ? [today()] : DAYS.map((_, i) => addDays(wk, i)); S.daySelWk = wk; render(); });
   $$("[data-lwk]").forEach(b => b.onclick = () => { const cur = monOf(today()); const v = b.dataset.lwk; S.liveWk = v === "0" ? cur : v === "next" ? addDays(cur, 7) : addDays(liveWk(), +v * 7); render(); });
   $$("[data-go]").forEach(b => b.onclick = () => { S.tab = b.dataset.go; location.hash = S.tab; render(); });
-  $$("[data-sreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideSodReq(b.dataset.sreq, b.dataset.ok === "1"); });
-  $$("[data-xreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideXt(b.dataset.xreq, b.dataset.ok === "1"); });
   $$("[data-dismiss]").forEach(b => b.addEventListener("click", e => e.stopPropagation()));
   $$("[data-dismiss]").forEach(b => b.onclick = async () => { await q(sb.from("marks").upsert({ key: b.dataset.dismiss, status: "exc", reviewed: true, note: "Dismissed on the dashboard", by_person: S.me.id, at: new Date().toISOString() })); });
   $("#imp-undismiss")?.addEventListener("click", async () => { await sb.from("marks").delete().like("key", "imp|%"); });

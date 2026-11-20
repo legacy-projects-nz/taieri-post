@@ -2,9 +2,10 @@
 // (Done / Late / Not done / Excuse), one at a time or for a whole box. The buttons and what they do live in settle.js.
 import { needsConfirm, sb, q, nzNow, today, addDays, dayName, dow, monOf, label, toMin, fmtT, fmt24, nzToIso, esc, $, $$, toast, first, ago } from "/shared/core.js";
 import { scoreFor, itemNote, STATE_LABEL, needsFix, standingOn } from "/shared/score.js";
-import { S, sheet, nm, weekBar, wireWeek, loadAll, render, scoreData, alertsTab, wireAlerts } from "/admin/admin.js";
-import { chip, eodEdit } from "/admin/scorecard.js";
+import { S, sheet, nm, weekBar, wireWeek, loadAll, render, scoreData, alertsTab, openAlerts, wireAlerts } from "/admin/admin.js";
+import { chip, eodEdit, scoreAdmin, wireScorecard } from "/admin/scorecard.js";
 import { actBtns, allBar, keyName, addKey } from "/admin/settle.js";
+import { adminTop, wireAdmin } from "/admin/live.js";
 
 let both = true; // show last week as well as the week on screen
 const range = () => ({ from: both ? addDays(S.week, -7) : S.week, to: addDays(S.week, 6) });
@@ -103,12 +104,12 @@ function hzSection() {
     ${L.length ? `<div class="list">${L.map(r => `<div class="item warn"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(r.d.name)}</b><span class="meta"> ${r.left} of ${r.n} not confirmed</span></span>${btnRow(actBtns("hz", `data-drv="${esc(r.d.id)}"`))}</div></div>`).join("")}</div>` : `<p class="empty">✓ Nothing to fix.</p>`}</div>`;
 }
 
-const SECTIONS = [["SOD / EOD", postSection], ["Add-ons", addSection], ["Roster changes", chgSection], ["Vehicle checks", vchkSection], ["Hazards", hzSection], ["Alerts", alertsTab]];
+const SECTIONS = [["SOD / EOD", postSection], ["Add-ons", addSection], ["Roster changes", chgSection], ["Vehicle checks", vchkSection], ["Hazards", hzSection], ["Alerts", openAlerts]];
 export function fixCount() { try { return todo().filter(i => i.st === "miss" || i.st === "part").length + addTodo().length + chgTodo().length + vchkTodo().length; } catch { return 0; } }
 
 export function fixTab() {
-  return `${weekBar(`<label class="chk ${both ? "on" : ""}"><input type="checkbox" id="fx-both" ${both ? "checked" : ""}>include last week</label>`)}
-    ${SECTIONS.map(([name, f]) => { try { return f(); } catch (e) { console.error(name, e); return `<div class="card"><h2>${name}</h2><p class="hint">This box couldn't be shown: ${esc(e?.message || e)}</p></div>`; } }).join("")}`;
+  return `${adminTop()}${weekBar(`<label class="chk ${both ? "on" : ""}"><input type="checkbox" id="fx-both" ${both ? "checked" : ""}>include last week</label>`)}
+    ${SECTIONS.map(([name, f]) => { try { return f(); } catch (e) { console.error(name, e); return `<div class="card"><h2>${name}</h2><p class="hint">This box couldn't be shown: ${esc(e?.message || e)}</p></div>`; } }).join("")}${scoreAdmin()}`;
 }
 
 function findItem(key) {
@@ -116,7 +117,7 @@ function findItem(key) {
 }
 
 export function wireFix() {
-  wireWeek(); wireAlerts();
+  wireAlerts(); wireAdmin(); wireScorecard();
   $("#fx-both")?.addEventListener("change", e => { both = e.target.checked; render(); });
   $$("[data-fxshift]").forEach(b => b.onclick = () => { const [drv, day] = b.dataset.fxshift.split("|"); shiftSheet(drv, day); });
   $$('[data-fx="fix"]').forEach(b => b.onclick = () => { const it = findItem(b.dataset.key); if (it) it.kind === "SOD" ? sodSheet(it) : eodFix(it); });

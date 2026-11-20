@@ -7,7 +7,8 @@
 // All figures incl GST (15%), NZD; the excl GST total is shown under them.
 import { esc, $, $$, today, addDays, dow, label } from "/shared/core.js";
 import { S, render, sheet, loadAll } from "/admin/admin.js";
-import { breakdown, isHoliday, model, GST, pickupsReady, loadPickupRange, STREAMS } from "/admin/money.js";
+import { scoreIncome, wireScorecard } from "/admin/scorecard.js";
+import { breakdown, isHoliday, model, GST, pickupsReady, loadPickupRange, STREAMS, moneyCard, wireMoney } from "/admin/money.js";
 
 const MON = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const m0 = n => (n < 0 ? "−$" : "$") + Math.round(Math.abs(n)).toLocaleString();
@@ -56,20 +57,26 @@ export function incomeTab() {
   const m = S.incMonth || ym(today()); const days = monthDays(m);
   const from = addDays(days[0], -63) < addDays(today(), -63) ? addDays(days[0], -63) : addDays(today(), -63), to = days[days.length - 1];
   if (!pickupsReady(from, to)) { loadPickupRange(from, to); return `<div class="card"><p class="meta">Loading ${MON[+m.slice(5) - 1]}'s income…</p></div>`; }
+  const dd = S.incDay || today(); const dayNav = `<div class="wkbar" style="margin-bottom:10px"><button class="ar" id="incd-prev" aria-label="Previous day">‹</button><b>${label(dd)}</b><button class="ar" id="incd-next" aria-label="Next day">›</button>${dd !== today() ? `<button class="btn ghost sm" id="incd-now">Today</button>` : ""}</div>`;
   const X = cur = monthModel(m); const month = X.tot.done + X.tot.ahead; const t = today();
   const past = m < ym(t), future = m > ym(t);
   const g = (v, est) => `<span class="${est ? "mn-est" : "mn-fin"}">${est ? "≈" : ""}${m0(v)}</span>`;
-  return `<style>${IB_CSS}.mn-est{color:var(--ink3)}.mn-fin{color:var(--ok)}tr.mn-row{cursor:pointer}tr.mn-row:hover td{background:var(--soft)}</style>
+  return `${moneyCard(dd, dayNav)}<style>${IB_CSS}.mn-est{color:var(--ink3)}.mn-fin{color:var(--ok)}tr.mn-row{cursor:pointer}tr.mn-row:hover td{background:var(--soft)}</style>
   <div class="card"><div class="wkbar"><button class="ar" id="inc-prev" aria-label="Previous month">‹</button><b>${MON[+m.slice(5) - 1]} ${m.slice(0, 4)}</b><button class="ar" id="inc-next" aria-label="Next month">›</button>${m !== ym(t) ? `<button class="btn ghost sm" id="inc-now" style="flex:0 0 auto">This month</button>` : ""}</div>
     <div class="tiles" style="margin-top:10px"><div class="tile"><div class="l">Monthly Estimate${ib("_")}</div><div class="v ${past && !X.tot.est ? "mn-fin" : "mn-est"}">${past && !X.tot.est ? "" : "≈"}${m0(month)}</div></div></div>
     ${X.list.length ? `<div class="scroll" style="margin-top:10px"><table class="dt"><tr><th>Income</th><th align="right">Monthly Estimate</th></tr>
       ${X.list.map((r, i) => `<tr class="mn-row" data-incrow="${i}"><td><b>${esc(SNAME[r.k] || r.k)}</b>${SINFO[r.k] ? ib(r.k) : ""}</td><td align="right"><b>${g(r.total, r.doneEst || r.ahead > 0)}</b></td></tr>`).join("")}
       <tr><td><b>Total</b></td><td align="right"><b>${g(month, X.tot.est || X.tot.ahead > 0)}</b></td></tr></table></div>`
       : `<p class="empty">No income for this month yet.</p>`}
-  </div>`;
+  </div>${scoreIncome()}`;
 }
 
 export function wireIncome() {
+  const gd = v => { S.incDay = v; const mo = (v || today()).slice(0, 7); if (mo !== (S.incMonth || today().slice(0, 7))) { S.incMonth = v ? mo : null; loadAll().then(() => render()); } render(); };
+  $("#incd-prev")?.addEventListener("click", () => gd(addDays(S.incDay || today(), -1)));
+  $("#incd-next")?.addEventListener("click", () => gd(addDays(S.incDay || today(), 1)));
+  $("#incd-now")?.addEventListener("click", () => gd(null));
+  wireMoney(S.incDay || today()); wireScorecard();
   const go = n => { S.incMonth = n; loadAll().then(() => render()); render(); };
   const m = S.incMonth || ym(today());
   $("#inc-prev")?.addEventListener("click", () => go(shiftMonth(m, -1)));

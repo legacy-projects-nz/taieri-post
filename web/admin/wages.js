@@ -35,7 +35,7 @@ export function wagesView() {
   const F = fortnight(wf || S.week); wf = F.from; const { days, rows } = build(F.from);
   const tot = rows.reduce((a, r) => a + r.total, 0), totEst = rows.reduce((a, r) => a + r.est, 0), gross = rows.reduce((a, r) => a + r.gross, 0);
   const cell = x => x ? `<span class="${x.isEst ? "c-warn" : ""}" title="${esc(x.how)} · running ${hm(x.run)}">${x.isEst ? "≈" : ""}${x.hrs.toFixed(1)}</span>` : `<span class="meta">·</span>`;
-  return `<div class="card"><h2>Wages<span>pay fortnight ${label(F.from)} – ${label(F.to, true)} · hours from SOD → EOD less unpaid breaks · <span class="c-warn">≈ estimated</span> where a post is missing · excludes Jeremy</span></h2>
+  return `<div class="card"><h2>Wages<span>${label(F.from)} – ${label(F.to, true)} · <span class="c-warn">≈ estimated</span></span></h2>
     <div class="row"><button class="btn ghost sm" id="wg-prev">‹ Previous</button><button class="btn ghost sm" id="wg-next">Next ›</button><button class="btn sm" id="wg-xlsx" style="flex:0 0 auto">Download wages report (Excel)</button></div>
     <div class="tiles"><div class="tile"><div class="l">Hours so far · fortnight</div><div class="v">${tot.toFixed(1)} h</div><div class="s">${totEst ? `<span class="c-warn">≈${totEst.toFixed(1)} h estimated</span>` : "all from SOD → EOD"}</div></div><div class="tile"><div class="l">Gross wages so far</div><div class="v">$${Math.round(gross).toLocaleString()}</div><div class="s">hours × each driver's rate (NZD)</div></div></div>
     <div class="scroll"><table class="dt"><tr><th>Driver</th>${days.map(d => `<th>${label(d).slice(0, 6)}</th>`).join("")}<th>Total h</th><th>Rate</th><th>Gross</th></tr>
