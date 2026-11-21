@@ -1291,9 +1291,9 @@ function leaveForm() {
       const { error } = await sb.from("leave_requests").insert({ driver: S.me.id, type: bg.querySelector("#type").value, date_from: f, date_to: part === "full" ? to : f, part, notes: bg.querySelector("#notes").value || null }); if (error) return toast(error.message, "err"); close(); toast("Request sent. Check your email.", "ok"); await loadAll(); render(); };
   });
 }
-/* Profile: everyone except the owner fills in / confirms their details the next time they open the app (can't be closed until saved) */
+/* Profile: everyone (owner included) fills in / confirms their details the next time they open the app (can't be closed until saved) */
 function profilePop() {
-  if (S.viewAs || S.me.isOwner || (S.me.profile_confirmed_at && S.me.licence_front && S.me.licence_back) || document.querySelector(".sheet-bg")) return; profileForm(true);
+  if (S.viewAs || (S.me.profile_confirmed_at && S.me.licence_front && S.me.licence_back) || document.querySelector(".sheet-bg")) return; profileForm(true);
 }
 function profileForm(must = false) {
   const p = S.me; const forOther = S.viewAs && S.viewer?.can?.("people");
