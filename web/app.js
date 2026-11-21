@@ -223,7 +223,7 @@ function renderNow() {
     ${pair(part("Leave", () => leaveCard()), part("My details", () => detailsCard()))}
     ${part("Calendar", () => calendarCard(t))}
     ${part("More", () => moreCard())}
-    <div class="qbar">${rbBtn()}</div>
+    ${rbBtn()}
     ${part("Passwords & logins", () => accessCard())}
     </div>
     <p class="foot">Signed in as ${esc((S.viewer || S.me).email || "")}</p>
@@ -251,7 +251,7 @@ addEventListener("resize", () => { try { fitQb(); } catch { } });
 
 /* ---------- collapsible boxes: Next shift and everything below it (plus Parcel pick-ups) are one row until tapped ---------- */
 function folds() {
-  app.querySelectorAll(".folds .card, #pickups, #hazards, #tasks, #nextshift, #vanuse, #msgs").forEach(c => {
+  app.querySelectorAll(".folds .card:not(.rbrow), #pickups, #hazards, #tasks, #nextshift, #vanuse, #msgs").forEach(c => {
     const h = c.querySelector(":scope > h2"); if (!h) return;
     const key = c.dataset.foldKey || c.id || [...h.childNodes].filter(x => x.nodeType === 3).map(x => x.textContent).join("").trim();
     if (!(key in S.open)) S.open[key] = c.dataset.foldOpen === "1";
@@ -280,7 +280,7 @@ function quickBar(T, n) {
   return `<div class="qbar">${out.sort || sodBtn}${eodBtns}${brkRow(breakBtn(T, sod), hoursBtn(T, sod))}</div>${rb}`;
 }
 // Runboard (view only for drivers): a full-width button near the end of the page, styled like the break / hours row
-const rbBtn = () => `<a class="btn ghost qb brk" href="/admin/#runboard" style="text-decoration:none"><b>Runboard</b><small>this week's roster, view only</small></a>`;
+const rbBtn = () => `<a class="card rbrow" href="/admin/#runboard"><h2>Runboard<span>this week's roster, view only</span><i class="fchev" aria-hidden="true"></i></h2></a>`;   // looks like the folded rows, opens the Run Board
 /* Stages: a driver's day is its shifts in order, sorts included. The first starts with the SOD; ▶ Start [run] starts the next one
    and ends the one before (so a sort before a run is timed by the tap); ■ EOR ends the run you're on (e.g. a gap before the next one);
    ▶ Delivering marks the end of a sort done inside the run (no sort shift before it). */

@@ -123,6 +123,11 @@ hr.gl{display:none}
 .card.fold{transition:padding .15s ease}
 /* every folding box gets the grey left edge Next shift has; boxes with their own colour (red, amber, blue) keep it */
 .fold{border:1px solid var(--line);border-left:7px solid var(--grey)}
+.card.rbrow{padding:12px 16px;gap:0;border:1px solid var(--line);border-left:7px solid var(--grey);text-decoration:none;color:inherit}
+.card.rbrow>h2{justify-content:flex-start;align-items:center;min-height:28px;white-space:nowrap}
+.card.rbrow>h2>span{margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.card.rbrow .fchev::before{transform:translateX(-1px) rotate(-45deg)}
+@media (hover:hover){.card.rbrow:hover{box-shadow:0 0 0 1px var(--line),var(--shadow)}}
 .card.fold>h2{cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;justify-content:flex-start;align-items:center;min-height:28px;white-space:nowrap}
 .card.fold>h2>span{margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .card.fold>h2:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:8px}
