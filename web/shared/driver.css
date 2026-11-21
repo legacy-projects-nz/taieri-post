@@ -128,7 +128,7 @@ hr.gl{display:none}
 .fchev.solo{margin-left:auto}
 .fchev::before{content:"";width:7px;height:7px;border-right:2px solid var(--ink2);border-bottom:2px solid var(--ink2);transform:translateY(-2px) rotate(45deg);transition:transform .2s ease}
 .card.fold.shut{padding:12px 16px;gap:0}
-.card.fold.shut>:not(h2){display:none}
+.card.fold.shut>:not(h2){display:none!important}
 .card.fold.shut>h2 .fchev::before{transform:translateX(-1px) rotate(-45deg)}
 .card.fold.shut>h2>span:has(button){display:none}
 .card.fold.shut>h2>span:has(button)+.fchev{margin-left:auto}

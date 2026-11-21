@@ -194,24 +194,26 @@ function renderNow() {
   const greet = n.min < 720 ? "Morning" : n.min < 1020 ? "Hi" : "Evening";
   const T = S.days[t];
   const nextDay = Object.values(S.days).filter(d => d.day > t).sort((a, b) => a.day < b.day ? -1 : 1)[0];
+  // no shift today: My scores comes first; the SOD / EOD bar and Today drop away (Next shift stays in the folded boxes)
   // day done = every EOD for today is in: Today drops away and Next shift moves up under the SOD / EOD buttons, open
   const tRuns = T ? T.segs.filter(x => !x.sort) : []; const dayDone = !!T && (tRuns.length ? tRuns.every(x => x.eod) : T.segs.some(x => x.eod)); S.dayDone = dayDone;
   app.innerHTML = `<div class="wrap">
     ${demoBar()}${viewBar()}
     <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
     ${S.loadErr ? `<p class="hint" style="margin:0 0 8px;color:var(--crit)">No connection. Showing what loaded at ${fmtT(nzNow(new Date(S.loadedAt)).min)}. Trying again on its own.</p>` : ""}
+    ${T ? "" : part("My scores", () => scoresCard())}
     ${part("Did you do these", () => askCard())}
     ${part("Do these first", () => carryCard())}
-    ${part("SOD / EOD", () => quickBar(T, n))}
+    ${T ? part("SOD / EOD", () => quickBar(T, n)) : ""}
     ${part("Lawrence", () => lawBar(T))}
-    ${dayDone ? part("Next shift", () => nextShiftCard(nextDay, n)) : part("Today", () => todayCard(T, nextDay, n))}
+    ${!T ? "" : dayDone ? part("Next shift", () => nextShiftCard(nextDay, n)) : part("Today", () => todayCard(T, nextDay, n))}
     ${part("Van use", () => vanUseCard())}
     ${part("Mail trays · other runs", () => mailHelpCard())}
     ${part("Today's tasks", () => addonsCard(T, nextDay, n))}
     ${part("Roster changes", () => rosterChanges(n))}
     ${part("Alerts", () => alertsCard())}
     ${part("Messages", () => messagesCard())}
-    ${part("My scores", () => scoresCard())}
+    ${T ? part("My scores", () => scoresCard()) : ""}
     ${part("Hazards", () => hazardsCard(T))}
     ${part("Parcel pick-ups", () => pickupsCard(T))}
     <div class="folds">
@@ -1455,7 +1457,7 @@ function hazardsCard(T) {
   const todo = today.filter(h => !hzOk(h)), done = S.hzAckOn ? today.filter(hzOk) : [];
   const line = (h, ack) => `<div class="hzline">${hzRow(h)}${ack ? `<button class="btn sm hzack" data-hzack="${h.id}" type="button">✓ Read</button>` : `<span class="hzok" title="Confirmed">✓</span>`}</div>`;
   const runs = T ? T.segs.length > 1 ? "today's runs" : "today's run" : "";
-  return `<div class="card" id="hazards" data-fold-open="${todo.length || near.length ? "1" : ""}"><h2>⚠️ Hazards ${ib("hazards")}<span>${todo.length ? `<b class="c-crit">${todo.length} to confirm</b>` : `${all.length} on the register`}</span></h2>
+  return `<div class="card" id="hazards"><h2>⚠️ Hazards ${ib("hazards")}<span>${todo.length ? `<b class="c-crit">${todo.length} to confirm</b>` : `${all.length} on the register`}</span></h2>
     ${near.length ? `<div class="hznear"><b>Near you now</b>${near.slice(0, 3).map(hzRow).join("")}</div>` : ""}
     ${T ? (todo.length ? `<div class="hzlist">${todo.slice(0, S.hzMore ? 999 : 8).map(h => line(h, true)).join("")}</div>
         ${todo.length > 8 && !S.hzMore ? `<button class="btn ghost sm" id="hz-more" type="button">Show all ${todo.length}</button>` : ""}
