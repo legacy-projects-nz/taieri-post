@@ -909,16 +909,25 @@ function meetSheet(shiftId) {
 }
 /** after the D>B driver saves Lawrence pick-ups, push the totals to the Lawrence driver */
 function lawPuPing(day) { if (!S.shifts.some(z => z.day === day && z.run === "DB" && z.driver === S.me.id)) return; sb.functions.invoke("notify", { body: { type: "law_pickups", day } }).catch(() => { }); }
-function accessCard() {
+function accessCard() {   // "## Heading" starts a section; "Label: value" lines become rows, tap a value to copy it
   const body = (S.access?.body || "").trim(); const canEdit = !!S.viewer?.can?.("people");
   if (!body && !canEdit) return "";
-  return `<div class="card" id="access"><h2>Passwords &amp; logins<span>shared work logins only</span></h2>
-    ${body ? `<details><summary>Show</summary><pre class="msg" style="white-space:pre-wrap;user-select:all;margin:8px 0 0">${esc(body)}</pre></details>` : `<p class="meta">Nothing added yet.</p>`}
+  return `<div class="card" id="access"><h2>Passwords &amp; logins<span>tap a code to copy</span></h2>
+    ${body ? accessHtml(body) : `<p class="meta">Nothing added yet.</p>`}
     ${canEdit ? `<div class="row" style="margin-top:8px"><button class="btn ghost sm" id="access-edit" style="flex:0 0 auto">Update</button></div>` : ""}
     </div>`;
 }
+function accessHtml(body) {
+  let out = "", open = false; const end = () => { if (open) { out += "</table>"; open = false; } };
+  for (const raw of body.split(/\r?\n/)) { const l = raw.trim(); if (!l) continue;
+    const hd = /^#{1,3}\s+(.*)$/.exec(l); if (hd) { end(); out += `<h4 style="margin:12px 0 4px">${esc(hd[1])}</h4>`; continue; }
+    if (!open) { out += `<table class="dt" style="width:100%">`; open = true; }
+    const i = l.indexOf(": "); const k = i > 0 ? l.slice(0, i) : "", v = i > 0 ? l.slice(i + 2) : l;
+    out += `<tr><td class="meta" style="width:45%">${esc(k)}</td><td class="mono" style="cursor:pointer;word-break:break-all" data-copy="${esc(v)}">${esc(v)}</td></tr>`; }
+  end(); return out;
+}
 function editAccess() {
-  sheet(`<h3>Passwords &amp; logins</h3><form class="frm" id="acf"><label class="f full">What drivers see<textarea class="in" id="ac-body" rows="10" placeholder="e.g. Scanner PIN, shared logins, key-box codes">${esc(S.access?.body || "")}</textarea></label><button class="btn full" type="submit">Save</button></form>`, (bg, close) => {
+  sheet(`<h3>Passwords &amp; logins</h3><form class="frm" id="acf"><label class="f full">What drivers see<textarea class="in" id="ac-body" rows="16" placeholder="## Section heading&#10;Label: value">${esc(S.access?.body || "")}</textarea></label><button class="btn full" type="submit">Save</button></form>`, (bg, close) => {
     bg.querySelector("#acf").addEventListener("submit", async e => { e.preventDefault(); const body = bg.querySelector("#ac-body").value; const { error } = await sb.from("access_info").upsert({ id: 1, body, updated_at: new Date().toISOString(), updated_by: S.viewer.id }); if (error) return toast(error.message, "err"); S.access = { body }; close(); toast("Saved", "ok"); render(); });
   });
 }
@@ -1026,6 +1035,7 @@ function bindDetail(root) {
   on("[data-alertv]", el => { const a = S.alerts.find(x => x.id === el.dataset.alertv); if (a) alertSheet(a); });
   on("[data-leavev]", el => { const l = S.leave.find(x => x.id === el.dataset.leavev); if (l) leaveSheet(l); });
   on("[data-notes]", () => notesSheet());
+  on("[data-copy]", el => { const v = el.dataset.copy.split(" · ")[0].replace(/ or .*$/, ""); navigator.clipboard?.writeText(v).then(() => toast(`Copied ${v}`, "ok"), () => { }); });
   on("[data-brief]", el => { const m = (S.briefs || []).find(x => x.message_id === el.dataset.brief); if (m) briefSheet(m); });
   on("[data-msgv]", el => { const m = S.msgs.find(x => x.message_id === el.dataset.msgv); if (m) msgSheet(m); });
   on("[data-eodv]", el => eodForm(el.dataset.eodv, !!el.dataset.sort));
