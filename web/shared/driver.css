@@ -188,9 +188,16 @@ hr.gl{display:none}
 .brief p{margin:4px 0}.brief .bh{margin:10px 0 2px;font:800 15px var(--fd)}.brief ul.bl{margin:4px 0;padding-left:20px}.brief li{margin:2px 0}
 [data-bsec] .brief{margin:4px 0 8px}
 
-/* More card buttons (Vault, Notifications, Vehicle check, Van washed, Sign out): full-width rows, like the Runboard row */
-#more .row.mlist{display:grid !important;grid-template-columns:1fr !important;gap:8px}
-#more .row.mlist>.btn{display:flex;align-items:center;justify-content:flex-start !important;text-align:left !important;width:100%;min-height:48px;padding:10px 16px;border:1px solid var(--line);border-left:7px solid var(--grey);border-radius:14px;background:var(--card);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none;color:var(--ink)}
-#more .row.mlist>.btn::after{content:"";flex:0 0 7px;height:7px;margin-left:auto;border-right:2px solid var(--ink2);border-bottom:2px solid var(--ink2);transform:rotate(-45deg)}
-#more .row.mlist>#signout{justify-content:center !important;border-left-width:1px}
-#more .row.mlist>#signout::after{display:none}
+/* Page groups: Shift / Checks headers; their rows stay hidden until the header is tapped */
+.grp{display:flex;flex-direction:column;gap:10px}
+.grp.shut>.grpb{display:none}
+.card.grph{width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;padding:14px 16px;gap:0;border:1px solid var(--line);border-left:7px solid var(--accent)}
+.card.grph>h2{justify-content:flex-start;align-items:center;min-height:28px;margin:0}
+.card.grph .fchev{margin-left:auto}
+.grp:not(.shut)>.grph .fchev::before{transform:translateY(2px) rotate(-135deg)}
+.grp.shut>.grph .fchev::before{transform:translateX(-1px) rotate(-45deg)}
+.grpb{padding-left:10px;border-left:2px solid var(--line);margin-left:4px}
+button.card.rbrow{width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:var(--card)}
+.card.rbrow.due{border-left-color:var(--warn);background:var(--warn-fill)}
+.card.rbrow.due.crit{border-left-color:var(--crit);background:var(--crit-fill)}
+.card.rbrow.due>h2>span{color:var(--ink);font-weight:700}

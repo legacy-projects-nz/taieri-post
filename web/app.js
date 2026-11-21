@@ -237,29 +237,12 @@ function renderNow() {
     <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
     ${S.loadErr ? `<p class="hint" style="margin:0 0 8px;color:var(--crit)">No connection. Showing what loaded at ${fmtT(nzNow(new Date(S.loadedAt)).min)}. Trying again on its own.</p>` : ""}
     ${part("Roster brief", () => briefCard())}
-    ${T ? "" : part("My scores", () => scoresCard())}
     ${part("Before your SOD", () => gateCard())}
     ${T ? part("SOD / EOD", () => quickBar(T, n)) : ""}
     ${part("Lawrence", () => lawBar(T))}
     ${!T ? "" : dayDone ? part("Next shift", () => nextShiftCard(nextDay, n)) : part("Today", () => todayCard(T, nextDay, n))}
-    ${part("Van use", () => vanUseCard())}
-    ${part("Mail trays · other runs", () => mailHelpCard())}
-    ${part("Today's tasks", () => addonsCard(T, nextDay, n))}
-    ${part("Roster changes", () => rosterChanges(n))}
-    ${part("Alerts", () => alertsCard())}
-    ${part("Messages", () => messagesCard())}
-    ${T ? part("My scores", () => scoresCard()) : ""}
-    ${part("Hazards", () => hazardsCard(T))}
-    ${part("Parcel pick-ups", () => pickupsCard(T))}
-    <div class="folds">
-    ${dayDone ? "" : part("Next shift", () => nextShiftCard(nextDay, n))}
-    ${pair(part("My van", () => vanCard(T, null)), part("My shifts", () => shiftsCard(t)))}
-    ${pair(part("To fix", () => toFixCard(n)), part("Notes from Jeremy", () => fromJeremy()))}
-    ${rbBtn()}
-    ${part("This week's notes", () => notesBtn())}
-    ${part("More", () => moreCard(t))}
-    </div>
-    <p class="foot">Signed in as ${esc((S.viewer || S.me).email || "")}</p>
+    ${layout(T, t, n, nextDay, dayDone)}
+    <p class="foot">Signed in as ${esc((S.viewer || S.me).email || "")} · <button type="button" class="linkbtn" id="signout">Sign out</button></p>
   </div>`;
   try { folds(); } catch (e) { reportError("folds", e); }
   try { lawPuPop(); } catch (e) { reportError("lawPuPop", e); }
@@ -929,19 +912,48 @@ function editAccess() {
     bg.querySelector("#acf").addEventListener("submit", async e => { e.preventDefault(); const body = bg.querySelector("#ac-body").value; const { error } = await sb.from("access_info").upsert({ id: 1, body, updated_at: new Date().toISOString(), updated_by: S.viewer.id }); if (error) return toast(error.message, "err"); S.access = { body }; close(); toast("Saved", "ok"); render(); });
   });
 }
-function moreCard(t) {   // More (last on the page): the buttons, then Passwords & logins, Calendar, Leave and My details (at the bottom)
+/* ---------- Page layout: live / due things up top, then My scores, then two folded groups (Shift, Checks).
+   Anything in a group that becomes due (or has something to confirm) moves up into the main area. ---------- */
+function vchkDue() {   // vans I've driven this week (or look after) with no weekly check yet; shows from Thursday (due 5pm)
+  const t = today(); const wk = monOf(t); const day = S.C?.rules?.vchkDay || 4; if (dow(t) + 1 < day) return null;
+  const vans = new Set(S.shifts.filter(s => s.driver === S.me.id && s.day >= wk && s.day <= t && s.van).map(s => s.van));
+  for (const [p, v] of Object.entries(S.vans || {})) if (v?.responsible === S.me.id) vans.add(p);
+  vans.delete("OTHER"); const left = [...vans].filter(p => !(S.vchk || []).some(c => c.van === p && c.week_start === wk)); if (!left.length) return null;
+  const late = dow(t) + 1 > day || nzNow().min >= (toMin(S.C?.rules?.vchkTime || "17:00") ?? 1020);
+  return { left, late };
+}
+const rowBtn = (id, label, sub = "", cls = "") => `<button type="button" class="card rbrow ${cls}" id="${id}"><h2>${label}<span>${sub}</span><i class="fchev" aria-hidden="true"></i></h2></button>`;
+function grp(key, title, body) {
+  if (!body.trim()) return "";
+  return `<div class="grp ${S.open["grp-" + key] ? "" : "shut"}" data-grp="${key}"><button type="button" class="card grph" aria-expanded="${!!S.open["grp-" + key]}"><h2>${title}<i class="fchev" aria-hidden="true"></i></h2></button><div class="grpb folds">${body}</div></div>`;
+}
+function layout(T, t, n, nextDay, dayDone) {
+  const top = [], shift = [], checks = [];
+  const put = (html, due, list) => { if (html) (due ? top : list).push(html); };
+  // main area: live today / needs doing
+  top.push(part("Van use", () => vanUseCard()), part("Mail trays · other runs", () => mailHelpCard()), part("Today's tasks", () => addonsCard(T, nextDay, n)), part("Roster changes", () => rosterChanges(n)), part("Alerts", () => alertsCard()), part("To fix", () => toFixCard(n)));
+  const msgs = part("Messages", () => messagesCard()); put(msgs, /data-fold-open="1"/.test(msgs), shift);
+  const hz = part("Hazards", () => hazardsCard(T)); put(hz, /to confirm/.test(hz), checks);
+  const pu = part("Parcel pick-ups", () => pickupsCard(T)); put(pu, /pick-up run today/.test(pu), shift);
+  const vd = vchkDue(); const vchk = rowBtn("vchk-btn", "🚐 Weekly vehicle check", vd ? (vd.late ? "overdue" : "due 5pm") : "", vd ? (vd.late ? "due crit" : "due") : "");
+  put(vchk, !!vd, checks);
+  const van = part("My van", () => vanCard(T, null)); put(van, /overdue/.test(van), shift);
+  const det = part("My details", () => detailsCard()); put(det, /expired|due in/.test(det), checks);
+  // Shift group
+  if (!dayDone) shift.unshift(part("Next shift", () => nextShiftCard(nextDay, n)));
+  shift.push(part("My shifts", () => shiftsCard(t)), part("Notes from Jeremy", () => fromJeremy()), rbBtn(), part("This week's notes", () => notesBtn()), part("Calendar", () => calendarCard(t)), part("Leave", () => leaveCard()));
+  // Checks group
   const vault = S.set.links?.vault;
-  return `<div class="card" id="more"><h2>More</h2>${part("Passwords & logins", () => accessCard())}${part("Calendar", () => calendarCard(t))}${part("Leave", () => leaveCard())}${part("My details", () => detailsCard())}<div class="row mlist">
-    ${vault ? `<a class="btn ghost" href="${esc(vault)}" target="_blank" rel="noopener">🔐 Vault (Damstra)</a>` : ""}
-    <button class="btn ghost" id="push-btn">🔔 Notifications: <span id="push-state">…</span></button>
-    <button class="btn ghost" id="vchk-btn">🚐 Weekly vehicle check</button>
-    <button class="btn ghost" id="wash-btn">🧽 Van washed</button>
-    <button class="btn ghost" id="signout">Sign out</button></div>
-    </div>`;
+  checks.push(rowBtn("wash-btn", "🧽 Van washed"));
+  if (vault) checks.push(`<a class="card rbrow" href="${esc(vault)}" target="_blank" rel="noopener"><h2>🔐 Vault (Damstra)<span></span><i class="fchev" aria-hidden="true"></i></h2></a>`);
+  checks.push(part("Passwords & logins", () => accessCard()), rowBtn("push-btn", "🔔 Notifications", `<span id="push-state">…</span>`));
+  const j = a => a.filter(Boolean).join("\n");
+  return `${j(top)}${part("My scores", () => scoresCard())}${grp("shift", "Shift", j(shift))}${grp("checks", "Checks", j(checks))}`;
 }
 
 /* ================= wiring ================= */
 function wire() {
+  $$("[data-grp]").forEach(g => { const b = g.querySelector(".grph"); b.onclick = () => { const k = "grp-" + g.dataset.grp; S.open[k] = !S.open[k]; g.classList.toggle("shut", !S.open[k]); b.setAttribute("aria-expanded", String(S.open[k])); }; });
   $("#signout")?.addEventListener("click", signOut);
   $("#demo-reset")?.addEventListener("click", async () => { resetDemo(); S.open = {}; S.scSel = null; await loadAll(); render(); toast("Demo reset ↺", "ok"); });
   $("#demo-new")?.addEventListener("click", async () => { newRuns(); S.open = {}; S.scSel = null; await loadAll(); render(); toast("New runs 🎲", "ok"); });
