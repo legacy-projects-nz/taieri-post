@@ -931,7 +931,7 @@ function editAccess() {
 }
 function moreCard(t) {   // More (last on the page): the buttons, then Passwords & logins, Calendar, Leave and My details (at the bottom)
   const vault = S.set.links?.vault;
-  return `<div class="card" id="more"><h2>More</h2>${part("Passwords & logins", () => accessCard())}${part("Calendar", () => calendarCard(t))}${part("Leave", () => leaveCard())}${part("My details", () => detailsCard())}<div class="row">
+  return `<div class="card" id="more"><h2>More</h2>${part("Passwords & logins", () => accessCard())}${part("Calendar", () => calendarCard(t))}${part("Leave", () => leaveCard())}${part("My details", () => detailsCard())}<div class="row mlist">
     ${vault ? `<a class="btn ghost" href="${esc(vault)}" target="_blank" rel="noopener">🔐 Vault (Damstra)</a>` : ""}
     <button class="btn ghost" id="push-btn">🔔 Notifications: <span id="push-state">…</span></button>
     <button class="btn ghost" id="vchk-btn">🚐 Weekly vehicle check</button>

@@ -169,7 +169,7 @@ hr.gl{display:none}
 .tdmini .tdr1 .tag,.tdmini .tdr1 .vchip{font-size:13px;padding:2px 8px;min-height:0}.tdmini .tdr1>*:not(.fchev){flex:0 1 auto;min-width:0}
 .tdmini .tdr1 .big{font-size:20px;font-weight:800;margin:0}
 .tdmini .tdr1 .fchev{margin-left:auto;position:static}
-.tdmini .tdr2{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tdmini .tdr2{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none;color:var(--ink)}
 
 /* tighter run rows on Today / Next shift */
 .card.today .seg,.card.nextc .seg{padding:6px 0!important;align-items:baseline}
@@ -180,10 +180,17 @@ hr.gl{display:none}
 .wrap>*,.folds>*,.folds>.pair>*{min-width:0;max-width:100%;box-sizing:border-box}
 .card,.card>h2{min-width:0}.card>h2{overflow:hidden}
 .qbar{grid-template-columns:minmax(0,1fr) minmax(0,1fr);margin:0}
-.qb{min-width:0}.qb>b,.qb>small{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qb{min-width:0}.qb>b,.qb>small{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none;color:var(--ink)}
 /* ⓘ beside a heading */
 .card h2 .ib,h3 .ib{width:22px;height:22px;font-size:12px;margin-left:6px;vertical-align:middle;flex:0 0 auto}
 .infobody p{margin:0 0 10px;font-size:15px;line-height:1.45}
 /* roster brief */
 .brief p{margin:4px 0}.brief .bh{margin:10px 0 2px;font:800 15px var(--fd)}.brief ul.bl{margin:4px 0;padding-left:20px}.brief li{margin:2px 0}
 [data-bsec] .brief{margin:4px 0 8px}
+
+/* More card buttons (Vault, Notifications, Vehicle check, Van washed, Sign out): full-width rows, like the Runboard row */
+#more .row.mlist{display:grid !important;grid-template-columns:1fr !important;gap:8px}
+#more .row.mlist>.btn{display:flex;align-items:center;justify-content:flex-start !important;text-align:left !important;width:100%;min-height:48px;padding:10px 16px;border:1px solid var(--line);border-left:7px solid var(--grey);border-radius:14px;background:var(--card);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none;color:var(--ink)}
+#more .row.mlist>.btn::after{content:"";flex:0 0 7px;height:7px;margin-left:auto;border-right:2px solid var(--ink2);border-bottom:2px solid var(--ink2);transform:rotate(-45deg)}
+#more .row.mlist>#signout{justify-content:center !important;border-left-width:1px}
+#more .row.mlist>#signout::after{display:none}
