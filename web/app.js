@@ -258,6 +258,7 @@ function renderNow() {
     ${pair(part("Leave", () => leaveCard()), part("My details", () => detailsCard()))}
     ${part("Calendar", () => calendarCard(t))}
     ${part("More", () => moreCard())}
+    ${part("This week's notes", () => notesBtn())}
     ${rbBtn()}
     ${part("Passwords & logins", () => accessCard())}
     </div>
@@ -1024,6 +1025,7 @@ function bindDetail(root) {
   $$("[data-gotit-alert]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; gotItAlert(b.dataset.gotitAlert); });
   on("[data-alertv]", el => { const a = S.alerts.find(x => x.id === el.dataset.alertv); if (a) alertSheet(a); });
   on("[data-leavev]", el => { const l = S.leave.find(x => x.id === el.dataset.leavev); if (l) leaveSheet(l); });
+  on("[data-notes]", () => notesSheet());
   on("[data-brief]", el => { const m = (S.briefs || []).find(x => x.message_id === el.dataset.brief); if (m) briefSheet(m); });
   on("[data-msgv]", el => { const m = S.msgs.find(x => x.message_id === el.dataset.msgv); if (m) msgSheet(m); });
   on("[data-eodv]", el => eodForm(el.dataset.eodv, !!el.dataset.sort));
@@ -1461,25 +1463,39 @@ function briefParts(body) {   // intro (before the first ## heading) + one secti
   for (const l of String(body || "").split(/\r?\n/)) { const h = /^#{1,3}\s+(.*)$/.exec(l.trim()); if (h) { cur = { title: h[1].replace(/\*\*/g, ""), lines: [] }; secs.push(cur); } else (cur ? cur.lines : intro).push(l); }
   return { intro: intro.join("\n").trim(), secs: secs.map(x => ({ title: x.title, text: x.lines.join("\n").trim() })) };
 }
-function briefCard() {
-  const m = myBrief(); if (!m) return ""; const done = !!m.confirmed_at; const n = briefParts(m.messages.body).secs.length;
-  return `<div class="card ${done ? "" : "hot"}" id="brief"><h2${done ? "" : ` class="c-crit"`}>${esc(m.messages.title || "Roster brief")}<span>${done ? `✓ submitted ${fmtTs(m.confirmed_at)}` : `${n} section${n === 1 ? "" : "s"} to read`}</span></h2>
-    ${done ? "" : `<p class="meta">Read each section, tick Read, then Submit. Jeremy can see who has read it.</p>`}<button class="btn full ${done ? "ghost" : "crit"}" data-brief="${m.message_id}">${done ? "Open it again" : "Read my roster brief"}</button></div>`;
+function briefCard() {   // only while a brief still needs reading; once submitted it drops down to the "This week's notes" row
+  const m = myBrief(); if (!m || m.confirmed_at) return ""; const n = briefParts(m.messages.body).secs.length;
+  return `<div class="card hot" id="brief"><h2 class="c-crit">${esc(m.messages.title || "Roster brief")}<span>${n} section${n === 1 ? "" : "s"} to read</span></h2>
+    <p class="meta">Read each section, tick Read, then Submit. Jeremy can see who has read it.</p><button class="btn full crit" data-brief="${m.message_id}">Read my roster brief</button></div>`;
 }
+/* "This week's notes": a folded-style row near the end of the page; opens the brief for last / this / next week */
+const NOTE_WEEKS = () => { const w = monOf(today()); return [["last", "Last week", addDays(w, -7)], ["this", "This week", w], ["next", "Next week", addDays(w, 7)]]; };
+function briefFor(w) { let b = null; for (const m of (S.briefs || [])) if (m.messages.week_start === w && (!b || m.messages.created_at > b.messages.created_at)) b = m; return b; }
+const notesBtn = () => `<a class="card rbrow" role="button" tabindex="0" style="cursor:pointer" data-notes="1"><h2>This week's notes<span>last · this · next week</span><i class="fchev" aria-hidden="true"></i></h2></a>`;
+function notesTabs(w) {
+  return `<div class="seg-btns" style="margin:0 0 12px">${NOTE_WEEKS().map(([, l, d]) => `<button class="${d === w ? "on" : ""}" data-nwk="${d}">${l}</button>`).join("")}</div>`;
+}
+function notesSheet(w) {
+  const W = NOTE_WEEKS(); if (!w) w = (W.find(([k, , d]) => k === "this" && briefFor(d)) || W.find(([k, , d]) => k === "next" && briefFor(d)) || W.find(([, , d]) => briefFor(d)) || W[1])[2];
+  const m = briefFor(w); if (m) return briefSheet(m, w);
+  sheet(`<h3>Week of ${label(w, true)}</h3>${notesTabs(w)}<p class="hint">No notes for this week${w > monOf(today()) ? " yet" : ""}.</p>`, bg => notesWire(bg), { wide: true });
+}
+function notesWire(bg) { bg.querySelectorAll("[data-nwk]").forEach(b => b.onclick = () => { if (b.classList.contains("on")) return; bg._close(); notesSheet(b.dataset.nwk); }); }
 function briefPop() {
   const m = myBrief(); if (S.viewAs || !m || m.confirmed_at || document.querySelector(".sheet-bg")) return;
   S.briefShown ||= {}; if (S.briefShown[m.message_id]) return; S.briefShown[m.message_id] = 1; briefSheet(m);
 }
-function briefSheet(m) {
+function briefSheet(m, wk) {   // wk: opened from "This week's notes" (adds the week tabs)
   const { intro, secs } = briefParts(m.messages.body); const done = !!m.confirmed_at; const K = "tp-brief-" + m.message_id;
   let ticks = {}; try { ticks = JSON.parse(localStorage.getItem(K) || "{}"); } catch { }
   if (!m.read_at && !S.viewAs) sb.from("message_recipients").update({ read_at: new Date().toISOString() }).eq("message_id", m.message_id).eq("person", S.me.id).then(() => { });
   const all = () => secs.every((_, i) => done || ticks[i]);
-  sheet(`<h3>${esc(m.messages.title || "Roster brief")}</h3>${intro ? briefHtml(intro) : ""}
+  sheet(`<h3>${esc(m.messages.title || "Roster brief")}</h3>${wk ? notesTabs(wk) : ""}${intro ? briefHtml(intro) : ""}
     ${secs.map((x, i) => `<div class="item ${done || ticks[i] ? "ok" : "warn"}" data-bsec="${i}" style="margin-bottom:8px"><b>${esc(x.title)}</b>${briefHtml(x.text)}
       ${done ? `<p class="meta c-ok">✓ Read</p>` : `<button class="btn sm ${ticks[i] ? "ghost" : ""}" data-bread="${i}">${ticks[i] ? "✓ Read" : "Read"}</button>`}</div>`).join("")}
     ${done ? `<p class="meta c-ok">✓ Submitted ${fmtTs(m.confirmed_at)}</p>` : S.viewAs ? "" : `<button class="btn full" id="b-submit" ${all() ? "" : "disabled"}>Submit · I've read and understood my roster</button><p class="hint" id="b-left">${all() ? "" : "Tick Read on every section to submit."}</p>`}`,
   (bg, close) => {
+    if (wk) notesWire(bg);
     bg.querySelectorAll("[data-bread]").forEach(b => b.onclick = () => { const i = +b.dataset.bread; ticks[i] = !ticks[i]; localStorage.setItem(K, JSON.stringify(ticks));
       b.textContent = ticks[i] ? "✓ Read" : "Read"; b.classList.toggle("ghost", !!ticks[i]); const it = b.closest("[data-bsec]"); it.classList.toggle("ok", !!ticks[i]); it.classList.toggle("warn", !ticks[i]);
       const go = bg.querySelector("#b-submit"); if (go) go.disabled = !all(); const lf = bg.querySelector("#b-left"); if (lf) lf.textContent = all() ? "" : "Tick Read on every section to submit.";
