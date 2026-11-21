@@ -314,7 +314,7 @@ async function todoSheet(kind) {
   };
   const alertList = (f, msg) => { const L = S.alerts.filter(a => !a.resolved_at && f(a)); return L.length ? `<div class="list">${L.map(alertRow).join("")}</div>` : none(msg); };
   const brief = await import("/admin/brief.js"); const wkB = dow(t) === 6 ? addDays(monOf(t), 7) : monOf(t);
-  const wireSign = () => { $$(".todo-body [data-sreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideSodReq(b.dataset.sreq, b.dataset.ok === "1"); }); $$(".todo-body [data-xreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideXt(b.dataset.xreq, b.dataset.ok === "1"); }); };
+  const wireSign = () => { $$(".todo-body [data-sreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; if (b.dataset.ok !== undefined && !b.textContent.includes("Save")) { const it = b.closest(".item"); if (it) it.style.display = "none"; } decideSodReq(b.dataset.sreq, b.dataset.ok === "1"); }); $$(".todo-body [data-xreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; { const it = b.closest(".item"); if (it) it.style.display = "none"; } decideXt(b.dataset.xreq, b.dataset.ok === "1"); }); };
   const GROUPS = {
     approvals: ["Approvals", [["Start times to sign off", () => (S.me.isOwner || S.me.role === "admin") ? sodReqCard() : "", wireSign], ["Hours to sign off", () => S.me.isOwner ? xtCard() : "", () => { }], ["Roster changes to approve", B.approve[2], B.approve[3]], ["Leave requests", B.leave[2], B.leave[3]]]],
     roster: ["Roster", [["Changes not confirmed", B.unconfirmed[2], B.unconfirmed[3]], [`Roster brief · week of ${label(wkB)}`, () => Object.keys(brief.briefStatus(wkB)).length ? brief.statusList(wkB) : none("No brief sent for this week yet (Run Board → This week)."), () => brief.wireNudge(document)]]],
@@ -363,8 +363,8 @@ function pendingSheet() {
 export function wireAdmin() {
   $$("[data-todo]").forEach(b => b.onclick = () => todoSheet(b.dataset.todo));
   $$("[data-go]").forEach(b => b.onclick = () => { if (b.dataset.go === "pending") return pendingSheet(); S.tab = b.dataset.go; location.hash = S.tab; render(); });
-  $$("[data-sreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideSodReq(b.dataset.sreq, b.dataset.ok === "1"); });
-  $$("[data-xreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideXt(b.dataset.xreq, b.dataset.ok === "1"); });
+  $$("[data-sreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; if (b.dataset.ok !== undefined && !b.textContent.includes("Save")) { const it = b.closest(".item"); if (it) it.style.display = "none"; } decideSodReq(b.dataset.sreq, b.dataset.ok === "1"); });
+  $$("[data-xreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; { const it = b.closest(".item"); if (it) it.style.display = "none"; } decideXt(b.dataset.xreq, b.dataset.ok === "1"); });
 }
 export function wireLive() {
   wireBriefLive();

@@ -108,6 +108,9 @@ async function emailLate(list) {
 /* ---------- one click handler for every four-option button in the portal ---------- */
 const itemOf = b => ({ kind: b.dataset.kind, key: b.dataset.key, drv: b.dataset.drv, sid: b.dataset.sid, k: b.dataset.k, id: b.dataset.id, items: b.dataset.items, van: b.dataset.van, wk: b.dataset.wk });
 const sigOf = i => [i.kind, i.key, i.sid, i.k, i.id, i.items, i.van, i.wk, i.kind === "post" ? "" : i.drv].join("~");
+// the row an outcome button belongs to (list item, table row or chip), so it can disappear the moment it's settled
+const rowOf = b => b.closest(".item, tr, .tk") || b.closest(".row");
+const hide = (rows, on = true) => rows.forEach(r => { if (r) r.style.display = on ? "none" : ""; });
 async function after(b) {
   const sheetBg = b.closest(".sheet-bg");
   await loadAll(); render();
@@ -122,10 +125,12 @@ document.addEventListener("click", async e => {
       if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = `Tap again: all ${t0}`; b.classList.add("warn"); setTimeout(() => { if (b.isConnected) { b.dataset.sure = ""; b.textContent = t0; b.classList.remove("warn"); } }, 4000); return; }
       const box = b.closest(".card,.sheet") || document; const seen = new Set(); const list = [];
       box.querySelectorAll(`[data-st="${act}"]`).forEach(x => { const i = itemOf(x); const s = sigOf(i); if (!seen.has(s)) { seen.add(s); list.push(i); } });
-      b.disabled = true; const n = await settle(list, act); toast(`${n} · ${ACT_T[act]}`, "ok"); await after(b); return;
+      b.disabled = true; const gone = [...box.querySelectorAll("[data-st]")].map(rowOf).filter(Boolean); hide(gone);
+      try { const n = await settle(list, act); toast(`${n} · ${ACT_T[act]}`, "ok"); } catch (err) { hide(gone, false); throw err; } await after(b); return;
     }
     const act = b.dataset.st; const note = b.closest(".sheet")?.querySelector("#mnote")?.value || undefined;
     b.closest(".row")?.querySelectorAll("[data-st]").forEach(x => x.disabled = true);
-    await settle([itemOf(b)], act, note); toast(ACT_T[act], "ok"); await after(b);
+    const r = rowOf(b); hide([r]);   // settled items go straight away, no further tick-off
+    try { await settle([itemOf(b)], act, note); } catch (err) { hide([r], false); throw err; } toast(ACT_T[act], "ok"); await after(b);
   } catch (err) { console.error(err); toast(err?.message || "That didn't save", "err"); b.disabled = false; }
 }, true);
