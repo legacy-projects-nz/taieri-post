@@ -6,6 +6,7 @@ import { itemKeyFor } from "/admin/detail.js";
 import { actBtns, addMark } from "/admin/settle.js";
 import { eodEdit } from "/admin/scorecard.js";
 import { briefBtn, wireBriefLive } from "/admin/brief.js";
+import { addTodo } from "/admin/fix.js";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 /** The week the live board is showing: this week by default, back 8 weeks or forward 1 */
@@ -238,13 +239,13 @@ function actionCentre(scores, n) {
   const openA = k => S.alerts.filter(a => !a.resolved_at && k(a)).length;
   const addonA = openA(a => ["timing_missed", "pickup_missing"].includes(a.kind)), fleetA = openA(a => String(a.dedupe_key || "").startsWith("vchk|")), otherA = openA(a => !["sod_late", "eod_late", "timing_missed", "pickup_missing"].includes(a.kind) && !String(a.dedupe_key || "").startsWith("vchk|"));
   const boss = S.me.isOwner || S.me.role === "admin"; const sreq = boss ? (S.sodReqs || []).filter(r => r.status === "pending").length : 0, xreq = S.me.isOwner ? (S.extra || []).filter(r => r.status === "pending").length : 0;
-  const unread = briefUnread();
+  const unread = briefUnread(); let nAdd = 0; try { nAdd = addTodo().length; } catch { }
   // five groups, in order: Approvals > Roster > SOD / EOD > Add-ons > Fleet & people. Each opens one pop-up with everything in it.
   const G = [
     ["approvals", "Approvals", sreq + xreq + aw + leave, [sreq && `${sreq} start time${sreq > 1 ? "s" : ""}`, xreq && `${xreq} hours`, aw && `${aw} roster change${aw > 1 ? "s" : ""}`, leave && `${leave} leave`], "warn"],
     ["roster", "Roster", unc + unread, [unc && `${unc} change${unc > 1 ? "s" : ""} not confirmed`, unread && `${unread} brief${unread > 1 ? "s" : ""} not read`], "crit"],
     ["sodeod", "SOD / EOD", overdue + reviews + pending, [overdue && `${overdue} overdue now`, reviews && `${reviews} to review`, pending && `${pending} missing figures`], overdue ? "crit" : "warn"],
-    ["addons", "Add-ons", addonA, [addonA && `${addonA} task${addonA > 1 ? "s" : ""} missed or pick-ups not in`], "warn"],
+    ["addons", "Add-ons", addonA + nAdd, [nAdd && `${nAdd} not ticked`, addonA && `${addonA} task${addonA > 1 ? "s" : ""} missed or pick-ups not in`], "warn"],
     ["fleet", "Fleet & people", vans.length + fleetA + lic.length + mist + otherA, [vans.length && `${vans.length} vehicle${vans.length > 1 ? "s" : ""} due`, fleetA && `${fleetA} vehicle check${fleetA > 1 ? "s" : ""}`, lic.length && `${lic.length} licence${lic.length > 1 ? "s" : ""}`, mist && `${mist} mistake${mist > 1 ? "s" : ""}`, otherA && `${otherA} other`], mist ? "crit" : "warn"],
   ].filter(g => g[2]);
   return `<div class="card" id="todo"><h2>To do<span>${G.length ? `${G.reduce((a, g) => a + g[2], 0)} to sort out` : "all done"}</span></h2>${G.length ? `<div class="list">${G.map(([k, l, c, bits, cls]) => `<button class="item ${cls}" data-todo="${k}" style="border:0;color:inherit;text-align:left;cursor:pointer" title="Tap to sort these out"><div class="row" style="justify-content:space-between"><b>${esc(l)}</b><span class="pill ${cls}" style="flex:0 0 auto">${c}</span></div><div class="meta">${esc(bits.filter(Boolean).join(" · "))}</div></button>`).join("")}</div>` : `<p class="empty">✓ All complete<br><span class="meta">No approvals, roster, SOD / EOD, add-on or fleet items waiting.</span></p>`}</div>`;
@@ -319,8 +320,8 @@ async function todoSheet(kind) {
     approvals: ["Approvals", [["Start times to sign off", () => (S.me.isOwner || S.me.role === "admin") ? sodReqCard() : "", wireSign], ["Hours to sign off", () => S.me.isOwner ? xtCard() : "", () => { }], ["Roster changes to approve", B.approve[2], B.approve[3]], ["Leave requests", B.leave[2], B.leave[3]]]],
     roster: ["Roster", [["Changes not confirmed", B.unconfirmed[2], B.unconfirmed[3]], [`Roster brief · week of ${label(wkB)}`, () => Object.keys(brief.briefStatus(wkB)).length ? brief.statusList(wkB) : none("No brief sent for this week yet (Run Board → This week)."), () => brief.wireNudge(document)]]],
     sodeod: ["SOD / EOD", [["Overdue right now", B.overdue[2], B.overdue[3]], ["Reviews", B.reviews[2], B.reviews[3]], ["Missing EOD figures", () => pendingRuns().length ? pendingHtml() : none("All EOD figures in."), () => pendingWire($(".todo-body"))]]],
-    addons: ["Add-ons", [["Timed tasks missed · pick-ups not in", () => alertList(a => ["timing_missed", "pickup_missing"].includes(a.kind), "Nothing missed."), () => ad.wireAlerts()]]],
-    fleet: ["Fleet & people", [["Vehicles due", B.vehicles[2], () => { }], ["Vehicle checks not done", () => alertList(a => String(a.dedupe_key || "").startsWith("vchk|"), "All checks in."), () => ad.wireAlerts()], ["Licences & DG due", B.licences[2], () => { }], ["Mistakes this week", B.mistakes[2], () => { }], ["Other alerts", () => alertList(a => !["sod_late", "eod_late", "timing_missed", "pickup_missing"].includes(a.kind) && !String(a.dedupe_key || "").startsWith("vchk|"), "None."), () => ad.wireAlerts()]]],
+    addons: ["Add-ons", [["Add-ons not ticked", () => fx.addSection(), () => fx.wireFix()], ["Timed tasks missed · pick-ups not in", () => alertList(a => ["timing_missed", "pickup_missing"].includes(a.kind), "Nothing missed."), () => ad.wireAlerts()]]],
+    fleet: ["Fleet & people", [["Vehicles due", B.vehicles[2], () => { }], ["Vehicle checks not done", () => alertList(a => String(a.dedupe_key || "").startsWith("vchk|"), "All checks in."), () => ad.wireAlerts()], ["Licences & DG due", B.licences[2], () => { }], ["Mistakes this week", B.mistakes[2], () => { }], ["Hazards not confirmed", () => fx.hzSection(), () => fx.wireFix()], ["Other alerts", () => alertList(a => !["sod_late", "eod_late", "timing_missed", "pickup_missing"].includes(a.kind) && !String(a.dedupe_key || "").startsWith("vchk|"), "None."), () => ad.wireAlerts()]]],
   };
   if (GROUPS[kind]) { const [title, secs] = GROUPS[kind];
     const open = () => { const parts = secs.map(([h, html]) => { let body = ""; try { body = html() || ""; } catch (e) { body = `<p class="hint">Couldn't show this: ${esc(e?.message || e)}</p>`; } return body && !/class="empty"/.test(body.slice(0, 200)) || secs.length === 1 ? `<h4 style="margin:14px 0 4px">${esc(h)}</h4>${body}` : ""; }).filter(Boolean);

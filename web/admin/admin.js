@@ -125,7 +125,7 @@ function folds() {
     const h = c.querySelector(":scope > h2"); if (!h) return;
     let key = S.tab + "|" + (c.id || [...h.childNodes].filter(x => x.nodeType === 3).map(x => x.textContent).join("").trim() || i);
     const empty = c.dataset.empty === "1" || !c.querySelector("#map") && !["daybudget", "avail", "incmonth"].includes(c.id) && !!c.querySelector(".empty") && !c.querySelector(".list .item, table tr + tr, .tiles, svg, .dgrid > *, [data-go]"); key += empty ? "|e" : "|f";
-    if (!(key in S.open)) S.open[key] = S.tab === "fix" ? c.id === "todo" : !empty;   // Admin tab: only To do starts open, everything else is one row   // boxes with something in them start open, empty ones collapsed (and they flip when that changes)   // top four: Right now boxes open, sign-off / added hours open only when something is waiting
+    if (!(key in S.open)) S.open[key] = S.tab === "fix" ? ["todo", "fxsearch"].includes(c.id) : !empty;   // Admin tab: only To do starts open, everything else is one row   // boxes with something in them start open, empty ones collapsed (and they flip when that changes)   // top four: Right now boxes open, sign-off / added hours open only when something is waiting
     c.classList.add("fold"); c.classList.toggle("shut", !S.open[key]);
     h.setAttribute("role", "button"); h.tabIndex = 0; h.setAttribute("aria-expanded", String(!!S.open[key]));
     const ch = document.createElement("i"); ch.className = "fchev" + (h.querySelector(":scope > span") ? "" : " solo"); ch.setAttribute("aria-hidden", "true"); h.appendChild(ch);

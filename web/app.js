@@ -255,17 +255,16 @@ function renderNow() {
     ${dayDone ? "" : part("Next shift", () => nextShiftCard(nextDay, n))}
     ${pair(part("My van", () => vanCard(T, null)), part("My shifts", () => shiftsCard(t)))}
     ${pair(part("To fix", () => toFixCard(n)), part("Notes from Jeremy", () => fromJeremy()))}
-    ${pair(part("Leave", () => leaveCard()), part("My details", () => detailsCard()))}
-    ${part("Calendar", () => calendarCard(t))}
-    ${part("More", () => moreCard())}
-    ${part("This week's notes", () => notesBtn())}
     ${rbBtn()}
+    ${part("This week's notes", () => notesBtn())}
     ${part("Passwords & logins", () => accessCard())}
+    ${part("More", () => moreCard(t))}
     </div>
     <p class="foot">Signed in as ${esc((S.viewer || S.me).email || "")}</p>
   </div>`;
   try { folds(); } catch (e) { reportError("folds", e); }
   try { lawPuPop(); } catch (e) { reportError("lawPuPop", e); }
+  try { profilePop(); } catch (e) { reportError("profilePop", e); }
   try { briefPop(); } catch (e) { reportError("briefPop", e); }
   try { wire(); } catch (e) { reportError("wire", e); }
   try { fitQb(); document.fonts?.ready.then(() => fitQb()); } catch (e) { reportError("fitQb", e); }
@@ -758,7 +757,7 @@ function leaveCard() {
 /* ---------- Details / more ---------- */
 function detailsCard() {
   const p = S.me; const d = (v, soon = 30) => { if (!v) return pill("not on file", "grey"); const n = Math.round((new Date(v) - new Date(today())) / 86400000); return `${label(v, true)} ${n < 0 ? pill("expired", "crit") : n <= soon ? pill(`due in ${n}d`, "warn") : pill("✓", "ok")}`; };
-  return `<div class="card"><h2>My details</h2><dl class="kv"><dt>Phone</dt><dd>${p.phone ? esc(p.phone) : pill("not on file", "grey")}</dd><dt>Email</dt><dd>${esc(p.email || "")}</dd><dt>Licence</dt><dd>${p.licence_class ? esc(p.licence_class) + " · " : ""}${d(p.licence_expiry)}</dd><dt>DG</dt><dd>${d(p.dg_expiry)}</dd></dl>
+  return `<div class="card"><h2>My details</h2><dl class="kv"><dt>Phone</dt><dd>${p.phone ? esc(p.phone) : pill("not on file", "grey")}</dd><dt>Email</dt><dd>${esc(p.email || "")}</dd><dt>Licence</dt><dd>${p.licence_class ? esc(p.licence_class) + " · " : ""}${d(p.licence_expiry)}</dd><dt>DG</dt><dd>${d(p.dg_expiry)}</dd><dt>Licence photos</dt><dd>${p.licence_front && p.licence_back ? pill("✓ front & back", "ok") : pill(p.licence_front || p.licence_back ? "one side missing" : "not on file", "warn")}</dd></dl>
     <button class="btn ghost sm" id="prof-edit">Update my details</button></div>`;
 }
 const PU_CUST = { NZC: "NZ Couriers", PH: "Post Haste", TGE: "TGE (NZ National Network)" };
@@ -931,9 +930,9 @@ function editAccess() {
     bg.querySelector("#acf").addEventListener("submit", async e => { e.preventDefault(); const body = bg.querySelector("#ac-body").value; const { error } = await sb.from("access_info").upsert({ id: 1, body, updated_at: new Date().toISOString(), updated_by: S.viewer.id }); if (error) return toast(error.message, "err"); S.access = { body }; close(); toast("Saved", "ok"); render(); });
   });
 }
-function moreCard() {
+function moreCard(t) {   // More (last on the page): the buttons, then Calendar, Leave and My details (at the bottom)
   const vault = S.set.links?.vault;
-  return `<div class="card"><h2>More</h2><div class="row">
+  return `<div class="card" id="more"><h2>More</h2>${part("Calendar", () => calendarCard(t))}${part("Leave", () => leaveCard())}${part("My details", () => detailsCard())}<div class="row">
     ${vault ? `<a class="btn ghost" href="${esc(vault)}" target="_blank" rel="noopener">🔐 Vault (Damstra)</a>` : ""}
     <button class="btn ghost" id="push-btn">🔔 Notifications: <span id="push-state">…</span></button>
     <button class="btn ghost" id="vchk-btn">🚐 Weekly vehicle check</button>
@@ -1292,14 +1291,23 @@ function leaveForm() {
       const { error } = await sb.from("leave_requests").insert({ driver: S.me.id, type: bg.querySelector("#type").value, date_from: f, date_to: part === "full" ? to : f, part, notes: bg.querySelector("#notes").value || null }); if (error) return toast(error.message, "err"); close(); toast("Request sent. Check your email.", "ok"); await loadAll(); render(); };
   });
 }
-function profileForm() {
+/* Profile: everyone except the owner fills in / confirms their details the next time they open the app (can't be closed until saved) */
+function profilePop() {
+  if (S.viewAs || S.me.isOwner || (S.me.profile_confirmed_at && S.me.licence_front && S.me.licence_back) || document.querySelector(".sheet-bg")) return; profileForm(true);
+}
+function profileForm(must = false) {
   const p = S.me; const forOther = S.viewAs && S.viewer?.can?.("people");
   if (S.viewAs && !forOther) return toast(`Only ${first(S.viewAs.name)} (or Jeremy) can change these`, "err");
-  sheet(`<h3>${forOther ? `Update ${esc(first(p.name))}'s details` : "Update my details"}</h3><form class="frm" id="pf"><label class="f full">Phone<input class="in" id="phone" type="tel" value="${esc(p.phone || "")}"></label><label class="f">Licence class<input class="in" id="lc" value="${esc(p.licence_class || "")}" placeholder="e.g. Class 1 full"></label><label class="f">Licence expires<input class="in" type="date" id="le" value="${p.licence_expiry || ""}"></label><label class="f full">DG endorsement expires<input class="in" type="date" id="dg" value="${p.dg_expiry || ""}"></label><button class="btn full" type="submit">Save</button></form>`, (bg, close) => {
+  const { bg: sbg } = sheet(`<h3>${forOther ? `Update ${esc(first(p.name))}'s details` : must ? "Your details" : "Update my details"}</h3>${must ? `<p class="meta">Please fill in your details before you carry on. Licence class and expiry are needed so Jeremy knows you're legal to drive.</p>` : ""}<form class="frm" id="pf"><label class="f full">Phone<input class="in" id="phone" type="tel" ${must ? "required" : ""} value="${esc(p.phone || "")}"></label><label class="f">Licence class<input class="in" id="lc" ${must ? "required" : ""} value="${esc(p.licence_class || "")}" placeholder="e.g. Class 1 full"></label><label class="f">Licence expires<input class="in" type="date" id="le" ${must ? "required" : ""} value="${p.licence_expiry || ""}"></label><label class="f full">DG endorsement expires<input class="in" type="date" id="dg" value="${p.dg_expiry || ""}"></label>${forOther ? "" : ["front", "back"].map(sd => `<label class="f full">Licence photo · ${sd}${p["licence_" + sd] ? ` <span class="c-ok">✓ on file</span>` : ""}<input class="in" type="file" accept="image/*" capture="environment" id="lp-${sd}" ${must && !p["licence_" + sd] ? "required" : ""}></label>`).join("")}<button class="btn full" type="submit">Save</button></form>`, (bg, close) => {
     bg.querySelector("#pf").onsubmit = async e => { e.preventDefault(); const v = { phone: bg.querySelector("#phone").value || null, licence_class: bg.querySelector("#lc").value || null, licence_expiry: bg.querySelector("#le").value || null, dg_expiry: bg.querySelector("#dg").value || null };
+      if (!forOther) { const btn = bg.querySelector("#pf button[type=submit]"); if (btn) btn.disabled = true;
+        for (const sd of ["front", "back"]) { const f0 = bg.querySelector("#lp-" + sd)?.files?.[0]; if (!f0) continue; const f = await shrinkPhoto(f0); const path = `${p.id}/${sd}-${Date.now()}.jpg`;
+          const up = await sb.storage.from("licences").upload(path, f, { contentType: f.type || "image/jpeg" }); if (up.error) { if (btn) btn.disabled = false; return toast(`Licence photo didn't upload: ${up.error.message}`, "err"); }
+          const r = await sb.rpc("set_my_licence_photo", { p_side: sd, p_path: path }); if (r.error) { if (btn) btn.disabled = false; return toast(r.error.message, "err"); } } }
       const { error } = forOther ? await sb.from("people").update(v).eq("id", p.id) : await sb.rpc("update_my_profile", { p_phone: v.phone, p_lic_class: v.licence_class, p_lic_exp: v.licence_expiry, p_dg_exp: v.dg_expiry });
       if (error) return toast(error.message, "err"); close(); toast("Saved", "ok"); if (forOther) Object.assign(S.me, v); else S.me = await me(); render(); };
   });
+  if (must && sbg) { sbg.querySelector(".x")?.remove(); sbg._close = () => { }; sbg.addEventListener("click", e => { if (e.target === sbg) e.stopImmediatePropagation(); }, true); }
 }
 /* Van wash: one quick tap to record that a van was washed (separate from the weekly check) */
 const lastWash = plate => (S.washes || []).filter(w => w.van === plate).sort((a, b) => b.at.localeCompare(a.at))[0];

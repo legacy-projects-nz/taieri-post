@@ -35,7 +35,7 @@ export function postSection() {
 }
 
 /* ---------- 2. Add-ons and tasks not ticked on a finished shift ---------- */
-function addTodo() {
+export function addTodo() {
   const { from, to } = range(); const t = today(); const out = []; const dec = decided("add|");
   for (const s of S.shifts) {
     if (!s.driver || s.run === "BU" || s.day < from || s.day > to || s.day > t) continue;
@@ -52,7 +52,7 @@ function askedAdds() { return (S.marks || []).filter(m => m.status === "ask" && 
 async function askDriver(pairs) { if (!pairs.length) return; const at = new Date().toISOString();
   const { error } = await sb.from("marks").upsert(pairs.map(({ sid, k }) => ({ key: addKey(sid, k), driver: S.shifts.find(x => x.id === sid)?.driver || null, status: "ask", reviewed: false, note: "Asked the driver if it was done", by_person: S.me.id, at })));
   if (error) return toast(error.message, "err"); toast(pairs.length > 1 ? `Asked about ${pairs.length}` : "Asked · they'll answer next time they open the app", "ok"); await loadAll(); render(); }
-function addSection() {
+export function addSection() {
   const L = addTodo(); const A = askedAdds();
   return `<div class="card"><h2>Add-ons not done<span>${L.length ? L.length + (A.length ? ` · ⏳ ${A.length}` : "") : (A.length ? `⏳ ${A.length} waiting` : "all clear")}</span></h2><p class="hint">${HINT} <b>Ask driver</b>: next time they open the app they say if it was done — yes counts as late, no as not done, both with the penalty.</p>${L.length ? `<div class="row" style="gap:4px;align-items:center;margin:6px 0"><button type="button" class="btn ghost sm" id="ask-all">Ask drivers about all ${L.length}</button></div>` : ""}${allBar(L.length)}
     ${byDay(L, i => i.s.day).map(([day, items]) => `<h4 style="margin:12px 0 4px">${label(day, true)}</h4><div class="list">${items.map(({ s, k }) => `<div class="item warn"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(nm(s.driver))}</b> · ${esc(s.run)}<span class="meta"> ${esc(keyName(k))}</span></span>${btnRow(`<button type="button" class="btn sm ghost" data-ask="${s.id}|${esc(k)}">Ask driver</button>` + actBtns("add", `data-sid="${s.id}" data-k="${esc(k)}"`))}</div></div>`).join("")}</div>`).join("") || (A.length ? "" : `<p class="empty">✓ Nothing to fix.</p>`)}
@@ -104,19 +104,30 @@ function hzTodo() {
     return { d, n: mine.length, left: mine.length - ok.length };
   }).filter(r => r.left > 0).sort((a, b) => b.left - a.left);
 }
-function hzSection() {
+export function hzSection() {
   const L = hzTodo();
   return `<div class="card"><h2>Hazards not confirmed<span>${L.length || "all clear"}</span></h2><p class="hint">Drivers confirm the hazards on their runs in the app each month. ${HINT}</p>${allBar(L.length)}
     ${L.length ? `<div class="list">${L.map(r => `<div class="item warn"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(r.d.name)}</b><span class="meta"> ${r.left} of ${r.n} not confirmed</span></span>${btnRow(actBtns("hz", `data-drv="${esc(r.d.id)}"`))}</div></div>`).join("")}</div>` : `<p class="empty">✓ Nothing to fix.</p>`}</div>`;
 }
 
-// SOD / EOD, roster changes, alerts and reviews live inside the To do pop-ups, so only these show as (collapsed) rows below it
-const SECTIONS = [["Add-ons", addSection], ["Vehicle checks", vchkSection], ["Hazards", hzSection]];
-export function fixCount() { try { return todo().filter(i => i.st === "miss" || i.st === "part").length + addTodo().length + chgTodo().length + vchkTodo().length; } catch { return 0; } }
-
+// Admin tab: the To do box (everything waiting, in pop-ups) and a search to look up and edit old posts. Nothing else.
 export function fixTab() {
-  return `${adminTop()}${weekBar(`<label class="chk ${both ? "on" : ""}"><input type="checkbox" id="fx-both" ${both ? "checked" : ""}>include last week</label>`)}
-    ${SECTIONS.map(([name, f]) => { try { return f(); } catch (e) { console.error(name, e); return `<div class="card"><h2>${name}</h2><p class="hint">This box couldn't be shown: ${esc(e?.message || e)}</p></div>`; } }).join("")}`;
+  return `${adminTop()}<div class="card" id="fxsearch"><h2>Find an old post</h2>
+    <input class="in" id="fxq" type="search" autocomplete="off" placeholder="Driver, run, SOD / EOD, add-on or date (e.g. Liam TUA 12 Nov)" value="${esc(S.fxq || "")}" style="width:100%">
+    <div id="fxres" style="margin-top:8px">${searchHtml(S.fxq)}</div></div>`;
+}
+/* search the last 9 weeks: SOD / EOD posts and add-ons on finished shifts; every word typed has to match */
+function searchHtml(qs) {
+  const words = String(qs || "").toLowerCase().split(/\s+/).filter(Boolean); if (!words.length) return `<p class="hint">Type a driver, run, date or SOD / EOD to find a post, then tap it to edit or change its outcome.</p>`;
+  const t = today(); const from = addDays(monOf(t), -56); const D = scoreData(); const hit = h => words.every(w => h.toLowerCase().includes(w)); const out = [];
+  for (const d of S.drivers) for (const it of scoreFor(d.id, from, t, D, S.C).items) {
+    if (it.pre) continue; const run = it.shift?.run || "";
+    if (hit(`${nm(it.driver)} ${it.kind} ${run} ${label(it.day)} ${label(it.day, true)} ${it.day} ${STATE_LABEL[it.st] || it.st}`)) out.push({ day: it.day, html: `<div class="item"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(nm(it.driver))}</b> · ${label(it.day)}${run ? ` · ${esc(run)}` : ""} · ${chip(it)}</span>${btnRow(actBtns("post", `data-key="${esc(it.key)}" data-drv="${it.driver}"`))}</div></div>` }); }
+  for (const s of S.shifts) { if (!s.driver || s.run === "BU" || s.day < from || s.day > t) continue;
+    for (const k of new Set([...(s.addons || []), ...Object.keys(s.done || {})])) { const name = keyName(k); const done = s.done?.[k];
+      if (hit(`${nm(s.driver)} ${s.run} ${name} add-on task ${label(s.day)} ${label(s.day, true)} ${s.day} ${done ? "done" : "not done"}`)) out.push({ day: s.day, html: `<div class="item"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(nm(s.driver))}</b> · ${label(s.day)} · ${esc(s.run)} · ${esc(name)} <span class="meta">${done ? "✓ done" : "not ticked"}</span></span>${btnRow(actBtns("add", `data-sid="${s.id}" data-k="${esc(k)}"`))}</div></div>` }); } }
+  out.sort((a, b) => b.day.localeCompare(a.day));
+  return out.length ? `<p class="meta">${out.length > 60 ? `First 60 of ${out.length}` : `${out.length} found`} · tap a SOD / EOD chip to open and edit it</p><div class="list">${out.slice(0, 60).map(x => x.html).join("")}</div>` : `<p class="empty">Nothing matches.</p>`;
 }
 
 function findItem(key) {
@@ -126,6 +137,7 @@ function findItem(key) {
 export function wireFix() {
   wireAlerts(); wireAdmin(); wireScorecard();
   $("#fx-both")?.addEventListener("change", e => { both = e.target.checked; render(); });
+  const fq = $("#fxq"); if (fq && !fq._w) { fq._w = 1; let tm; fq.addEventListener("input", () => { clearTimeout(tm); tm = setTimeout(async () => { S.fxq = fq.value; const r = $("#fxres"); if (!r) return; r.innerHTML = searchHtml(S.fxq); (await import("/admin/detail.js")).bind(r); }, 250); }); }
   $$("[data-ask]").forEach(b => b.onclick = () => { b.disabled = true; const [sid, ...kk] = b.dataset.ask.split("|"); askDriver([{ sid, k: kk.join("|") }]); });
   $("#ask-all")?.addEventListener("click", e => { e.target.disabled = true; askDriver(addTodo().map(({ s, k }) => ({ sid: s.id, k }))); });
   $$("[data-fxshift]").forEach(b => b.onclick = () => { const [drv, day] = b.dataset.fxshift.split("|"); shiftSheet(drv, day); });
