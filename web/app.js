@@ -923,8 +923,9 @@ function vchkDue() {   // vans I've driven this week (or look after) with no wee
   return { left, late };
 }
 const rowBtn = (id, label, sub = "", cls = "") => `<button type="button" class="card rbrow ${cls}" id="${id}"><h2>${label}<span>${sub}</span><i class="fchev" aria-hidden="true"></i></h2></button>`;
-function grp(key, title, body) {
+function grp(key, title, body, sum = []) {
   if (!body.trim()) return "";
+  const rows = sum.filter(Boolean); if (rows.length) body = `<div class="card grps"><dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl></div>` + body;
   return `<div class="grp ${S.open["grp-" + key] ? "" : "shut"}" data-grp="${key}"><button type="button" class="card grph" aria-expanded="${!!S.open["grp-" + key]}"><h2>${title}<i class="fchev" aria-hidden="true"></i></h2></button><div class="grpb folds">${body}</div></div>`;
 }
 function layout(T, t, n, nextDay, dayDone) {
@@ -948,7 +949,34 @@ function layout(T, t, n, nextDay, dayDone) {
   if (vault) checks.push(`<a class="card rbrow" href="${esc(vault)}" target="_blank" rel="noopener"><h2>🔐 Vault (Damstra)<span></span><i class="fchev" aria-hidden="true"></i></h2></a>`);
   checks.push(part("Passwords & logins", () => accessCard()), rowBtn("push-btn", "🔔 Notifications", `<span id="push-state">…</span>`));
   const j = a => a.filter(Boolean).join("\n");
-  return `${j(top)}${part("My scores", () => scoresCard())}${grp("shift", "Shift", j(shift))}${grp("checks", "Checks", j(checks))}`;
+  let ss = [], cs = [];
+  try { ss = shiftSum(t, nextDay); } catch (e) { reportError("shiftSum", e); }
+  try { cs = checkSum(t, vd); } catch (e) { reportError("checkSum", e); }
+  return `${j(top)}${part("My scores", () => scoresCard())}${grp("shift", "Shift", j(shift), ss)}${grp("checks", "Checks", j(checks), cs)}`;
+}
+// one-glance summary at the top of each group when it's opened
+function shiftSum(t, N) {
+  const wk = monOf(t), end = addDays(wk, 6); const mine = S.shifts.filter(s => s.driver === S.me.id && s.day >= wk && s.day <= end && s.run !== "BU");
+  const days = new Set(mine.map(s => s.day)); const left = new Set(mine.filter(s => s.day > t).map(s => s.day));
+  const runs = N ? [...new Set(N.segs.map(x => x.shift.run))].join(" · ") : ""; const vans = N ? [...new Set(N.segs.map(x => x.shift.van).filter(Boolean))].join(", ") : "";
+  const lv = (S.leave || []).filter(l => l.driver === S.me.id && l.status === "pending").length;
+  const unread = (S.msgs || []).filter(m => !m.read_at).length;
+  return [
+    ["Next shift", N ? `${N.day === addDays(t, 1) ? "Tomorrow" : esc(label(N.day))} · ${fmtT(N.start)}–${fmtT(N.end)}${runs ? ` · ${esc(runs)}` : ""}` : "not rostered yet"],
+    vans && ["Van", esc(vans)],
+    ["This week", `${days.size} day${days.size === 1 ? "" : "s"}${left.size ? ` · ${left.size} to go` : ""}`],
+    lv && ["Leave", `${lv} waiting`],
+    unread && ["Messages", `${unread} unread`],
+  ];
+}
+function checkSum(t, vd) {
+  const wk = monOf(t); const mineChk = (S.vchk || []).filter(c => c.driver === S.me.id).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  const thisWk = mineChk.find(c => c.week_start === wk);
+  const vc = vd ? `<b class="c-${vd.late ? "crit" : "warn"}">${vd.late ? "overdue" : "due 5pm"}</b> · ${esc(vd.left.join(", "))}` : thisWk ? `<span class="c-ok">✓ done</span> · ${esc(thisWk.van)}` : `due Thu 5pm${mineChk[0] ? ` · last ${esc(label(mineChk[0].week_start))}` : ""}`;
+  const plates = [...new Set(S.shifts.filter(s => s.driver === S.me.id && s.day <= t && s.van).sort((a, b) => b.day.localeCompare(a.day)).map(s => s.van))].filter(p => p !== "OTHER").slice(0, 2);
+  const wash = plates.map(p => { const w = lastWash(p); return `${esc(p)} ${w ? esc(label(nzNow(new Date(w.at)).date)) : "none recent"}`; }).join(" · ");
+  const le = S.me.licence_expiry; const ld = le ? Math.round((new Date(le) - new Date(t)) / 86400000) : null;
+  return [["Vehicle check", vc], wash && ["Last wash", wash], ["Licence", le ? `${esc(label(le, true))}${ld < 0 ? ` <b class="c-crit">expired</b>` : ld <= 30 ? ` <b class="c-warn">due in ${ld}d</b>` : ""}` : "not on file"]];
 }
 
 /* ================= wiring ================= */

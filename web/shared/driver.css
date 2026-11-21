@@ -201,3 +201,5 @@ button.card.rbrow{width:100%;font:inherit;color:inherit;text-align:left;cursor:p
 .card.rbrow.due{border-left-color:var(--warn);background:var(--warn-fill)}
 .card.rbrow.due.crit{border-left-color:var(--crit);background:var(--crit-fill)}
 .card.rbrow.due>h2>span{color:var(--ink);font-weight:700}
+.card.grps{padding:10px 16px;gap:0;background:var(--soft)}
+.card.grps .kv{margin:0}
