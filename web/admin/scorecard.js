@@ -19,6 +19,7 @@ function weekScores() { const from = S.week, to = addDays(S.week, 6); const D = 
   const team = k => avg(scores.filter(s => !S.peopleBy[s.driver]?.pay_exclude).map(s => s[k])); return { scores, team }; }
 // Scorecard tab: scores only. Review + mistakes live on Admin, labour & wages on Income, formulas and reports in the ☰ menu.
 export function scorecardTab() { const { scores, team } = weekScores(); return `${weekBar()}${dash(scores, team)}${effView()}`; }
+export function reviewFor(wk) { const D = scoreData(); return review(S.drivers.map(d => scoreFor(d.id, wk, addDays(wk, 6), D, S.C))); }
 export function scoreAdmin() { const { scores } = weekScores(); return review(scores); }
 export function recordsTab() { return entriesView(); }
 export function scoreIncome() { return labour() + hoursCard(S.week) + wagesView(); }

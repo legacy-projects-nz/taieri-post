@@ -228,7 +228,7 @@ function actionCentre(scores, n) {
   const t = n.date; const R = S.C.rules;
   const reviews = scores.flatMap(s => s.items.filter(i => (i.st === "late" || i.st === "miss") && !i.mark?.reviewed && !i.pre)).length;
   const overdue = scores.flatMap(s => s.items.filter(i => i.day === t && i.st === "over")).length;
-  const pending = scores.flatMap(s => s.effDays.filter(e => e.pending && e.day < t)).length;
+  const pending = pendingRuns().length;   // same list the pop-up shows, so the count always matches what's in it
   const leave = S.leave.filter(l => l.status === "pending").length;
   const ackOf = {}; for (const a of S.acks) (ackOf[a.item_id] ??= {})[a.driver] = a; let unc = 0; for (const i of S.items.filter(i => i.roster_changes.status === "sent" && i.day >= t)) for (const d of i.affects) { const a = ackOf[i.id]?.[d]; if (!a?.confirmed_at && !a?.dismissed_at) unc++; }
   const aw = S.items.filter(i => i.roster_changes.status === "awaiting_approval").length;
@@ -299,7 +299,7 @@ async function todoSheet(kind) {
   const t = today(); const R = S.C.rules; const soon = d => { const n = dueIn(d); return n != null && n <= R.dueSoonDays; };
   const none = msg => `<p class="empty">✓ ${msg}</p>`;
   const B = {
-    reviews: ["Reviews to do", "Confirm or excuse each late or missed post.", () => sc.scoreAdmin(), () => sc.wireScorecard()],
+    reviews: ["Reviews to do", "Confirm or excuse each late or missed post.", () => sc.reviewFor(monOf(t)), () => sc.wireScorecard()],   // this week, same as the To do count
     overdue: ["SOD / EOD to sort out", "Fix opens the post to add or correct it; Done, Late, Not done or Excuse settles it.", () => fx.postSection(), () => fx.wireFix()],
     unconfirmed: ["Roster changes not confirmed", "Confirm for the driver, or leave it for them to tap Got it. Tap a name for their changes.", () => fx.chgSection(), () => { }],
     approve: ["Roster changes to approve", "", () => { const L = S.items.filter(i => i.roster_changes.status === "awaiting_approval"); return L.length ? rb.approvalCard(L, S.me.isOwner || S.me.can("roster_approve")) : none("Nothing waiting for your OK."); }, () => rb.wireApprovals()],
@@ -318,7 +318,7 @@ async function todoSheet(kind) {
   const GROUPS = {
     approvals: ["Approvals", [["Start times to sign off", () => (S.me.isOwner || S.me.role === "admin") ? sodReqCard() : "", wireSign], ["Hours to sign off", () => S.me.isOwner ? xtCard() : "", () => { }], ["Roster changes to approve", B.approve[2], B.approve[3]], ["Leave requests", B.leave[2], B.leave[3]]]],
     roster: ["Roster", [["Changes not confirmed", B.unconfirmed[2], B.unconfirmed[3]], [`Roster brief · week of ${label(wkB)}`, () => Object.keys(brief.briefStatus(wkB)).length ? brief.statusList(wkB) : none("No brief sent for this week yet (Run Board → This week)."), () => brief.wireNudge(document)]]],
-    sodeod: ["SOD / EOD", [["Overdue right now", B.overdue[2], B.overdue[3]], ["Reviews", B.reviews[2], B.reviews[3]], ["Missing EOD figures", () => { const n = pendingRuns().length; return n ? `<button class="btn ghost full" id="td-pend">${n} run${n > 1 ? "s" : ""} can't be scored yet · open</button>` : none("All EOD figures in."); }, () => $("#td-pend")?.addEventListener("click", () => pendingSheet())]]],
+    sodeod: ["SOD / EOD", [["Overdue right now", B.overdue[2], B.overdue[3]], ["Reviews", B.reviews[2], B.reviews[3]], ["Missing EOD figures", () => pendingRuns().length ? pendingHtml() : none("All EOD figures in."), () => pendingWire($(".todo-body"))]]],
     addons: ["Add-ons", [["Timed tasks missed · pick-ups not in", () => alertList(a => ["timing_missed", "pickup_missing"].includes(a.kind), "Nothing missed."), () => ad.wireAlerts()]]],
     fleet: ["Fleet & people", [["Vehicles due", B.vehicles[2], () => { }], ["Vehicle checks not done", () => alertList(a => String(a.dedupe_key || "").startsWith("vchk|"), "All checks in."), () => ad.wireAlerts()], ["Licences & DG due", B.licences[2], () => { }], ["Mistakes this week", B.mistakes[2], () => { }], ["Other alerts", () => alertList(a => !["sod_late", "eod_late", "timing_missed", "pickup_missing"].includes(a.kind) && !String(a.dedupe_key || "").startsWith("vchk|"), "None."), () => ad.wireAlerts()]]],
   };
@@ -350,16 +350,17 @@ async function todoSheet(kind) {
 function pendingRuns() { const t = today(); const wk = monOf(t); const D = scoreData(); const out = [];
   for (const d of S.drivers) for (const e of scoreFor(d.id, wk, addDays(wk, 6), D, S.C).effDays.filter(e => e.pending && e.day < t)) for (const r of e.rows || []) if (r.need?.length) out.push({ drv: d.id, day: e.day, code: r.shift?.run || r.code, need: r.need, eod: r.eod, shift: r.shift });
   return out; }
-function pendingSheet() {
-  const L = pendingRuns(); const by = {}; for (const r of L) (by[r.drv] ??= []).push(r);
-  sheet(`<h3>Runs that can't be scored yet</h3>${L.length ? Object.entries(by).map(([d, rs]) => `<div class="item warn" style="margin-bottom:8px"><div class="row" style="justify-content:space-between;align-items:center"><b>${esc(nm(d))}</b><button class="btn sm ghost" data-pask="${d}">Ask ${esc(first(nm(d)))}</button></div>
-    ${rs.map((r, i) => `<div class="row" style="justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding-top:6px;margin-top:6px"><span>${esc(r.code)} · ${label(r.day)}<span class="meta"> · missing ${esc(r.need.join(", "))}</span></span>${r.eod ? `<button class="btn sm" data-pedit="${d}|${i}">Edit</button>` : `<span class="meta">no EOD</span>`}</div>`).join("")}</div>`).join("") : `<p class="empty">✓ Every run can be scored.</p>`}`, bg => {
-    bg.querySelectorAll("[data-pedit]").forEach(b => b.onclick = () => { const [d, i] = b.dataset.pedit.split("|"); const r = by[d]?.[+i]; if (r?.eod) eodEdit(r.eod); });
-    bg.querySelectorAll("[data-pask]").forEach(b => b.onclick = async () => { b.disabled = true; const d = b.dataset.pask; const rs = by[d] || [];
-      const body = `Hi ${first(nm(d))}, I can't score ${rs.length > 1 ? "these runs" : "this run"} yet because some EOD figures are missing:\n${rs.map(r => `• ${r.code} · ${label(r.day)}: ${r.need.join(", ")}`).join("\n")}\nPlease open the EOD in the app and fill them in. Thanks, ${first(S.me.name)}`;
-      try { const msg = await q(sb.from("messages").insert({ sender: S.me.id, body, needs_confirm: true }).select().single()); await q(sb.from("message_recipients").insert({ message_id: msg.id, person: d })); fn("notify", { type: "message", message_id: msg.id }).catch(() => { }); toast(`Asked ${first(nm(d))}`, "ok"); b.textContent = "Asked ✓"; }
-      catch (e) { b.disabled = false; toast(e.message, "err"); } }); });
-}
+const pendingBy = () => { const by = {}; for (const r of pendingRuns()) (by[r.drv] ??= []).push(r); return by; };
+function pendingHtml() { const by = pendingBy(); const E = Object.entries(by);
+  return E.length ? E.map(([d, rs]) => `<div class="item warn" style="margin-bottom:8px"><div class="row" style="justify-content:space-between;align-items:center"><b>${esc(nm(d))}</b><button class="btn sm ghost" data-pask="${d}">Ask ${esc(first(nm(d)))}</button></div>
+    ${rs.map((r, i) => `<div class="row" style="justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding-top:6px;margin-top:6px"><span>${esc(r.code)} · ${label(r.day)}<span class="meta"> · missing ${esc(r.need.join(", "))}</span></span>${r.eod ? `<button class="btn sm" data-pedit="${d}|${i}">Edit</button>` : `<span class="meta">no EOD</span>`}</div>`).join("")}</div>`).join("") : `<p class="empty">✓ Every run can be scored.</p>`; }
+function pendingWire(bg) { if (!bg) return; const by = pendingBy();
+  bg.querySelectorAll("[data-pedit]").forEach(b => b.onclick = () => { const [d, i] = b.dataset.pedit.split("|"); const r = by[d]?.[+i]; if (r?.eod) eodEdit(r.eod); });
+  bg.querySelectorAll("[data-pask]").forEach(b => b.onclick = async () => { b.disabled = true; const d = b.dataset.pask; const rs = by[d] || [];
+    const body = `Hi ${first(nm(d))}, I can't score ${rs.length > 1 ? "these runs" : "this run"} yet because some EOD figures are missing:\n${rs.map(r => `• ${r.code} · ${label(r.day)}: ${r.need.join(", ")}`).join("\n")}\nPlease open the EOD in the app and fill them in. Thanks, ${first(S.me.name)}`;
+    try { const msg = await q(sb.from("messages").insert({ sender: S.me.id, body, needs_confirm: true }).select().single()); await q(sb.from("message_recipients").insert({ message_id: msg.id, person: d })); fn("notify", { type: "message", message_id: msg.id }).catch(() => { }); toast(`Asked ${first(nm(d))}`, "ok"); b.textContent = "Asked ✓"; }
+    catch (e) { b.disabled = false; toast(e.message, "err"); } }); }
+function pendingSheet() { sheet(`<h3>Runs that can't be scored yet</h3>${pendingHtml()}`, bg => pendingWire(bg)); }
 export function wireAdmin() {
   $$("[data-todo]").forEach(b => b.onclick = () => todoSheet(b.dataset.todo));
   $$("[data-go]").forEach(b => b.onclick = () => { if (b.dataset.go === "pending") return pendingSheet(); S.tab = b.dataset.go; location.hash = S.tab; render(); });
