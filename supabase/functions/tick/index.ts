@@ -91,13 +91,18 @@ Deno.serve(async (req) => {
     for (const d of i.affects) { const a = (acks || []).find(x => x.item_id === i.id && x.driver === d); if (a?.confirmed_at || a?.dismissed_at) continue;
       raise({ kind: "change_unconfirmed", driver: d, title: `${first(ppl[d]?.name)} hasn't confirmed a roster change`, body: `${i.summary} · run starts ${fmtT(st)}`, dedupe_key: `change_unconfirmed|${i.id}|${d}`, _driverOnly: true, _push: { to: [d], title: "Please confirm your roster change", body: i.summary } }); }
   }
-  // vehicle checks: due Thursday by 17:00 for this week
-  if (dow(t) + 1 >= R.vchkDay && (dow(t) + 1 > R.vchkDay || now.min >= (toMin(R.vchkTime) ?? 1020))) {
-    const wk = addDays(t, -dow(t)); const { data: vans } = await sb.from("vans").select("*").eq("active", true); const { data: checks } = await sb.from("vehicle_checks").select("van").eq("week_start", wk);
-    const weekShifts = (shifts || []).filter(s => s.day >= wk && s.van && !isSort(s.run));
-    for (const v of vans || []) { if (v.plate === "OTHER" || (checks || []).some(c => c.van === v.plate)) continue; const uses = weekShifts.filter(s => s.van === v.plate); if (!uses.length && !v.responsible) continue;
-      const cnt: Record<string, number> = {}; for (const s of uses) cnt[s.driver] = (cnt[s.driver] || 0) + 1; const drv = v.responsible || Object.entries(cnt).sort((a, b) => b[1] - a[1])[0]?.[0]; if (!drv) continue;
-      raise({ kind: "other", driver: drv, title: `${first(ppl[drv]?.name)}: weekly vehicle check for ${v.plate} not done`, body: `Due Thursday by ${fmtT(toMin(R.vchkTime))} · week of ${label(wk)}`, dedupe_key: `vchk|${wk}|${v.plate}`, _push: { to: [drv], title: `Vehicle check for ${v.plate}`, body: "The weekly check hasn't been sent yet. Open the app → Weekly vehicle check." } }); }
+  // vehicle checks: monthly. Week 1 of the month (Monday on the 1st–7th) = fleet check by Stu (rules.vchkFleet), every active van;
+  // week 3 (Monday on the 15th–21st) = drivers' check (responsible person or main driver that week). Due Thursday by 17:00.
+  const vwk = addDays(t, -dow(t)); const vmd = +vwk.slice(8, 10); const vwho = vmd <= 7 ? "fleet" : vmd >= 15 && vmd <= 21 ? "drivers" : null;
+  if (vwho && dow(t) + 1 >= R.vchkDay && (dow(t) + 1 > R.vchkDay || now.min >= (toMin(R.vchkTime) ?? 1020))) {
+    const wk = vwk; const { data: vans } = await sb.from("vans").select("*").eq("active", true); const { data: checks } = await sb.from("vehicle_checks").select("van").eq("week_start", wk);
+    const weekShifts = (shifts || []).filter(s => s.day >= wk && s.van && !isSort(s.run)); const fleet = R.vchkFleet || "ST";
+    for (const v of vans || []) { if (v.plate === "OTHER" || (checks || []).some(c => c.van === v.plate)) continue; let drv: string | undefined;
+      if (vwho === "fleet") drv = fleet;
+      else { const uses = weekShifts.filter(s => s.van === v.plate); if (!uses.length && !v.responsible) continue;
+        const cnt: Record<string, number> = {}; for (const s of uses) cnt[s.driver] = (cnt[s.driver] || 0) + 1; drv = v.responsible || Object.entries(cnt).sort((a, b) => b[1] - a[1])[0]?.[0]; }
+      if (!drv) continue;
+      raise({ kind: "other", driver: drv, title: `${first(ppl[drv]?.name)}: monthly vehicle check for ${v.plate} not done`, body: `${vwho === "fleet" ? "Fleet check, week 1" : "Week 3"} · due Thursday by ${fmtT(toMin(R.vchkTime))} · week of ${label(wk)}`, dedupe_key: `vchk|${wk}|${v.plate}`, _push: { to: [drv], title: `Vehicle check for ${v.plate}`, body: vwho === "fleet" ? "This month's fleet check hasn't been sent yet. Owner portal → Fleet → Record check." : "This month's check hasn't been sent yet. Open the app → Monthly vehicle check." } }); }
   }
   // leave: send "received" emails and alert the owner
   const { data: leave } = await sb.from("leave_requests").select("*").eq("status", "pending").is("acked_email_at", null);

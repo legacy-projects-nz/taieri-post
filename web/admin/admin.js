@@ -1,8 +1,8 @@
 // Taieri Ops · owner / staff portal
-import { sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmt24, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, settings as loadSettings, signOut, hours, nzToIso, avg, errCtx, reportError } from "/shared/core.js";
+import { sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, toMin, fmtT, fmt24, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, settings as loadSettings, signOut, hours, nzToIso, avg, errCtx, reportError, shrinkPhoto } from "/shared/core.js";
 import { requireUser } from "/shared/auth.js";
 import { AREAS, AREA_LABEL } from "/shared/config.js";
-import { cfg, dayShifts, itemsFor, scoreFor, payBand, money, fortnight, itemNote, STATE_LABEL, addName, segTimes, setEvidence, setAddonNames, meetRule, meetOn, eodState } from "/shared/score.js";
+import { vchkWho, cfg, dayShifts, itemsFor, scoreFor, payBand, money, fortnight, itemNote, STATE_LABEL, addName, segTimes, setEvidence, setAddonNames, meetRule, meetOn, eodState } from "/shared/score.js";
 import { runBoardTab, wireRunBoard } from "/admin/runboard.js";
 import { scorecardTab, wireScorecard, formulasTab, reportsTab, recordsTab } from "/admin/scorecard.js";
 import { fixTab, wireFix, fixCount } from "/admin/fix.js";
@@ -74,7 +74,7 @@ async function loadAllNow() {
     q(sb.from("nzpost_feed").select("*").gte("day", from)),
     q(sb.from("eff_overrides").select("*")),
     q(sb.from("locations").select("*").gte("at", new Date(Date.now() - 12 * 3600e3).toISOString()).order("at", { ascending: false }).limit(2000)),
-    q(sb.from("run_skills").select("*")), q(sb.from("week_notes").select("*")), q(sb.from("vehicle_checks").select("*").gte("week_start", addDays(monOf(t), -42))),
+    q(sb.from("run_skills").select("*")), q(sb.from("week_notes").select("*")), q(sb.from("vehicle_checks").select("*").gte("week_start", addDays(monOf(t), -98))),
   ]);
   Object.assign(S, { set, runs, vans, addons, rules, people, shifts, items, acks, sent, msgs, recips, leave, alerts, entries, marks, feed, ovs, locs, skills, notes, vchk }); setAddonNames(addons);
   S.C = cfg(set); S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vansBy = Object.fromEntries(vans.map(v => [v.plate, v])); S.peopleBy = Object.fromEntries(people.map(p => [p.id, p]));
@@ -343,18 +343,47 @@ function fleetTab() {
         <td>${v.no_ruc ? "petrol, no RUCs" : v.ruc_paid_to ? `paid to ${v.ruc_paid_to.toLocaleString()} km${left != null ? `<br>${left.toLocaleString()} km left ${left <= 0 ? pill("overdue", "crit") : left <= R.rucSoonKm ? pill("low", "warn") : pill("✓", "ok")}` : ""}` : pill("not set", "grey")}</td>
         <td>${odo ? `${odo.toLocaleString()} km` : "—"}${chk?.odometer ? `<div class="meta">check ${label(chk.at.slice(0, 10))}</div>` : ""}</td><td>${(w => w ? `${label(nzNow(new Date(w.at)).date)} ${(d => d > 21 ? pill(d + "d ago", "crit") : d > 14 ? pill(d + "d ago", "warn") : "")(Math.round((Date.now() - Date.parse(w.at)) / 86400e3))}<div class="meta">${esc(fnm(w.driver))}</div>` : pill("none recorded", "grey"))((S.washes || []).find(x => x.van === v.plate))}</td><td>${v.responsible ? esc(nm(v.responsible)) : "<span class='meta'>main driver</span>"}</td><td><button class="btn ghost sm" data-van-edit="${v.plate}">Edit</button></td></tr>`; }).join("")}</table></div>
     <p class="hint">Tap a van for its history: checks, odometer, who's had it and what's due.</p><button class="btn ghost sm" id="van-add">+ Add a van</button></div>
-    <div class="card"><h2>Weekly vehicle checks<span>due Thu ${esc(R.vchkTime)} · week of ${label(wk)}</span></h2><div class="scroll"><table class="dt"><tr><th>Van</th>${[0, 1, 2, 3, 4, 5].map(i => `<th>${label(addDays(wk, -7 * i)).slice(4)}</th>`).join("")}</tr>
-      ${S.vans.filter(v => v.active && v.plate !== "OTHER").map(v => `<tr><td class="mono"><b>${esc(v.plate)}</b></td>${[0, 1, 2, 3, 4, 5].map(i => { const w = addDays(wk, -7 * i); const c = S.vchk.find(x => x.van === v.plate && x.week_start === w); return `<td>${c ? `<button class="chip ok" data-vchk="${c.id}">${esc(fnm(c.driver))} ✓</button>` : `<span class="chip ${i === 0 && dow(today()) < 3 ? "due" : "miss"}">${i === 0 && dow(today()) < 3 ? "due" : "—"}</span>`}</td>`; }).join("")}</tr>`).join("")}</table></div></div>`;
+    ${vchkCard()}`;
+}
+/* Monthly vehicle checks: week 1 = fleet check (Stu, every van), week 3 = drivers. Columns are the last 6 check weeks. */
+function vchkCard() {
+  const t = today(); const R = S.C.rules; const wks = []; for (let w = monOf(t), i = 0; wks.length < 6 && i < 20; i++, w = addDays(w, -7)) if (vchkWho(w)) wks.push(w);
+  const cell = (v, w) => { const c = S.vchk.find(x => x.van === v.plate && x.week_start === w); if (c) return `<button class="chip ok" data-vchk="${c.id}">${esc(fnm(c.driver))} ✓</button>`;
+    const due = w === monOf(t) && (dow(t) + 1 < R.vchkDay || (dow(t) + 1 === R.vchkDay && nzNow().min < (toMin(R.vchkTime) ?? 1020))); return `<span class="chip ${due ? "due" : "miss"}">${due ? "due" : "—"}</span>`; };
+  const can = S.me.can("fleet") || S.me.isOwner;
+  return `<div class="card"><h2>Monthly vehicle checks<span>week 1: fleet (${esc(fnm(R.vchkFleet || "ST"))}) · week 3: drivers · due Thu ${esc(R.vchkTime)}</span></h2><div class="scroll"><table class="dt"><tr><th>Van</th>${wks.map(w => `<th>${vchkWho(w) === "fleet" ? "Fleet" : "Drivers"}<div class="meta">${label(w).slice(4)}</div></th>`).join("")}</tr>
+      ${S.vans.filter(v => v.active && v.plate !== "OTHER").map(v => `<tr><td class="mono"><b>${esc(v.plate)}</b></td>${wks.map(w => `<td>${cell(v, w)}</td>`).join("")}</tr>`).join("")}</table></div>
+    ${can ? `<button class="btn ghost" id="vchk-rec">🚐 Record a vehicle check</button>` : ""}</div>`;
+}
+function vchkForm() {
+  const t = today(); const vans = S.vans.filter(v => v.active && v.plate !== "OTHER").map(v => v.plate); const wk = monOf(t);
+  const todo = vans.filter(p => !S.vchk.some(c => c.van === p && c.week_start === wk));
+  sheet(`<h3>Vehicle check</h3><p class="meta">${vchkWho(wk) === "fleet" ? "Fleet check week (week 1)" : vchkWho(wk) === "drivers" ? "Drivers' check week (week 3)" : "Not a check week"} · 4 photos</p>
+    <form class="frm" id="vcf"><label class="f full">Van<select class="in" id="van">${opt([...todo, ...vans.filter(p => !todo.includes(p))].map(p => [p, p + (todo.includes(p) ? "" : " (done this week)")]), todo[0] || vans[0])}</select></label>
+    <label class="f full">Date<input class="in" type="date" id="vday" value="${t}" max="${t}" min="${addDays(t, -30)}" required></label>
+    <label class="f">Odometer (km)<input class="in" id="odo" inputmode="numeric" required></label><label class="f">RUCs left (km)<input class="in" id="ruc" inputmode="numeric" placeholder="blank if petrol"></label>
+    <label class="chk"><input type="checkbox" id="washed">Van washed</label><label class="chk"><input type="checkbox" id="tyres">Tyres checked &amp; OK</label><label class="chk"><input type="checkbox" id="vault">Vault OK</label>
+    <label class="f">Bodywork<input class="in" id="body" placeholder="OK / describe damage"></label><label class="f full">Service due<input class="in" id="service" placeholder="e.g. 230,000 km or 15 Nov"></label>
+    <label class="f full">Photos (4)<input class="in" type="file" id="photos" accept="image/*" multiple capture="environment"></label><label class="f full">Notes<textarea class="in" id="notes" rows="2"></textarea></label><button class="btn full" type="submit">Send check</button></form>`, (bg, close) => {
+    bg.querySelectorAll(".chk input").forEach(i => i.onchange = () => i.parentElement.classList.toggle("on", i.checked));
+    bg.querySelector("#vcf").onsubmit = async e => { e.preventDefault(); const b = bg.querySelector("button[type=submit]"); b.disabled = true; b.textContent = "Uploading…";
+      try { const g = id => bg.querySelector("#" + id); const van = g("van").value; const vd = g("vday").value || t; const w = monOf(vd); const paths = [];
+        for (const [i, f0] of [...g("photos").files].entries()) { const f = await shrinkPhoto(f0); const path = `${van}/${w}/${S.me.id}-${i + 1}-${Date.now()}.jpg`; const { error } = await sb.storage.from("vchk").upload(path, f, { upsert: true }); if (error) throw error; paths.push(path); }
+        const at = vd < t ? new Date(vd + "T12:00:00+13:00").toISOString() : new Date().toISOString();
+        const { error } = await sb.from("vehicle_checks").upsert({ van, driver: S.me.id, week_start: w, odometer: +g("odo").value || null, rucs_left: g("ruc").value ? +g("ruc").value : null, washed: g("washed").checked, tyres_ok: g("tyres").checked, vault_ok: g("vault").checked, bodywork: g("body").value || null, service_due: g("service").value || null, notes: g("notes").value || null, photos: paths, at }, { onConflict: "van,week_start" }); if (error) throw error;
+        close(); toast("Vehicle check sent ✓", "ok"); await loadAll(); render(); } catch (err) { toast(err.message, "err"); b.disabled = false; b.textContent = "Send check"; } };
+  });
 }
 export function editVan(plate) { const v = S.vansBy[plate] || { plate: "", active: true };
     sheet(`<h3>${plate ? esc(plate) : "New van"}</h3><form class="frm" id="vf">${plate ? "" : `<label class="f">Plate<input class="in" id="plate" required style="text-transform:uppercase"></label>`}<label class="f">Model<input class="in" id="model" value="${esc(v.model || "")}"></label><label class="f">Colour<input class="in" id="colour" value="${esc(v.colour || "")}"></label>
       <label class="f">WOF expires<input class="in" type="date" id="wof" value="${v.wof_due || ""}"></label><label class="f">Rego expires<input class="in" type="date" id="rego" value="${v.rego_due || ""}"></label>
       <label class="f">RUCs paid to (km)<input class="in" id="ruc" inputmode="numeric" value="${v.ruc_paid_to ?? ""}"></label><label class="f">Odometer (km)<input class="in" id="odo" inputmode="numeric" value="${v.odometer ?? ""}"></label>
-      <label class="f full">Responsible for the weekly check<select class="in" id="resp">${opt([["", "Main driver from the roster"], ...S.drivers.map(d => [d.id, d.name])], v.responsible || "")}</select></label>
+      <label class="f full">Responsible for the monthly check (week 3)<select class="in" id="resp">${opt([["", "Main driver from the roster"], ...S.drivers.map(d => [d.id, d.name])], v.responsible || "")}</select></label>
       <label class="chk"><input type="checkbox" id="noruc" ${v.no_ruc ? "checked" : ""}>Petrol (no RUCs)</label><label class="chk"><input type="checkbox" id="woff" ${v.wof_failed ? "checked" : ""}>WOF failed</label><label class="chk"><input type="checkbox" id="active" ${v.active ? "checked" : ""}>Active</label>
       <button class="btn full" type="submit">Save</button></form>`, (bg, close) => { bg.querySelector("#vf").onsubmit = async e => { e.preventDefault(); const g = id => bg.querySelector("#" + id); const row = { plate: plate || g("plate").value.trim().toUpperCase(), name: plate || g("plate").value.trim().toUpperCase(), model: g("model").value || null, colour: g("colour").value || null, wof_due: g("wof").value || null, rego_due: g("rego").value || null, ruc_paid_to: g("ruc").value ? +g("ruc").value : null, odometer: g("odo").value ? +g("odo").value : null, odometer_at: g("odo").value && +g("odo").value !== v.odometer ? today() : v.odometer_at || null, responsible: g("resp").value || null, no_ruc: g("noruc").checked, wof_failed: g("woff").checked, active: g("active").checked };
         const { error } = await sb.from("vans").upsert(row); if (error) return toast(error.message, "err"); close(); toast("Saved", "ok"); }; }); }
 function wireFleet() {
+  $("#vchk-rec")?.addEventListener("click", vchkForm);
   $("#van-add")?.addEventListener("click", () => editVan(""));
 }
 

@@ -35,7 +35,7 @@ export async function settle(list, act, note) {
   if (of("add").length) await adds(of("add"), act, ctx);
   for (const i of of("alert")) await settleAlert(i, act, ctx, note);
   if (of("chg").length) await changes(of("chg"), act, ctx);
-  if (of("vchk").length) await simple(of("vchk"), act, ctx, i => `vchk|${i.wk}|${i.van}`, i => `Weekly vehicle check · ${i.van} · week of ${label(i.wk)}`);
+  if (of("vchk").length) await simple(of("vchk"), act, ctx, i => `vchk|${i.wk}|${i.van}`, i => `Monthly vehicle check · ${i.van} · week of ${label(i.wk)}`);
   if (of("hz").length) await simple(of("hz"), act, ctx, i => `hz|${i.drv}|${today().slice(0, 7)}`, () => "Hazard confirmations in the app");
   if (ctx.pen.length) { const { error } = await sb.from("entries").insert(ctx.pen.map(p => ({ driver: p.driver, day: p.day || today(), run: p.run || null, kind: "adjust", title: p.title, note: p.note || null, admin_pts: -perEvent(), show_driver: true, created_by: S.me.id }))); if (error) ctx.errs.push(error.message); }
   if (ctx.resolve.size) { const { error } = await sb.from("alerts").update({ resolved_at: now(), resolved_by: S.me.id }).in("id", [...ctx.resolve]); if (error) ctx.errs.push(error.message); }

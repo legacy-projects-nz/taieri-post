@@ -3,7 +3,7 @@ import { briefHtml, needsConfirm, shrinkPhoto, DEMO, sb, q, me, nzNow, today, ad
 import { requireUser } from "/shared/auth.js";
 import { VAPID_PUBLIC } from "/shared/config.js";
 import { resetDemo, newRuns } from "/shared/demo.js";
-import { cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, NET, PICKUP_RUNS, LEG_RUNS, effCalc, setEvidence, setAddonNames, meetRule, meetOn, needsFix, sortExp, XT_KINDS, extraMins, mailRun, autoStops, runStopRatio, tdtEstimate, sodStart, ownerBreakHrs, standingOn } from "/shared/score.js";
+import { vchkWho, cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, NET, PICKUP_RUNS, LEG_RUNS, effCalc, setEvidence, setAddonNames, meetRule, meetOn, needsFix, sortExp, XT_KINDS, extraMins, mailRun, autoStops, runStopRatio, tdtEstimate, sodStart, ownerBreakHrs, standingOn } from "/shared/score.js";
 
 const app = $("#app");
 const S = { me: null, set: {}, C: null, runs: [], runsBy: {}, vans: {}, addons: [], rules: [], people: {}, shifts: [], sods: [], eods: [], marks: [], entries: [], feed: [], changes: [], acks: [], msgs: [], leave: [], alerts: [], loc: null, gotit: {}, login: {} };
@@ -154,7 +154,7 @@ const INFO = {
   tofix: ["To fix", "<p>Posts that were late, missing or incomplete, and EODs missing figures.</p><p>Tap an item to see the working. Post anything still missing with its button. For missing EOD figures, ask Jeremy to add them or include them next time.</p>"],
   pickups: ["Parcel pick-ups", "<p>Your pick-up tasks have their own <b>Enter pick-ups</b> button in Today's tasks. Use that on the day.</p><p>Use this box for any pick-ups you missed, or for another day. Enter small and large parcels for each area and customer, and say whether they came from the depot or the customer.</p>"],
   hazards: ["Hazards", "<p>The hazard register lists known hazards at addresses on the runs: dogs, aggressive people, access problems and so on.</p><p>Read the high and medium hazards for today's runs and tap <b>✓ Read</b>. They come back each month, whenever one changes, and when you're new to a run.</p><p>Use <b>Report a hazard</b> to add a new one, and <b>Search all</b> to look up any address.</p><p><b>If it doesn't feel right, don't do it.</b> Card it and report it.</p>"],
-  vcheck: ["Weekly vehicle check", "<p>Due every Thursday by 5pm.</p><p>Take four photos: the exterior, the cab, the oil dipstick and the coolant level. Report anything wrong in the notes.</p>"],
+  vcheck: ["Monthly vehicle check", "<p>Once a month: week 3 of the month, due Thursday by 5pm.</p><p>Take four photos: the exterior, the cab, the oil dipstick and the coolant level. Report anything wrong in the notes.</p>"],
 };
 const ib = k => `<button type="button" class="ib" data-info="${k}" aria-label="More about ${esc(INFO[k][0])}">i</button>`;
 document.addEventListener("click", e => { const b = e.target.closest?.("[data-info]"); if (!b) return; e.preventDefault(); e.stopPropagation(); const [t, body] = INFO[b.dataset.info] || []; if (t) sheet(`<h3>${esc(t)}</h3><div class="infobody">${body}</div>`); }, true);
@@ -914,8 +914,8 @@ function editAccess() {
 }
 /* ---------- Page layout: live / due things up top, then My scores, then two folded groups (Shift, Checks).
    Anything in a group that becomes due (or has something to confirm) moves up into the main area. ---------- */
-function vchkDue() {   // vans I've driven this week (or look after) with no weekly check yet; shows from Thursday (due 5pm)
-  const t = today(); const wk = monOf(t); const day = S.C?.rules?.vchkDay || 4; if (dow(t) + 1 < day) return null;
+function vchkDue() {   // monthly: week 3 of the month only. Vans I've driven this week (or look after) with no check yet; shows from Thursday (due 5pm)
+  const t = today(); const wk = monOf(t); const day = S.C?.rules?.vchkDay || 4; if (vchkWho(wk) !== "drivers" || dow(t) + 1 < day) return null;
   const vans = new Set(S.shifts.filter(s => s.driver === S.me.id && s.day >= wk && s.day <= t && s.van).map(s => s.van));
   for (const [p, v] of Object.entries(S.vans || {})) if (v?.responsible === S.me.id) vans.add(p);
   vans.delete("OTHER"); const left = [...vans].filter(p => !(S.vchk || []).some(c => c.van === p && c.week_start === wk)); if (!left.length) return null;
@@ -936,7 +936,7 @@ function layout(T, t, n, nextDay, dayDone) {
   const msgs = part("Messages", () => messagesCard()); put(msgs, /data-fold-open="1"/.test(msgs), shift);
   const hz = part("Hazards", () => hazardsCard(T)); put(hz, /to confirm/.test(hz), checks);
   const pu = part("Parcel pick-ups", () => pickupsCard(T)); put(pu, /pick-up run today/.test(pu), shift);
-  const vd = vchkDue(); const vchk = rowBtn("vchk-btn", "🚐 Weekly vehicle check", vd ? (vd.late ? "overdue" : "due 5pm") : "", vd ? (vd.late ? "due crit" : "due") : "");
+  const vd = vchkDue(); const vchk = rowBtn("vchk-btn", "🚐 Monthly vehicle check", vd ? (vd.late ? "overdue" : "due 5pm") : "", vd ? (vd.late ? "due crit" : "due") : "");
   put(vchk, !!vd, checks);
   const van = part("My van", () => vanCard(T, null)); put(van, /overdue/.test(van), shift);
   const det = part("My details", () => detailsCard()); put(det, /expired|due in/.test(det), checks);
@@ -969,10 +969,12 @@ function shiftSum(t, N) {
     unread && ["Messages", `${unread} unread`],
   ];
 }
+// Thursday of the next drivers' check week (week 3 of this month, or next month's once this one has passed)
+function nextVchk(t) { let wk = monOf(t); for (let i = 0; i < 9; i++, wk = addDays(wk, 7)) if (vchkWho(wk) === "drivers" && addDays(wk, 3) >= t) return addDays(wk, 3); return addDays(monOf(t), 3); }
 function checkSum(t, vd) {
   const wk = monOf(t); const mineChk = (S.vchk || []).filter(c => c.driver === S.me.id).sort((a, b) => String(b.at).localeCompare(String(a.at)));
-  const thisWk = mineChk.find(c => c.week_start === wk);
-  const vc = vd ? `<b class="c-${vd.late ? "crit" : "warn"}">${vd.late ? "overdue" : "due 5pm"}</b> · ${esc(vd.left.join(", "))}` : thisWk ? `<span class="c-ok">✓ done</span> · ${esc(thisWk.van)}` : `due Thu 5pm${mineChk[0] ? ` · last ${esc(label(mineChk[0].week_start))}` : ""}`;
+  const thisWk = mineChk.find(c => String(c.week_start).slice(0, 7) === t.slice(0, 7));   // done this month
+  const vc = vd ? `<b class="c-${vd.late ? "crit" : "warn"}">${vd.late ? "overdue" : "due 5pm"}</b> · ${esc(vd.left.join(", "))}` : thisWk ? `<span class="c-ok">✓ done this month</span> · ${esc(thisWk.van)}` : `next due Thu ${esc(label(nextVchk(t)))}${mineChk[0] ? ` · last ${esc(label(mineChk[0].week_start))}` : ""}`;
   const plates = [...new Set(S.shifts.filter(s => s.driver === S.me.id && s.day <= t && s.van).sort((a, b) => b.day.localeCompare(a.day)).map(s => s.van))].filter(p => p !== "OTHER").slice(0, 2);
   const wash = plates.map(p => { const w = lastWash(p); return `${esc(p)} ${w ? esc(label(nzNow(new Date(w.at)).date)) : "none recent"}`; }).join(" · ");
   const le = S.me.licence_expiry; const ld = le ? Math.round((new Date(le) - new Date(t)) / 86400000) : null;
@@ -1348,7 +1350,7 @@ function profileForm(must = false) {
   });
   if (must && sbg) { sbg.querySelector(".x")?.remove(); sbg._close = () => { }; sbg.addEventListener("click", e => { if (e.target === sbg) e.stopImmediatePropagation(); }, true); }
 }
-/* Van wash: one quick tap to record that a van was washed (separate from the weekly check) */
+/* Van wash: one quick tap to record that a van was washed (separate from the monthly check) */
 const dayAt = d => d && d < today() ? new Date(d + "T12:00:00+13:00").toISOString() : new Date().toISOString();   // picked date → time to store (now if today)
 const dayPick = id => `<label class="f full">Date<input class="in" type="date" id="${id}" value="${today()}" max="${today()}" min="${addDays(today(), -30)}" required></label>`;
 const lastWash = plate => (S.washes || []).filter(w => w.van === plate).sort((a, b) => b.at.localeCompare(a.at))[0];
@@ -1365,7 +1367,7 @@ function vanWashForm(plate) {
 }
 function vehicleCheckForm() {
   const n = nzNow(); const T = S.days[n.date]; const plates = [...new Set([...(T ? T.segs.map(x => x.shift.van) : []), ...S.shifts.filter(s => s.day <= n.date).sort((a, b) => b.day.localeCompare(a.day)).map(s => s.van)].filter(Boolean))];
-  sheet(`<h3 class="lbl">Weekly vehicle check ${ib("vcheck")}</h3><p class="meta">Due Thursday 5pm · 4 photos</p>
+  sheet(`<h3 class="lbl">Monthly vehicle check ${ib("vcheck")}</h3><p class="meta">Week 3 of the month · due Thursday 5pm · 4 photos</p>
     <form class="frm" id="vf"><label class="f full">Van<select class="in" id="van">${opt([...plates, ...Object.keys(S.vans).filter(p => !plates.includes(p) && p !== "OTHER")].map(p => [p, p]), plates[0])}</select></label>${dayPick("vday")}
     <label class="f">Odometer (km)<input class="in" id="odo" inputmode="numeric" required></label><label class="f">RUCs left (km)<input class="in" id="ruc" inputmode="numeric" placeholder="blank if petrol"></label>
     <label class="chk"><input type="checkbox" id="washed">Van washed</label><label class="chk"><input type="checkbox" id="tyres">Tyres checked &amp; OK</label><label class="chk"><input type="checkbox" id="vault">Vault OK</label>
@@ -1454,7 +1456,7 @@ function vanSheet(plate) {
   sheet(`<h3><span class="plate">${esc(plate)}</span> ${esc(v.model || "")}</h3><p class="meta">${esc([v.make, v.colour].filter(Boolean).join(" · "))}</p>
     <dl class="kv"><dt>WOF</dt><dd>${v.wof_due ? label(v.wof_due, true) + " " : ""}${v.wof_failed ? pill("failed", "crit") : st(v.wof_due)}</dd><dt>Rego</dt><dd>${v.rego_due ? label(v.rego_due, true) + " " : ""}${st(v.rego_due)}</dd><dt>RUCs</dt><dd>${v.no_ruc ? "not needed (petrol)" : v.ruc_paid_to ? `paid to ${v.ruc_paid_to.toLocaleString()} km${left != null ? ` · ${left.toLocaleString()} km left ${left <= 0 ? pill("overdue", "crit") : left <= (S.C.rules.rucSoonKm || 1000) ? pill("low", "warn") : pill("✓", "ok")}` : ""}` : pill("not on file", "grey")}</dd><dt>Odometer</dt><dd>${v.odometer ? `${v.odometer.toLocaleString()} km` : "—"}${v.odometer_at ? ` <span class="meta">(${label(v.odometer_at)})</span>` : ""}</dd></dl>
     <p class="meta">🧽 ${lastWash(plate) ? `Last washed ${label(nzNow(new Date(lastWash(plate).at)).date)}` : "No wash recorded in the last 60 days"}</p>
-    ${!S.viewAs ? `<div class="row"><button class="btn ghost" id="vchk-go">🚐 Do the weekly vehicle check</button><button class="btn ghost" id="wash-go">🧽 Van washed</button></div>` : ""}
+    ${!S.viewAs ? `<div class="row"><button class="btn ghost" id="vchk-go">🚐 Do the monthly vehicle check</button><button class="btn ghost" id="wash-go">🧽 Van washed</button></div>` : ""}
     <h4>Your checks on this van</h4>${mine.length ? `<div class="scroll"><table class="dt"><tr><th>Week of</th><th>Sent</th><th>Odometer</th><th>RUCs left</th><th>Notes</th></tr>${mine.map(c => `<tr><td>${label(c.week_start)}</td><td class="mono">${fmtTs(c.at)}</td><td class="num">${c.odometer?.toLocaleString() || "—"}</td><td class="num">${c.rucs_left?.toLocaleString() || "—"}</td><td class="meta">${esc([c.washed ? "washed" : "not washed", c.tyres_ok ? "" : "tyres", c.vault_ok ? "" : "vault", c.bodywork, c.notes].filter(Boolean).join(" · "))}</td></tr>`).join("")}</table></div>` : `<p class="meta">None yet.</p>`}
     <h4>Your shifts with it</h4><div class="scroll"><table class="dt"><tr><th>Day</th><th>Run</th><th>Times</th></tr>${use.map(s => { const D = S.days[s.day]; const x = D?.segs.find(y => y.shift.id === s.id); return `<tr class="clk" data-dayv="${s.day}"><td>${label(s.day)}</td><td>${esc(s.run)}</td><td class="mono">${x ? `${fmtT(x.st)}–${fmtT(x.en)}` : ""}</td></tr>`; }).join("") || `<tr><td colspan="3" class="meta">—</td></tr>`}</table></div>`,
     (bg, close) => { bg.querySelector("#vchk-go")?.addEventListener("click", () => { close(); vehicleCheckForm(); }); bg.querySelector("#wash-go")?.addEventListener("click", () => { close(); vanWashForm(plate); }); }, { wide: true });

@@ -338,3 +338,7 @@ export function bandRate(b, C) { if (b == null) return null; const m = /\$\s*(\d
 /** Owner-portal pay line: fortnight band, the rate that band pays, and the driver's current rate. */
 export function payBand(drv, iso, D, C) { const fb = fortnightBand(drv.id, iso, D, C); const now = +(drv.rate || C.rules.hourRate); const r = bandRate(fb.b, C); return { ...fb, rate: r, now, diff: r != null ? r - now : null, note: fb.b != null ? String(C.bands?.[fb.b] ?? "").replace(/^\s*\$\s*\d+(?:\.\d+)?\s*/, "").replace(/^\+\s*/, "") : "" }; }
 export const money = v => "$" + (Number.isInteger(v) ? v : v.toFixed(2));
+
+/* Vehicle checks are monthly: week 1 of the month (Monday on the 1st–7th) is the fleet check (Stu, every active van),
+   week 3 (Monday on the 15th–21st) is the drivers' check (main driver / responsible person per van). Other weeks: none due. */
+export const vchkWho = wk => { const d = +String(wk).slice(8, 10); return d <= 7 ? "fleet" : d >= 15 && d <= 21 ? "drivers" : null; };
