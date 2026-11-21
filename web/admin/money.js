@@ -31,7 +31,6 @@ const GROUPS = {
   // (w/e 1 Nov left out: short week). Truck 9363 = S, 4682 = T. Base is a fixed $ a week; the rest is paid by the parcel.
   "TGE S": { runs: ["S"], per: "week", amt: 2247, days: 5, base: 1150 },   // $2,247/wk avg · $1,150 base · ≈ $1,097 parcels
   "TGE T": { runs: ["T"], per: "week", amt: 2069, days: 5, base: 850 },    // $2,069/wk avg · $850 base · ≈ $1,219 parcels
-  "Food bag": { runs: ["FB", "FBP", "FB2", "FB2P", "MFB1", "MFB2"], per: "month", amt: 2000, days: 1, alt: true },   // alt: only one of these goes out on a food bag day
 };
 // Each total above is split: a fixed base (base $, or basePct % of the total) and the rest is paid by the parcel. The per-parcel rate is that parcel share of the total
 // divided by the parcels the group's runs normally carry in the same period (8-week EOD average per run-day × days a week), so an average
@@ -49,7 +48,10 @@ const PARCEL_RUNS = ["TUA", "FLY", "RAM", "PCB", "RSB", "LAW", "S", "T", "SG"];
 const HOURLY_RUNS = ["SG"];
 const EST_PARCELS = { SG: 30 };
 const TGE_RURAL_RUNS = ["RAM", "TUA", "FLY"];   // these runs' EODs ask for the rural TGE parcels delivered, paid at tgeRural each
-const DEF = { small: 5, large: 8, tgeSmall: 6, tgeLarge: 7.5, tgeRural: 5, owakaMed: 10, telford: 5, balMin: 5, target: 70000, oncost: 11, assets: { value: 0, depPct: 30, principal: 5000 }, parcel: { TUA: 0, FLY: 0, DB: 0, RAM: 1.8, PCB: 0, RSB: 0, LAW: 0, S: 0, T: 0, SG: 1.5 }, hourly: { SG: 45 }, groups: Object.fromEntries(Object.entries(GROUPS).map(([k, g]) => [k, { per: g.per, amt: g.amt, days: g.days, basePct: BASE_PCT, base: g.base ?? null }])), costs: Object.fromEntries(COSTS.map(([k, , a]) => [k, a])) };
+// My Food Bag: paid by the box, about $450 a run (AM or PM) for 82 boxes. Boxes come from the EOD; until then the estimate is fbEst (80),
+// or that week's figure in fbWeek (e.g. { "2026-11-23": 66 }).
+const FB_RUNS = ["FB", "FBP", "FB2", "FB2P", "MFB1", "MFB2"];
+const DEF = { fbBox: 450 / 82, fbEst: 80, fbWeek: {}, small: 5, large: 8, tgeSmall: 6, tgeLarge: 7.5, tgeRural: 5, owakaMed: 10, telford: 5, balMin: 5, target: 70000, oncost: 11, assets: { value: 0, depPct: 30, principal: 5000 }, parcel: { TUA: 0, FLY: 0, DB: 0, RAM: 1.8, PCB: 0, RSB: 0, LAW: 0, S: 0, T: 0, SG: 1.5 }, hourly: { SG: 45 }, groups: Object.fromEntries(Object.entries(GROUPS).map(([k, g]) => [k, { per: g.per, amt: g.amt, days: g.days, basePct: BASE_PCT, base: g.base ?? null }])), costs: Object.fromEntries(COSTS.map(([k, , a]) => [k, a])) };
 const model = () => { const v = S.set?.money_model || {}; return { ...DEF, ...v, parcel: { ...DEF.parcel, ...(v.parcel || {}) }, hourly: { ...DEF.hourly, ...(v.hourly || {}) }, groups: Object.fromEntries(Object.keys(GROUPS).map(k => [k, { ...DEF.groups[k], ...(v.groups?.[k] || {}) }])), costs: { ...DEF.costs, ...(v.costs || {}) }, assets: { ...DEF.assets, ...(v.assets || {}) } }; };
 const onc = () => 1 + (+model().oncost || 0) / 100;   // holiday pay 8% + KiwiSaver 3% on top of gross wages
 const costMonth = () => Object.values(model().costs).reduce((a, b) => a + (+b || 0), 0);
@@ -196,6 +198,10 @@ function breakdown(d) {
     const rate = mateFeed ? 0 : RT.rate; if (rate) { const P = parcelsSrc(r.shift); const n = P?.n ?? null; const rt = `$${rate.toFixed(2)}`; const why = RT.how && RT.how !== "typed in" ? ` · rate = ${RT.how}` : "";
       const incl = P && P.src !== "EOD" ? ` (${P.src})` : ""; if (n != null) add(r, n * rate, `${n} parcels${incl} × ${rt}${why}`, false);
       else { const ev = feedAvg(r.run, d) || evidenceFor(r.run, d); if (ev?.parcels != null) add(r, Math.round(ev.parcels) * rate, `${Math.round(ev.parcels)} parcels${incl} × ${rt} (average ${ev.scope === "weekday" ? "for this weekday" : "of recent days"} until the EOD is in)${why}`, true); else if (EST_PARCELS[r.run]) add(r, EST_PARCELS[r.run] * rate, `${EST_PARCELS[r.run]} parcels${incl} × ${rt} (estimate until the EOD is in)`, true); else { r.feeEst = true; r.feeLines.push({ amt: 0, line: `parcels × ${rt} · no history yet`, est: true }); } } } }
+  // My Food Bag: boxes × the per-box rate (each AM / PM run on its own)
+  for (const r of rows) { if (r.sort || !FB_RUNS.includes(r.run)) continue; const rt = +M.fbBox || 450 / 82; const b = S.eodBy?.[r.shift?.id]?.parcels;
+    if (b != null) add(r, +b * rt, `${b} boxes × $${rt.toFixed(2)} (≈ $450 for 82)`, false);
+    else { const e = +(M.fbWeek?.[monOf(d)] ?? M.fbEst ?? 80); add(r, e * rt, `${e} boxes (estimate until the EOD is in) × $${rt.toFixed(2)}`, true); } }
   // NZ Post email parcels for a run that wasn't rostered that day (e.g. Flyer parcels taken out on TUA): paid on the group-mate that was on
   for (const G of Object.values(GROUPS)) for (const c of G.runs) { if (byRun[c]) continue; const f = feedRow(c, d); if (!f || !+f.items) continue;
     const host = G.runs.map(x => byRun[x]).find(Boolean); const RT = rateFor(c, M); if (!host || !RT.rate) continue;
