@@ -93,7 +93,7 @@ export function runBoardTab() {
     <div class="card"><h2>Roster notes<span>week of ${label(S.week)}</span></h2><textarea class="in" id="wk-notes" rows="5" placeholder="Notes for this week's roster (road closures, training, reminders)…" ${canSend ? "" : "disabled"}>${esc(note)}</textarea><p class="hint">Saves when you click away.</p></div>
     <details class="card"><summary>History of roster changes</summary>${historyList()}</details>`;
 }
-function approvalCard(items, canApprove) {
+export function approvalCard(items, canApprove) {
   const by = {}; for (const i of items) (by[i.change_id] ??= { c: i.roster_changes, items: [] }).items.push(i);
   return `<div class="card warnc"><h2>Waiting for Jeremy's OK<span>${items.length} change${items.length === 1 ? "" : "s"}</span></h2>${Object.values(by).map(g => `<div class="item warn"><div class="m">Made by ${esc(nm(g.c.created_by))} · ${fmtTs(g.c.created_at)}</div><ul style="margin:4px 0;padding-left:18px">${g.items.map(i => `<li>${esc(i.summary)}</li>`).join("")}</ul>${canApprove ? `<div class="row"><button class="btn sm" data-approve="${g.c.id}">Approve &amp; send to drivers</button><button class="btn sm ghost" data-reject="${g.c.id}">Reject (keep roster as is)</button></div>` : `<div class="meta">Jeremy will approve or reject this.</div>`}</div>`).join("")}</div>`;
 }
@@ -170,10 +170,7 @@ export function wireRunBoard() {
   $$("[data-rc]").forEach(b => b.onclick = async () => { const t = b.dataset.t; const cur = S.notes.find(x => x.week_start === S.week)?.dismissed || []; const next = b.dataset.rc === "dis" ? [...new Set([...cur, t])] : cur.filter(x => x !== t);
     const { error } = await sb.from("week_notes").upsert({ week_start: S.week, dismissed: next, updated_at: new Date().toISOString() }); if (error) return toast(error.message, "err"); toast(b.dataset.rc === "dis" ? "Dismissed" : "Restored", "ok"); });
   // [data-ack] confirm/dismiss buttons are handled by detail.js bind()
-  $$("[data-approve]").forEach(b => b.onclick = () => finalizeSend(b.dataset.approve));
-  $$("[data-reject]").forEach(b => b.onclick = async () => { const id = b.dataset.reject; const items = S.items.filter(i => i.change_id === id); // put the roster back to what drivers have
-    for (const i of items) { const k = `${i.day}|${i.run}|${i.after?.slot || i.before?.slot || 1}`; const prev = S.sent.find(x => x.shift_key === k)?.snapshot; const slot = +(k.split("|")[2]); if (prev?.driver) await q(sb.from("shifts").upsert({ day: i.day, run: i.run, slot, ...prev }, { onConflict: "day,run,slot" })); else await q(sb.from("shifts").delete().match({ day: i.day, run: i.run, slot })); }
-    await q(sb.from("roster_changes").update({ status: "rejected", approved_by: S.me.id }).eq("id", id)); toast("Rejected and roster restored", "ok"); });
+  wireApprovals();
 }
 
 function slotSheet(day, run, slot) {
@@ -246,6 +243,13 @@ function approveRoster() {
       const { error } = await sb.rpc("publish_week", { wk: S.week }); if (error) { toast(error.message, "err"); b.disabled = false; return; }
       close(); toast("Roster approved — it's in the drivers' app", "ok"); await loadAll(); render(); };
   });
+}
+/** Approve / Reject buttons on changes waiting for Jeremy's OK (Run Board and the To do pop-up) */
+export function wireApprovals() {
+  $$("[data-approve]").forEach(b => b.onclick = () => finalizeSend(b.dataset.approve));
+  $$("[data-reject]").forEach(b => b.onclick = async () => { const id = b.dataset.reject; const items = S.items.filter(i => i.change_id === id); // put the roster back to what drivers have
+    for (const i of items) { const k = `${i.day}|${i.run}|${i.after?.slot || i.before?.slot || 1}`; const prev = S.sent.find(x => x.shift_key === k)?.snapshot; const slot = +(k.split("|")[2]); if (prev?.driver) await q(sb.from("shifts").upsert({ day: i.day, run: i.run, slot, ...prev }, { onConflict: "day,run,slot" })); else await q(sb.from("shifts").delete().match({ day: i.day, run: i.run, slot })); }
+    await q(sb.from("roster_changes").update({ status: "rejected", approved_by: S.me.id }).eq("id", id)); toast("Rejected and roster restored", "ok"); });
 }
 async function finalizeSend(changeId) {
   const items = S.items.filter(i => i.change_id === changeId);

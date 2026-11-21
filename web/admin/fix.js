@@ -11,7 +11,7 @@ let both = true; // show last week as well as the week on screen
 const range = () => ({ from: both ? addDays(S.week, -7) : S.week, to: addDays(S.week, 6) });
 const decided = p => new Set((S.marks || []).filter(m => m.key?.startsWith(p) && m.status).map(m => m.key));
 const HINT = `<b>Done</b> clears it. <b>Late</b> clears it, records the late penalty and sends the driver a polite email. <b>Not done</b> records it as missed. <b>Excuse</b> clears it with nothing against the driver.`;
-const btnRow = html => `<span class="row" style="flex:0;gap:4px;flex-wrap:wrap;justify-content:flex-end">${html}</span>`;
+const btnRow = html => `<span class="row" style="flex:1 1 300px;gap:4px;grid-template-columns:repeat(auto-fit,minmax(68px,1fr))">${html}</span>`;   // equal-width buttons that fill the line and wrap on a phone (before, the row was squashed into a thin column)
 const byDay = (L, dayOf) => { const by = {}; for (const i of L) (by[dayOf(i)] ??= []).push(i); return Object.entries(by); };
 
 /* ---------- 1. SOD / EOD ---------- */
@@ -27,7 +27,7 @@ function todo() {
   }
   return out.sort((a, b) => b.day.localeCompare(a.day) || nm(a.driver).localeCompare(nm(b.driver)));
 }
-function postSection() {
+export function postSection() {
   const L = todo(); const miss = L.filter(i => i.st === "miss").length, part = L.filter(i => i.st === "part").length, late = L.filter(i => i.st === "late").length;
   return `<div class="card"><h2>SOD / EOD<span>${L.length ? `${miss} missing · ${part} incomplete · ${late} late` : "all clear"}</span></h2>
     <p class="hint">Every SOD or EOD that is missing, incomplete or late (an EOD up to ${Math.round((S.C.rules.eodFixGrace ?? 90) / 6) / 10} h late is left off). <b>Fix</b> opens an editor to add or correct the post. ${HINT}</p>${allBar(L.length)}
@@ -66,7 +66,7 @@ function chgTodo() {
     for (const d of i.affects || []) { const a = ack[i.id]?.[d]; if (a?.confirmed_at || a?.dismissed_at || dec.has(`chg|${i.id}|${d}`)) continue; (by[d] ??= []).push(i); } }
   return Object.entries(by).map(([d, L]) => ({ d, L })).sort((a, b) => nm(a.d).localeCompare(nm(b.d)));
 }
-function chgSection() {
+export function chgSection() {
   const L = chgTodo();
   return `<div class="card"><h2>Shift &amp; van changes not confirmed<span>${L.length || "all clear"}</span></h2><p class="hint">${HINT} <b>Done</b> and <b>Late</b> confirm the changes for the driver; <b>Not done</b> leaves them for the driver to confirm.</p>${allBar(L.length)}
     ${L.length ? `<div class="list">${L.map(({ d, L }) => `<div class="item warn"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(nm(d))}</b><span class="meta"> ${L.length} change${L.length > 1 ? "s" : ""} · sent ${ago(L[0].roster_changes.sent_at)}</span></span>${btnRow(actBtns("chg", `data-drv="${esc(d)}" data-items="${L.map(i => i.id).join(",")}"`))}</div><ul style="margin:4px 0;padding-left:18px" class="meta">${L.slice(0, 6).map(i => `<li>${label(i.day)} · ${esc(i.summary || "")}</li>`).join("")}${L.length > 6 ? `<li>+${L.length - 6} more</li>` : ""}</ul></div>`).join("")}</div>` : `<p class="empty">✓ Nothing to fix.</p>`}</div>`;

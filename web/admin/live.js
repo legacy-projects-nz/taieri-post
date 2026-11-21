@@ -235,8 +235,8 @@ function actionCentre(scores, n) {
   const lic = S.drivers.filter(p => [p.licence_expiry, p.dg_expiry].some(d => d && (new Date(d) - new Date(t)) / 86400000 <= R.dueSoonDays));
   const vans = S.vans.filter(v => v.active && v.plate !== "OTHER" && ([v.wof_due, v.rego_due].some(d => d && (new Date(d) - new Date(t)) / 86400000 <= R.dueSoonDays) || v.wof_failed || (!v.no_ruc && v.ruc_paid_to && v.odometer && v.ruc_paid_to - v.odometer <= R.rucSoonKm)));
   const alerts = S.alerts.filter(a => !a.resolved_at).length;
-  const rows = [[reviews, "Reviews to do", "posts to confirm or excuse", "scorecard", reviews ? "warn" : ""], [overdue, "Overdue right now", "SOD/EOD not in yet today", "fix", overdue ? "crit" : ""], [pending, "Missing EOD figures", "runs that can't be scored yet · tap to fix or ask", "pending", pending ? "warn" : ""], [aw, "Roster changes to approve", "made by Alejandro", "runboard", aw ? "warn" : ""], [unc, "Roster changes not confirmed", "drivers haven't tapped Got it", "runboard", unc ? "crit" : ""], [leave, "Leave requests waiting", "approve or decline", "leave", leave ? "warn" : ""], [mist, "Mistakes logged this week", "Driver Mistakes Record", "scorecard", mist ? "crit" : ""], [lic.length, "Licences & DG due", lic.map(p => first(p.name)).slice(0, 3).join(", "), "people", lic.length ? "warn" : ""], [vans.length, "Vehicles due", "WOF, rego, RUCs", "fleet", vans.length ? "warn" : ""], [alerts, "Open alerts", "resolve or let them clear", "alerts", alerts ? "warn" : ""]].filter(r => r[0]);
-  return `<div class="card" id="todo"><h2>To do<span>${rows.length ? `${rows.length} item${rows.length > 1 ? "s" : ""}` : "all done"}</span></h2>${rows.length ? `<div class="list">${rows.map(([c, l, s, tab, cls]) => `<button class="item ${cls}" data-go="${tab}" style="border:0;color:inherit;text-align:left;cursor:pointer"><div class="row" style="justify-content:space-between"><b>${esc(l)}</b><span class="pill ${cls || "grey"}">${c}</span></div><div class="meta">${esc(s)}</div></button>`).join("")}</div>` : `<p class="empty">✓ All complete<br><span class="meta">No reviews, overdue posts, approvals or mistakes waiting.</span></p>`}</div>`;
+  const rows = [[reviews, "Reviews to do", "posts to confirm or excuse", "reviews", reviews ? "warn" : ""], [overdue, "Overdue right now", "SOD/EOD not in yet today", "overdue", overdue ? "crit" : ""], [pending, "Missing EOD figures", "runs that can't be scored yet · tap to fix or ask", "pending", pending ? "warn" : ""], [aw, "Roster changes to approve", "made by Alejandro", "approve", aw ? "warn" : ""], [unc, "Roster changes not confirmed", "drivers haven't tapped Got it", "unconfirmed", unc ? "crit" : ""], [leave, "Leave requests waiting", "approve or decline", "leave", leave ? "warn" : ""], [mist, "Mistakes logged this week", "Driver Mistakes Record", "mistakes", mist ? "crit" : ""], [lic.length, "Licences & DG due", lic.map(p => first(p.name)).slice(0, 3).join(", "), "licences", lic.length ? "warn" : ""], [vans.length, "Vehicles due", "WOF, rego, RUCs", "vehicles", vans.length ? "warn" : ""], [alerts, "Open alerts", "resolve or let them clear", "alerts", alerts ? "warn" : ""]].filter(r => r[0]);
+  return `<div class="card" id="todo"><h2>To do<span>${rows.length ? `${rows.length} item${rows.length > 1 ? "s" : ""}` : "all done"}</span></h2>${rows.length ? `<div class="list">${rows.map(([c, l, s, tab, cls]) => `<button class="item ${cls}" data-todo="${tab}" style="border:0;color:inherit;text-align:left;cursor:pointer" title="Tap to sort these out"><div class="row" style="justify-content:space-between"><b>${esc(l)}</b><span class="pill ${cls || "grey"}" style="flex:0 0 auto">${c}</span></div><div class="meta">${esc(s)}</div></button>`).join("")}</div>` : `<p class="empty">✓ All complete<br><span class="meta">No reviews, overdue posts, approvals or mistakes waiting.</span></p>`}</div>`;
 }
 
 /* ---- Roster changes not confirmed ---- */
@@ -342,6 +342,43 @@ async function decideSodReq(id, ok) {
   toast(ok ? "Approved · run times updated" : "Declined", "ok"); await loadAll(); render();
 }
 
+
+/* ---- To do: every line opens a pop-up where it can be sorted out there and then ---- */
+const dueIn = d => d ? Math.round((new Date(d) - new Date(today())) / 86400000) : null;
+const dueTxt = (what, d) => { const n = dueIn(d); return n == null ? "" : `${what} ${n < 0 ? `overdue ${-n} day${n === -1 ? "" : "s"}` : n === 0 ? "due today" : `due in ${n} day${n === 1 ? "" : "s"}`} (${label(d)})`; };
+async function todoSheet(kind) {
+  if (kind === "pending") return pendingSheet();
+  const [fx, sc, rb, ad] = await Promise.all([import("/admin/fix.js"), import("/admin/scorecard.js"), import("/admin/runboard.js"), import("/admin/admin.js")]);
+  const t = today(); const R = S.C.rules; const soon = d => { const n = dueIn(d); return n != null && n <= R.dueSoonDays; };
+  const none = msg => `<p class="empty">✓ ${msg}</p>`;
+  const B = {
+    reviews: ["Reviews to do", "Confirm or excuse each late or missed post.", () => sc.scoreAdmin(), () => sc.wireScorecard()],
+    overdue: ["SOD / EOD to sort out", "Fix opens the post to add or correct it; Done, Late, Not done or Excuse settles it.", () => fx.postSection(), () => fx.wireFix()],
+    unconfirmed: ["Roster changes not confirmed", "Confirm for the driver, or leave it for them to tap Got it. Tap a name for their changes.", () => fx.chgSection(), () => { }],
+    approve: ["Roster changes to approve", "", () => { const L = S.items.filter(i => i.roster_changes.status === "awaiting_approval"); return L.length ? rb.approvalCard(L, S.me.isOwner || S.me.can("roster_approve")) : none("Nothing waiting for your OK."); }, () => rb.wireApprovals()],
+    leave: ["Leave requests waiting", "Approve or decline here. Tap a request for the days and any clashes.", () => ad.leaveWaiting(), () => ad.wireLeaveDecide()],
+    mistakes: ["Mistakes logged this week", "Tap one to see it, then keep it or remove it.", () => { const L = S.entries.filter(e => e.kind === "mistake" && !e.excused && e.day >= monOf(t)).sort((a, b) => b.day.localeCompare(a.day));
+      return L.length ? `<div class="list">${L.map(e => `<div class="item clk crit" data-entry="${e.id}"><div class="row" style="justify-content:space-between"><b>${esc(nm(e.driver))}</b><span class="meta">${label(e.day)}${e.run ? ` · ${esc(e.run)}` : ""}</span></div><div>${esc(e.title || "")}</div></div>`).join("")}</div>` : none("No mistakes this week."); }, () => { }],
+    licences: ["Licences & DG due", "Tap a driver to update their expiry dates.", () => { const L = S.drivers.filter(p => [p.licence_expiry, p.dg_expiry].some(soon));
+      return L.length ? `<div class="list">${L.map(p => `<div class="item clk warn" data-personof="${p.id}"><b>${esc(p.name)}</b><div class="meta">${[soon(p.licence_expiry) ? dueTxt("Licence", p.licence_expiry) : "", soon(p.dg_expiry) ? dueTxt("DG", p.dg_expiry) : ""].filter(Boolean).join(" · ")}</div></div>`).join("")}</div>` : none("Nothing due."); }, () => { }],
+    vehicles: ["Vehicles due", "Tap a vehicle to update its WOF, rego or RUCs.", () => { const L = S.vans.filter(v => v.active && v.plate !== "OTHER").map(v => ({ v, why: [soon(v.wof_due) ? dueTxt("WOF", v.wof_due) : "", v.wof_failed ? "WOF failed" : "", soon(v.rego_due) ? dueTxt("Rego", v.rego_due) : "", !v.no_ruc && v.ruc_paid_to && v.odometer && v.ruc_paid_to - v.odometer <= R.rucSoonKm ? `RUCs: ${Math.max(0, v.ruc_paid_to - v.odometer).toLocaleString()} km left` : ""].filter(Boolean) })).filter(x => x.why.length);
+      return L.length ? `<div class="list">${L.map(({ v, why }) => `<div class="item clk warn" data-van-edit="${esc(v.plate)}"><b>${esc(v.plate)}</b>${v.make ? ` <span class="meta">${esc(v.make)}</span>` : ""}<div class="meta">${esc(why.join(" · "))}</div></div>`).join("")}</div>` : none("Nothing due."); }, () => { }],
+    alerts: ["Open alerts", "Tap an alert for the detail and to resolve it.", () => ad.openAlerts(), () => ad.wireAlerts()],
+  };
+  const b = B[kind]; if (!b) return;
+  const open = () => {
+    const [title, hint, html, wire] = b; let body; try { body = html(); } catch (e) { console.error(e); body = `<p class="hint">This list couldn't be shown: ${esc(e?.message || e)}</p>`; }
+    const { bg } = sheet(`<h3>${title}</h3>${hint ? `<p class="hint">${hint}</p>` : ""}<div class="todo-body">${body}</div>`, () => { try { wire(); } catch (e) { console.error(e); } }, { wide: true });
+    bg._reopen = open;
+    // after anything is done in here, refresh the list (once any pop-up opened on top of it has closed)
+    bg.addEventListener("click", e => { if (!e.target.closest("button:not(.x), [data-entry], [data-personof], [data-van-edit], [data-alert], [data-leaveof]")) return; let tries = 0;
+      const tick = async () => { if (!bg.isConnected || ++tries > 400) return; const all = $$(".sheet-bg"); if (all[all.length - 1] !== bg || document.activeElement?.matches("input,textarea,select")) return setTimeout(tick, 1500);
+        await loadAll(); if (!bg.isConnected) return; const top = $$(".sheet-bg"); if (top[top.length - 1] !== bg) return setTimeout(tick, 1500); bg.remove(); open(); render(); };
+      setTimeout(tick, 1500); });
+  };
+  open();
+}
+
 /* ---- wiring ---- */
 // runs that can't be scored yet (EOD figures missing), by the driver responsible: Edit their EOD, or ask them to fill it in
 function pendingRuns() { const t = today(); const wk = monOf(t); const D = scoreData(); const out = [];
@@ -358,6 +395,7 @@ function pendingSheet() {
       catch (e) { b.disabled = false; toast(e.message, "err"); } }); });
 }
 export function wireAdmin() {
+  $$("[data-todo]").forEach(b => b.onclick = () => todoSheet(b.dataset.todo));
   $$("[data-go]").forEach(b => b.onclick = () => { if (b.dataset.go === "pending") return pendingSheet(); S.tab = b.dataset.go; location.hash = S.tab; render(); });
   $$("[data-sreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideSodReq(b.dataset.sreq, b.dataset.ok === "1"); });
   $$("[data-xreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideXt(b.dataset.xreq, b.dataset.ok === "1"); });
