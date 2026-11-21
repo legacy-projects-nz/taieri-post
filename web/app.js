@@ -1309,31 +1309,33 @@ function profileForm(must = false) {
   if (must && sbg) { sbg.querySelector(".x")?.remove(); sbg._close = () => { }; sbg.addEventListener("click", e => { if (e.target === sbg) e.stopImmediatePropagation(); }, true); }
 }
 /* Van wash: one quick tap to record that a van was washed (separate from the weekly check) */
+const dayAt = d => d && d < today() ? new Date(d + "T12:00:00+13:00").toISOString() : new Date().toISOString();   // picked date → time to store (now if today)
+const dayPick = id => `<label class="f full">Date<input class="in" type="date" id="${id}" value="${today()}" max="${today()}" min="${addDays(today(), -30)}" required></label>`;
 const lastWash = plate => (S.washes || []).filter(w => w.van === plate).sort((a, b) => b.at.localeCompare(a.at))[0];
 function vanWashForm(plate) {
   const n = nzNow(); const T = S.days[n.date]; const plates = [...new Set([...(T ? T.segs.map(x => x.shift.van) : []), ...S.shifts.filter(s => s.day <= n.date).sort((a, b) => b.day.localeCompare(a.day)).map(s => s.van)].filter(Boolean))];
   const pick = plate || plates[0]; const all = [...plates, ...Object.keys(S.vans).filter(p => !plates.includes(p) && p !== "OTHER")];
   const lw = p => { const w = lastWash(p); return w ? `Last washed ${label(nzNow(new Date(w.at)).date)}` : "No wash recorded yet"; };
-  sheet(`<h3>🧽 Van washed</h3><form class="frm" id="wf"><label class="f full">Van<select class="in" id="wvan">${opt(all.map(p => [p, p]), pick)}</select></label><p class="meta full" id="wlast">${esc(lw(pick))}</p><label class="f full">Note (optional)<input class="in" id="wnote" placeholder="e.g. inside and out"></label><button class="btn full" type="submit">Record wash</button></form>`, (bg, close) => {
+  sheet(`<h3>🧽 Van washed</h3><form class="frm" id="wf"><label class="f full">Van<select class="in" id="wvan">${opt(all.map(p => [p, p]), pick)}</select></label><p class="meta full" id="wlast">${esc(lw(pick))}</p>${dayPick("wday")}<label class="f full">Note (optional)<input class="in" id="wnote" placeholder="e.g. inside and out"></label><button class="btn full" type="submit">Record wash</button></form>`, (bg, close) => {
     bg.querySelector("#wvan").onchange = e => { bg.querySelector("#wlast").textContent = lw(e.target.value); };
     bg.querySelector("#wf").onsubmit = async e => { e.preventDefault(); const b = bg.querySelector("button[type=submit]"); b.disabled = true;
-      const { error } = await sb.from("van_washes").insert({ van: bg.querySelector("#wvan").value, driver: S.me.id, note: bg.querySelector("#wnote").value || null });
+      const { error } = await sb.from("van_washes").insert({ van: bg.querySelector("#wvan").value, driver: S.me.id, at: dayAt(bg.querySelector("#wday").value), note: bg.querySelector("#wnote").value || null });
       if (error) { b.disabled = false; return toast(error.message, "err"); } close(); toast("Van wash recorded 🧽", "ok"); await loadAll(); render(); };
   });
 }
 function vehicleCheckForm() {
   const n = nzNow(); const T = S.days[n.date]; const plates = [...new Set([...(T ? T.segs.map(x => x.shift.van) : []), ...S.shifts.filter(s => s.day <= n.date).sort((a, b) => b.day.localeCompare(a.day)).map(s => s.van)].filter(Boolean))];
   sheet(`<h3 class="lbl">Weekly vehicle check ${ib("vcheck")}</h3><p class="meta">Due Thursday 5pm · 4 photos</p>
-    <form class="frm" id="vf"><label class="f full">Van<select class="in" id="van">${opt([...plates, ...Object.keys(S.vans).filter(p => !plates.includes(p) && p !== "OTHER")].map(p => [p, p]), plates[0])}</select></label>
+    <form class="frm" id="vf"><label class="f full">Van<select class="in" id="van">${opt([...plates, ...Object.keys(S.vans).filter(p => !plates.includes(p) && p !== "OTHER")].map(p => [p, p]), plates[0])}</select></label>${dayPick("vday")}
     <label class="f">Odometer (km)<input class="in" id="odo" inputmode="numeric" required></label><label class="f">RUCs left (km)<input class="in" id="ruc" inputmode="numeric" placeholder="blank if petrol"></label>
     <label class="chk"><input type="checkbox" id="washed">Van washed</label><label class="chk"><input type="checkbox" id="tyres">Tyres checked &amp; OK</label><label class="chk"><input type="checkbox" id="vault">Vault OK</label>
     <label class="f">Bodywork<input class="in" id="body" placeholder="OK / describe damage"></label><label class="f full">Service due<input class="in" id="service" placeholder="e.g. 230,000 km or 15 Nov"></label>
     <label class="f full">Photos (4)<input class="in" type="file" id="photos" accept="image/*" multiple capture="environment"></label><label class="f full">Notes<textarea class="in" id="notes" rows="2"></textarea></label><button class="btn full" type="submit">Send check</button></form>`, (bg, close) => {
     bg.querySelectorAll(".chk input").forEach(i => i.onchange = () => i.parentElement.classList.toggle("on", i.checked));
     bg.querySelector("#vf").onsubmit = async e => { e.preventDefault(); const b = bg.querySelector("button[type=submit]"); b.disabled = true; b.textContent = "Uploading…";
-      try { const g = id => bg.querySelector("#" + id); const files = [...g("photos").files]; const van = g("van").value; const wk = monOf(n.date); const paths = [];
+      try { const g = id => bg.querySelector("#" + id); const files = [...g("photos").files]; const van = g("van").value; const vd = g("vday").value || n.date; const wk = monOf(vd); const paths = [];
         for (const [i, f0] of files.entries()) { const f = await shrinkPhoto(f0); const path = `${van}/${wk}/${S.me.id}-${i + 1}-${Date.now()}.jpg`; const { error } = await sb.storage.from("vchk").upload(path, f, { upsert: true }); if (error) throw error; paths.push(path); }
-        const { error } = await sb.from("vehicle_checks").upsert({ van, driver: S.me.id, week_start: wk, odometer: +g("odo").value || null, rucs_left: g("ruc").value ? +g("ruc").value : null, washed: g("washed").checked, tyres_ok: g("tyres").checked, vault_ok: g("vault").checked, bodywork: g("body").value || null, service_due: g("service").value || null, notes: g("notes").value || null, photos: paths, at: new Date().toISOString() }, { onConflict: "van,week_start" }); if (error) throw error;
+        const { error } = await sb.from("vehicle_checks").upsert({ van, driver: S.me.id, week_start: wk, odometer: +g("odo").value || null, rucs_left: g("ruc").value ? +g("ruc").value : null, washed: g("washed").checked, tyres_ok: g("tyres").checked, vault_ok: g("vault").checked, bodywork: g("body").value || null, service_due: g("service").value || null, notes: g("notes").value || null, photos: paths, at: dayAt(vd) }, { onConflict: "van,week_start" }); if (error) throw error;
         close(); toast("Vehicle check sent ✓", "ok"); } catch (err) { toast(err.message, "err"); b.disabled = false; b.textContent = "Send check"; } };
   });
 }
