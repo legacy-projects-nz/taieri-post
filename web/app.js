@@ -649,7 +649,9 @@ function tasksCard(D, n, next, bare = false) {
 </details></div>`;
   }).join("");
   if (bare) return `<h3 class="sub">Tasks</h3>${blocks || `<p class="hint">Nothing extra on this shift.</p>`}`;
-  return `<div class="card${next ? " nextc" : ""}" ${isT ? `id="tasks" data-fold-open="1"` : ""}><h2>${isT ? "Tasks" : "Next tasks"}${isT ? "" : `<span>${dayTag(D.day)}</span>`}</h2>
+  // Tasks opens while something is still to do, and closes on its own once everything is done (or there's nothing on)
+  const left = isT ? (runSegOf(D) || []).reduce((a, x) => a + rulesFor(x, D.day).filter(r => { const k = r.done_key || r.addon; const planned = !!k?.startsWith("tw_") && /game plan/i.test(r.name) && Object.keys(x.shift.plan || {}).length > 0; return k && !planned && !(x.shift.done || {})[k]; }).length + (x.shift.addons || []).filter(id => !rulesFor(x, D.day).some(r => r.addon === id) && !(x.shift.done || {})[id]).length, 0) : 0;
+  return `<div class="card${next ? " nextc" : ""}" ${isT ? `id="tasks" data-fold-open="${left ? 1 : 0}" data-fold-key="tasks${left ? 1 : 0}"` : ""}><h2>${isT ? "Tasks" : "Next tasks"}${isT ? "" : `<span>${dayTag(D.day)}</span>`}</h2>
     ${blocks || `<p class="hint">Nothing extra on this shift.</p>`}</div>`;
 }
 
