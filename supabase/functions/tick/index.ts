@@ -93,7 +93,7 @@ Deno.serve(async (req) => {
   }
   // vehicle checks: monthly. Week 1 of the month (Monday on the 1st–7th) = fleet check by Stu (rules.vchkFleet), every active van;
   // week 3 (Monday on the 15th–21st) = drivers' check (responsible person or main driver that week). Due Thursday by 17:00.
-  const vwk = addDays(t, -dow(t)); const vmd = +vwk.slice(8, 10); const vwho = vmd <= 7 ? "fleet" : vmd >= 15 && vmd <= 21 ? "drivers" : null;
+  const vwk = addDays(t, -dow(t)); const vmd = +vwk.slice(8, 10); const VW = R.vchkWeeks || {}; const vwho = vwk in VW ? (VW[vwk] || null) : vmd <= 7 ? "fleet" : vmd >= 15 && vmd <= 21 ? "drivers" : null;   // rules.vchkWeeks = one-off changes
   if (vwho && dow(t) + 1 >= R.vchkDay && (dow(t) + 1 > R.vchkDay || now.min >= (toMin(R.vchkTime) ?? 1020))) {
     const wk = vwk; const { data: vans } = await sb.from("vans").select("*").eq("active", true); const { data: checks } = await sb.from("vehicle_checks").select("van").eq("week_start", wk);
     const weekShifts = (shifts || []).filter(s => s.day >= wk && s.van && !isSort(s.run)); const fleet = R.vchkFleet || "ST";

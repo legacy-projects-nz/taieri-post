@@ -35,7 +35,7 @@ export const autoStops = (C, parcels) => parcels == null || parcels === "" || is
 export const runStopRatio = (C, code) => (C?.rules?.stopRatioByRun || { SG: 0.9 })[code] ?? null;
 export const LEG_RUNS = { TUA: ["outram", "pgg", "airport"], FLY: ["airport", "milton", "balclutha", "owaka"], DB: ["milton", "balclutha", "owaka"], RAM: ["airport"] };
 
-export function cfg(settings) { const o = {}; for (const k of Object.keys(DEF)) o[k] = { ...DEF[k], ...(settings[k] || {}) }; o.runCodes = settings.runCodes || {}; o.holidays = settings.holidays || {}; o.bands = settings.bands || {}; return o; }
+export function cfg(settings) { VW = settings.rules?.vchkWeeks || {}; const o = {}; for (const k of Object.keys(DEF)) o[k] = { ...DEF[k], ...(settings[k] || {}) }; o.runCodes = settings.runCodes || {}; o.holidays = settings.holidays || {}; o.bands = settings.bands || {}; return o; }
 
 /* ---- Start-time sign-off: a SOD more than rules.sodReqMins (20) before the rostered start counts from the rostered start
    until Jeremy/admin approves the early start (approving moves the roster, so the SOD is no longer early). From rules.sodReqStart on.
@@ -341,4 +341,6 @@ export const money = v => "$" + (Number.isInteger(v) ? v : v.toFixed(2));
 
 /* Vehicle checks are monthly: week 1 of the month (Monday on the 1st–7th) is the fleet check (Stu, every active van),
    week 3 (Monday on the 15th–21st) is the drivers' check (main driver / responsible person per van). Other weeks: none due. */
-export const vchkWho = wk => { const d = +String(wk).slice(8, 10); return d <= 7 ? "fleet" : d >= 15 && d <= 21 ? "drivers" : null; };
+// rules.vchkWeeks: one-off changes by week start, e.g. { "2026-11-23": "drivers", "2026-12-07": null } (null = no check that week)
+let VW = {};
+export const vchkWho = wk => { if (Object.prototype.hasOwnProperty.call(VW, wk)) return VW[wk] || null; const d = +String(wk).slice(8, 10); return d <= 7 ? "fleet" : d >= 15 && d <= 21 ? "drivers" : null; };
