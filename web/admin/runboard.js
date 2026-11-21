@@ -6,6 +6,7 @@ import { addName, segTimes } from "/shared/score.js";
 import { S, sheet, opt, nm, fnm, weekBar, wireWeek, loadAll, render, fn } from "/admin/admin.js";
 import { sickSheet, onLongPress } from "/admin/sick.js";
 import { actBtns } from "/admin/settle.js";
+import { briefCard, wireBrief } from "/admin/brief.js";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const key = s => `${s.day}|${s.run}|${s.slot}`;
@@ -91,6 +92,7 @@ export function runBoardTab() {
     ${confirmCard(sentItems, ackOf, n)}
     ${ruleCheck(ws, leaveOn)}
     <div class="card"><h2>Roster notes<span>week of ${label(S.week)}</span></h2><textarea class="in" id="wk-notes" rows="5" placeholder="Notes for this week's roster (road closures, training, reminders)…" ${canSend ? "" : "disabled"}>${esc(note)}</textarea><p class="hint">Saves when you click away.</p></div>
+    ${isToday ? "" : briefCard(S.week)}
     <details class="card"><summary>History of roster changes</summary>${historyList()}</details>`;
 }
 export function approvalCard(items, canApprove) {
@@ -171,6 +173,7 @@ export function wireRunBoard() {
     const { error } = await sb.from("week_notes").upsert({ week_start: S.week, dismissed: next, updated_at: new Date().toISOString() }); if (error) return toast(error.message, "err"); toast(b.dataset.rc === "dis" ? "Dismissed" : "Restored", "ok"); });
   // [data-ack] confirm/dismiss buttons are handled by detail.js bind()
   wireApprovals();
+  if (S.rbView === "week") wireBrief(S.week);
 }
 
 function slotSheet(day, run, slot) {

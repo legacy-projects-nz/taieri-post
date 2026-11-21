@@ -1,5 +1,5 @@
 // Taieri Post · driver app
-import { needsConfirm, shrinkPhoto, DEMO, sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, longLabel, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, enablePush, pushState, nzToIso, settings as loadSettings, signOut, errCtx, reportError } from "/shared/core.js";
+import { briefHtml, needsConfirm, shrinkPhoto, DEMO, sb, q, me, nzNow, today, addDays, dow, dayName, monOf, label, longLabel, toMin, fmtT, fmtTs, fmtTime, ago, esc, $, $$, h, toast, pill, first, col, pct, live, debounce, isSort, enablePush, pushState, nzToIso, settings as loadSettings, signOut, errCtx, reportError } from "/shared/core.js";
 import { requireUser } from "/shared/auth.js";
 import { VAPID_PUBLIC } from "/shared/config.js";
 import { resetDemo, newRuns } from "/shared/demo.js";
@@ -69,7 +69,7 @@ async function loadAllNow() {
   ]);
   S.set = set; S.C = cfg(set); S.runs = runs; S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vans = Object.fromEntries(vans.map(v => [v.plate, v])); S.addons = addons; setAddonNames(addons); S.rules = rules;
   S.people = Object.fromEntries(people.map(p => [p.id, p])); S.shifts = shifts.filter(s => s.driver === m); S.trainee = shifts.filter(s => s.trainee === m && s.driver !== m);
-  S.changes = changes; S.acks = acks; S.msgs = msgs; S.leave = leave; S.alerts = alerts; S.entries = entries; S.marks = marks; S.feed = feed; S.vchk = vchk || [];
+  S.changes = changes; S.acks = acks; S.briefs = (msgs || []).filter(m => m.messages.kind === "brief"); S.msgs = (msgs || []).filter(m => m.messages.kind !== "brief"); S.leave = leave; S.alerts = alerts; S.entries = entries; S.marks = marks; S.feed = feed; S.vchk = vchk || [];
   const ids = S.shifts.map(s => s.id);
   // second round, all at once (was one after another): SOD/EOD/overrides, pick-ups, access info, van washes, breaks
   const soft = (p, d) => Promise.resolve(p).then(r => r?.error ? d : (r?.data ?? d), () => d);
@@ -201,6 +201,7 @@ function renderNow() {
     ${demoBar()}${viewBar()}
     <div class="top"><div><div class="brand">Taieri Post · driver portal${S.viewAs ? " · viewing as " + esc(first(S.viewAs.name)) : ""}</div><h1>${greet} ${esc(name)} 👋</h1></div><div class="upd"><span class="dot live"></span>live<br>${fmtT(n.min)}</div></div>
     ${S.loadErr ? `<p class="hint" style="margin:0 0 8px;color:var(--crit)">No connection. Showing what loaded at ${fmtT(nzNow(new Date(S.loadedAt)).min)}. Trying again on its own.</p>` : ""}
+    ${part("Roster brief", () => briefCard())}
     ${T ? "" : part("My scores", () => scoresCard())}
     ${part("Did you do these", () => askCard())}
     ${part("Do these first", () => carryCard())}
@@ -230,6 +231,7 @@ function renderNow() {
   </div>`;
   try { folds(); } catch (e) { reportError("folds", e); }
   try { lawPuPop(); } catch (e) { reportError("lawPuPop", e); }
+  try { briefPop(); } catch (e) { reportError("briefPop", e); }
   try { wire(); } catch (e) { reportError("wire", e); }
   try { fitQb(); document.fonts?.ready.then(() => fitQb()); } catch (e) { reportError("fitQb", e); }
 }
@@ -987,6 +989,7 @@ function bindDetail(root) {
   $$("[data-gotit-alert]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; gotItAlert(b.dataset.gotitAlert); });
   on("[data-alertv]", el => { const a = S.alerts.find(x => x.id === el.dataset.alertv); if (a) alertSheet(a); });
   on("[data-leavev]", el => { const l = S.leave.find(x => x.id === el.dataset.leavev); if (l) leaveSheet(l); });
+  on("[data-brief]", el => { const m = (S.briefs || []).find(x => x.message_id === el.dataset.brief); if (m) briefSheet(m); });
   on("[data-msgv]", el => { const m = S.msgs.find(x => x.message_id === el.dataset.msgv); if (m) msgSheet(m); });
   on("[data-eodv]", el => eodForm(el.dataset.eodv, !!el.dataset.sort));
   on("[data-eodedit]", el => eodForm(el.dataset.eodedit, !!el.dataset.sort, true));
@@ -1412,6 +1415,45 @@ function leaveSheet(l) {
     <dl class="kv"><dt>Status</dt><dd>${pill(l.status, l.status === "approved" ? "ok" : l.status === "declined" ? "crit" : l.status === "pending" ? "warn" : "grey")}${l.decided_at ? ` <span class="meta">${fmtTs(l.decided_at)}</span>` : ""}</dd>${l.notes ? `<dt>Your note</dt><dd>${esc(l.notes)}</dd>` : ""}${l.reply ? `<dt>Reply</dt><dd>${esc(l.reply)}</dd>` : ""}<dt>Received email</dt><dd>${l.acked_email_at ? "sent " + fmtTs(l.acked_email_at) : "on its way"}</dd></dl>
     ${clash.length ? `<p class="meta">${l.status === "approved" ? "You're still showing on the roster for" : "You're currently rostered on"} ${clash.map(d => `<button class="linkbtn" data-dayv="${d}">${label(d)}</button>`).join(", ")}${l.status === "approved" ? " — check with Jeremy." : "."}</p>` : ""}
     <p class="hint">${l.status === "pending" ? "Waiting for Jeremy." : l.status === "approved" ? "On the roster." : l.status === "declined" ? "Call Jeremy to talk about it." : ""}</p>`);
+}
+/* ---------- Weekly roster brief: pops up until every section is ticked Read and Submit is tapped ---------- */
+function myBrief() {   // newest brief per week; the one to show is the newest not yet submitted, else the newest for this week or later
+  const by = {}; for (const m of (S.briefs || [])) { const w = m.messages.week_start; if (!by[w] || m.messages.created_at > by[w].messages.created_at) by[w] = m; }
+  const L = Object.values(by).filter(m => m.messages.week_start >= addDays(monOf(today()), -7)).sort((a, b) => b.messages.week_start.localeCompare(a.messages.week_start));
+  return L.find(m => !m.confirmed_at) || L.find(m => m.messages.week_start >= monOf(today())) || null;
+}
+function briefParts(body) {   // intro (before the first ## heading) + one section per heading
+  const secs = []; let intro = []; let cur = null;
+  for (const l of String(body || "").split(/\r?\n/)) { const h = /^#{1,3}\s+(.*)$/.exec(l.trim()); if (h) { cur = { title: h[1].replace(/\*\*/g, ""), lines: [] }; secs.push(cur); } else (cur ? cur.lines : intro).push(l); }
+  return { intro: intro.join("\n").trim(), secs: secs.map(x => ({ title: x.title, text: x.lines.join("\n").trim() })) };
+}
+function briefCard() {
+  const m = myBrief(); if (!m) return ""; const done = !!m.confirmed_at; const n = briefParts(m.messages.body).secs.length;
+  return `<div class="card ${done ? "" : "hot"}" id="brief"><h2${done ? "" : ` class="c-crit"`}>${esc(m.messages.title || "Roster brief")}<span>${done ? `✓ submitted ${fmtTs(m.confirmed_at)}` : `${n} section${n === 1 ? "" : "s"} to read`}</span></h2>
+    ${done ? "" : `<p class="meta">Read each section, tick Read, then Submit. Jeremy can see who has read it.</p>`}<button class="btn full ${done ? "ghost" : "crit"}" data-brief="${m.message_id}">${done ? "Open it again" : "Read my roster brief"}</button></div>`;
+}
+function briefPop() {
+  const m = myBrief(); if (S.viewAs || !m || m.confirmed_at || document.querySelector(".sheet-bg")) return;
+  S.briefShown ||= {}; if (S.briefShown[m.message_id]) return; S.briefShown[m.message_id] = 1; briefSheet(m);
+}
+function briefSheet(m) {
+  const { intro, secs } = briefParts(m.messages.body); const done = !!m.confirmed_at; const K = "tp-brief-" + m.message_id;
+  let ticks = {}; try { ticks = JSON.parse(localStorage.getItem(K) || "{}"); } catch { }
+  if (!m.read_at && !S.viewAs) sb.from("message_recipients").update({ read_at: new Date().toISOString() }).eq("message_id", m.message_id).eq("person", S.me.id).then(() => { });
+  const all = () => secs.every((_, i) => done || ticks[i]);
+  sheet(`<h3>${esc(m.messages.title || "Roster brief")}</h3>${intro ? briefHtml(intro) : ""}
+    ${secs.map((x, i) => `<div class="item ${done || ticks[i] ? "ok" : "warn"}" data-bsec="${i}" style="margin-bottom:8px"><b>${esc(x.title)}</b>${briefHtml(x.text)}
+      ${done ? `<p class="meta c-ok">✓ Read</p>` : `<button class="btn sm ${ticks[i] ? "ghost" : ""}" data-bread="${i}">${ticks[i] ? "✓ Read" : "Read"}</button>`}</div>`).join("")}
+    ${done ? `<p class="meta c-ok">✓ Submitted ${fmtTs(m.confirmed_at)}</p>` : S.viewAs ? "" : `<button class="btn full" id="b-submit" ${all() ? "" : "disabled"}>Submit · I've read and understood my roster</button><p class="hint" id="b-left">${all() ? "" : "Tick Read on every section to submit."}</p>`}`,
+  (bg, close) => {
+    bg.querySelectorAll("[data-bread]").forEach(b => b.onclick = () => { const i = +b.dataset.bread; ticks[i] = !ticks[i]; localStorage.setItem(K, JSON.stringify(ticks));
+      b.textContent = ticks[i] ? "✓ Read" : "Read"; b.classList.toggle("ghost", !!ticks[i]); const it = b.closest("[data-bsec]"); it.classList.toggle("ok", !!ticks[i]); it.classList.toggle("warn", !ticks[i]);
+      const go = bg.querySelector("#b-submit"); if (go) go.disabled = !all(); const lf = bg.querySelector("#b-left"); if (lf) lf.textContent = all() ? "" : "Tick Read on every section to submit.";
+      if (ticks[i]) { const nx = bg.querySelector(`[data-bsec="${i + 1}"]`); nx?.scrollIntoView({ behavior: "smooth", block: "nearest" }); } });
+    bg.querySelector("#b-submit")?.addEventListener("click", async e => { e.target.disabled = true; const now = new Date().toISOString();
+      const { error } = await sb.from("message_recipients").update({ confirmed_at: now, read_at: m.read_at || now }).eq("message_id", m.message_id).eq("person", S.me.id);
+      if (error) { e.target.disabled = false; return toast("Couldn't send. Try again.", "err"); } m.confirmed_at = now; close(); toast("Thanks, submitted ✓", "ok"); render(); });
+  }, { wide: true });
 }
 function msgSheet(m) {
   sheet(`<h3>Message from ${esc(first(S.people[m.messages.sender]?.name || "Jeremy"))}</h3><p class="meta">${fmtTs(m.messages.created_at)}${m.read_at ? ` · read ${fmtTs(m.read_at)}` : ""}${m.confirmed_at ? ` · <span class="c-ok">✓ confirmed ${fmtTs(m.confirmed_at)}</span>` : ""}</p><pre class="msg" style="font-family:var(--fd);font-size:15px">${esc(m.messages.body)}</pre>

@@ -270,3 +270,5 @@ h1 span,h2 span,h3 span,h4 span,h2 .meta,h3 .meta,h4 .meta{text-transform:none}
 .seg-btns{display:grid !important;grid-template-columns:repeat(auto-fit,minmax(min(100%,110px),1fr));gap:6px}
 .row:not(:has(> :not(button, .btn, a.btn, .chip))) > *, .seg-btns > *{width:100%;min-width:0;flex:none !important;justify-content:center;text-align:center;margin:0}
 .nav button{flex:1 1 0 !important;min-width:max-content}
+/* roster brief */
+.brief p{margin:4px 0}.brief .bh{margin:10px 0 2px;font:800 15px var(--fd)}.brief ul.bl{margin:4px 0;padding-left:20px}.brief li{margin:2px 0}

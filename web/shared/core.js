@@ -135,3 +135,15 @@ export function needsConfirm(i) { const a = i?.after || null, b = i?.before || n
 export async function shrinkPhoto(f, max = 1600, quality = 0.75) { try { if (!f?.type?.startsWith("image/")) return f; const bm = await createImageBitmap(f); const k = Math.min(1, max / Math.max(bm.width, bm.height)); if (k === 1 && f.size < 4e5) return f;
   const c = document.createElement("canvas"); c.width = Math.round(bm.width * k); c.height = Math.round(bm.height * k); c.getContext("2d").drawImage(bm, 0, 0, c.width, c.height);
   const b = await new Promise(r => c.toBlob(r, "image/jpeg", quality)); return b && b.size < f.size ? new File([b], "photo.jpg", { type: "image/jpeg" }) : f; } catch { return f; } }
+
+/** Roster brief text → HTML. "## Heading", "- bullet", "**bold**", blank line = new paragraph. Everything else is escaped. */
+export function briefHtml(text) {
+  const inl = s => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+  const out = []; let ul = false; const close = () => { if (ul) { out.push("</ul>"); ul = false; } };
+  for (const raw of String(text || "").split(/\r?\n/)) { const l = raw.trimEnd();
+    if (!l.trim()) { close(); continue; }
+    const h = /^#{1,3}\s+(.*)$/.exec(l); if (h) { close(); out.push(`<h4 class="bh">${inl(h[1])}</h4>`); continue; }
+    const b = /^\s*[-•]\s+(.*)$/.exec(l); if (b) { if (!ul) { out.push(`<ul class="bl">`); ul = true; } out.push(`<li>${inl(b[1])}</li>`); continue; }
+    close(); out.push(`<p>${inl(l)}</p>`); }
+  close(); return `<div class="brief">${out.join("")}</div>`;
+}
