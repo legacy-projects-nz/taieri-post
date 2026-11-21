@@ -259,13 +259,13 @@ function timingsToday() {
   rows.sort((a, b) => a.sort - b.sort); const nOpen = rows.filter(r => r.html.includes('data-kind="add"')).length;
   return `<div class="card"><h2>Timings today<span>${label(t)} · red = passed without being done</span></h2>${S.me.can("roster") ? allBar(nOpen) : ""}${rows.length ? `<div class="scroll"><table class="dt"><tr><th>Window</th><th>What to do</th><th>Who</th><th>Status</th></tr>${rows.map(r => r.html).join("")}</table></div>` : `<p class="empty">No timed tasks on today's runs.</p>`}<p class="hint">Drivers tap Done in their app as each one is finished (every timed task on their run shows there with its own Done button). A passed window raises an alert here and pings you and the driver; Done clears it. Tap a row for the plan, the history and the driver's day.</p></div>`;
 }
-export function openAlerts() { const open = S.alerts.filter(a => !a.resolved_at);
+export function openAlerts(noLate = false) { const open = S.alerts.filter(a => !a.resolved_at && !(noLate && ["sod_late", "eod_late"].includes(a.kind)));
   return `<div class="card"><h2>Open alerts<span>${open.length}</span></h2>${open.length ? `${S.me.can("alerts") ? allBar(open.length) : ""}<div class="list">${open.map(alertRow).join("")}</div>` : `<p class="empty">✓ None</p>`}</div>`; }
 export function alertsTab() {
   const open = S.alerts.filter(a => !a.resolved_at), done = S.alerts.filter(a => a.resolved_at);
   const rem = S.set.reminders || {};
   return `${timingsToday()}<div class="card"><h2>Open alerts<span>${open.length}</span></h2>${open.length ? `${S.me.can("alerts") ? allBar(open.length) : ""}<div class="list">${open.map(alertRow).join("")}</div>` : `<p class="empty">✓ Nothing open</p>`}</div>
-    <div class="card"><h2>How alerts work</h2><p class="hint">Every minute the system checks: SOD not in by rostered start + ${S.C.rules.sodGrace} min · EOD not in ${S.C.rules.eodHours} h after a run finishes · timing windows due soon or missed · roster changes not confirmed before the run starts · vehicle checks due Thursday 5pm. Each alert appears here, pings the driver's phone, and (when email chasing is on) emails the driver once.</p>
+    <div class="card"><h2>How alerts work</h2><p class="hint">Alerts here are only things you need to act on: SOD not in by start + ${S.C.rules.sodGrace} min · EOD not in ${S.C.rules.eodHours} h after a run · a timed task missed · pick-up totals not in · vehicle check not done by Thursday 5pm. Reminders (task due soon, sort running over, roster change to confirm) go to the driver's phone only. A late EOD clears itself when it's posted; anything else left open is closed the next day.</p>
       <label class="chk ${rem.enabled ? "on" : ""}"><input type="checkbox" id="rem-on" ${rem.enabled ? "checked" : ""} ${S.me.can("people") ? "" : "disabled"}>Email drivers automatically when a post is late (between ${esc(rem.from || "07:00")} and ${esc(rem.to || "20:00")})</label></div>
     <div class="card"><h2>Resolved recently<span>${done.length}</span></h2>${done.length ? `<div class="list">${done.slice(0, 30).map(alertRow).join("")}</div>` : `<p class="empty">Nothing yet</p>`}</div>`;
 }

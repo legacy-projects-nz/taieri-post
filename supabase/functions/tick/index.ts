@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
         const closes = toMin(meet ?? r.closes); if (closes == null) continue;
         const kd = `timing_due|${t}|${drv}|${r.id}`, km = `timing_missed|${t}|${drv}|${r.id}`;
         if (done || (meet && now.min < closes - 15)) { for (const a of alertsOpen) if (a.dedupe_key === kd || a.dedupe_key === km) resolve.push(a.id); if (done) continue; }   // a later Milton time clears an alert raised for the old one
-        if (!done && now.min >= closes - 15 && now.min < closes) raise({ kind: "timing_due", driver: drv, shift_id: x.s.id, rule_id: r.id, title: `${name}: ${r.name} due by ${fmtT(closes)}`, body: `${x.s.run} · ${r.note || ""}`.trim(), dedupe_key: kd, _push: { to: [drv], title: `${r.name} by ${fmtT(closes)}`, body: `${r.note || "Tap Done in the app when it's sorted."}` } });
+        if (!done && now.min >= closes - 15 && now.min < closes) raise({ kind: "timing_due", driver: drv, shift_id: x.s.id, rule_id: r.id, title: `${name}: ${r.name} due by ${fmtT(closes)}`, body: `${x.s.run} · ${r.note || ""}`.trim(), dedupe_key: kd, _driverOnly: true, _push: { to: [drv], title: `${r.name} by ${fmtT(closes)}`, body: `${r.note || "Tap Done in the app when it's sorted."}` } });
         if (!done && now.min >= closes && now.min < closes + 240) raise({ kind: "timing_missed", driver: drv, shift_id: x.s.id, rule_id: r.id, title: `${name}: ${r.name} not done by ${fmtT(closes)}`, body: `${x.s.run}`, dedupe_key: km, _push: { to: [drv], title: `${r.name} was due by ${fmtT(closes)}`, body: "If it's done, tap Done in the app. Otherwise let Jeremy know." }, _email: "timing", _rule: r });
       }
     }
@@ -81,7 +81,7 @@ Deno.serve(async (req) => {
           if (x.sort) { e = x.en != null && x.en > x.st! ? x.en - x.st! : null; open = !ended; }
           else if (SM[x.s.run] !== 0 && !segs[i - 1]?.sort) { e = expOf(x.s.run); open = !ended && !x.s.deliver_at; } }
         const el = st != null ? (Date.now() - st) / 60000 : 0;
-        if (open && e && el > e && el < e + 240) raise({ kind: "other", driver: drv, shift_id: x.s.id, title: `${name}: sort past ${e} min`, body: `${x.sort ? (runsBy[x.s.run]?.label || "Sort") : x.s.run} · Sort done not tapped yet`, dedupe_key: k, _quiet: true, _push: { to: [drv], title: "Sort done?", body: `You're past the usual ${e} min sort. Tap Sort done in the app to start your run.` } });
+        if (open && e && el > e && el < e + 240) raise({ kind: "other", driver: drv, shift_id: x.s.id, title: `${name}: sort past ${e} min`, body: `${x.sort ? (runsBy[x.s.run]?.label || "Sort") : x.s.run} · Sort done not tapped yet`, dedupe_key: k, _driverOnly: true, _push: { to: [drv], title: "Sort done?", body: `You're past the usual ${e} min sort. Tap Sort done in the app to start your run.` } });
         if (!open) for (const a of alertsOpen) if (a.dedupe_key === k) resolve.push(a.id); });
     }
   }
@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
   for (const i of items || []) { if (!needsConfirm(i)) continue; const st = toMin(i.after?.start_at) ?? (() => { const w = runsBy[i.run]?.windows?.[["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][dow(i.day)]]; return w ? toMin(w[0][0]) : null; })(); if (st == null) continue;
     const minsTo = (i.day === t ? 0 : 1440) + st - now.min; if (minsTo > 90 || minsTo < -30) continue;
     for (const d of i.affects) { const a = (acks || []).find(x => x.item_id === i.id && x.driver === d); if (a?.confirmed_at || a?.dismissed_at) continue;
-      raise({ kind: "change_unconfirmed", driver: d, title: `${first(ppl[d]?.name)} hasn't confirmed a roster change`, body: `${i.summary} · run starts ${fmtT(st)}`, dedupe_key: `change_unconfirmed|${i.id}|${d}`, _push: { to: [d], title: "Please confirm your roster change", body: i.summary } }); }
+      raise({ kind: "change_unconfirmed", driver: d, title: `${first(ppl[d]?.name)} hasn't confirmed a roster change`, body: `${i.summary} · run starts ${fmtT(st)}`, dedupe_key: `change_unconfirmed|${i.id}|${d}`, _driverOnly: true, _push: { to: [d], title: "Please confirm your roster change", body: i.summary } }); }
   }
   // vehicle checks: due Thursday by 17:00 for this week
   if (dow(t) + 1 >= R.vchkDay && (dow(t) + 1 > R.vchkDay || now.min >= (toMin(R.vchkTime) ?? 1020))) {
@@ -104,16 +104,23 @@ Deno.serve(async (req) => {
   for (const l of leave || []) { const p = ppl[l.driver]; const days = Math.round((new Date(l.date_to).getTime() - new Date(l.date_from).getTime()) / 86400000) + 1; const dates = l.date_from === l.date_to ? longLabel(l.date_from) : `${longLabel(l.date_from)} to ${longLabel(l.date_to)}`; const part = l.part === "AM" ? " (morning off)" : l.part === "PM" ? " (afternoon off)" : "";
     if (p?.email) await sendEmail(sec, set, p.email, `Leave request received – ${l.date_from === l.date_to ? label(l.date_from) : `${label(l.date_from)} to ${label(l.date_to)}`} (not yet approved)`, wrap(`<p>Hi ${esc(first(p.name))},</p><p>We've received your leave request. Here are the details:</p><ul><li><b>Type:</b> ${esc(LEAVE_T[l.type] || l.type)}</li><li><b>Dates:</b> ${esc(dates)} (${part ? "half day" : `${days} day${days === 1 ? "" : "s"}`}${part})</li>${l.notes ? `<li><b>Your note:</b> ${esc(l.notes)}</li>` : ""}</ul><p><b>Please note: this request is not approved yet.</b> Jeremy will review it, and you'll get a separate email saying whether it's approved or declined. Please don't make any bookings until you have the approval email.</p><p>Thanks,<br>Jeremy<br>Taieri Post Limited</p>`));
     await sb.from("leave_requests").update({ acked_email_at: new Date().toISOString() }).eq("id", l.id);
-    raise({ kind: "leave_request", driver: l.driver, title: `Leave request from ${first(p?.name)}`, body: `${LEAVE_T[l.type] || l.type} · ${dates}${part}`, dedupe_key: `leave|${l.id}`, _staffOnly: true, _area: "leave" }); out.push(`leave ack ${l.id}`);
+    raise({ kind: "leave_request", driver: l.driver, title: `Leave request from ${first(p?.name)}`, body: `${LEAVE_T[l.type] || l.type} · ${dates}${part}`, dedupe_key: `leave|${l.id}`, _staffOnly: true, _closed: true, _area: "leave" }); out.push(`leave ack ${l.id}`);
   }
+
+  // tidy-up: an EOD posted later (any day) clears its late alert; anything else still open from an earlier day is closed —
+  // the To do list and the scorecard keep the record, so old alerts don't pile up
+  { const oldDay = (a: any) => { const m = /\|(\d{4}-\d{2}-\d{2})\|/.exec(a.dedupe_key || ""); return m && m[1] < t; };
+    const lateEod = alertsOpen.filter(a => a.kind === "eod_late" && a.shift_id); if (lateEod.length) { const { data: done } = await sb.from("eod").select("shift_id").in("shift_id", lateEod.map(a => a.shift_id)); const got = new Set((done || []).map((e: any) => e.shift_id)); for (const a of lateEod) if (got.has(a.shift_id)) resolve.push(a.id); }
+    for (const a of alertsOpen) if (["sod_late", "timing_due", "timing_missed", "change_unconfirmed", "pickup_missing"].includes(a.kind) && oldDay(a)) resolve.push(a.id);
+    for (const a of alertsOpen) if (String(a.dedupe_key || "").startsWith("sort_over|") || a.kind === "timing_due" || a.kind === "change_unconfirmed" || a.kind === "leave_request") resolve.push(a.id); }
 
   // write alerts, push, email
   const staffAlerts = await staffWith(sb, "alerts"); const staffIds = staffAlerts.map(p => p.id);
-  for (const a of newAlerts) { const { _push, _email, _rule, _staffOnly, _area, _msg, _quiet, ...row } = a; const { data: ins, error } = await sb.from("alerts").upsert(row, { onConflict: "dedupe_key", ignoreDuplicates: true }).select().maybeSingle(); if (error) { console.error(error); continue; } if (!ins) continue; out.push(row.dedupe_key);
+  for (const a of newAlerts) { const { _push, _email, _rule, _staffOnly, _area, _msg, _quiet, _driverOnly, _closed, ...row } = a; if (_driverOnly || _closed) row.resolved_at = new Date().toISOString();   /* reminder sent, nothing left open for staff */ const { data: ins, error } = await sb.from("alerts").upsert(row, { onConflict: "dedupe_key", ignoreDuplicates: true }).select().maybeSingle(); if (error) { console.error(error); continue; } if (!ins) continue; out.push(row.dedupe_key);
     // fleet-only staff (alerts but no roster/scorecard, e.g. Stu) only hear about vehicle alerts
     const fleetAlert = String(row.dedupe_key || "").startsWith("vchk|");
     const staff = _area ? (await staffWith(sb, _area)).map(p => p.id) : staffAlerts.filter(p => fleetAlert || p.role === "owner" || (p.perms || []).some((x: string) => x === "roster" || x === "scorecard")).map(p => p.id);
-    if (!_quiet) await push(sb, sec, set, [...new Set(staff)], { title: row.title, body: row.body, url: fleetAlert ? "/admin/#alerts" : "/admin/#live", tag: row.dedupe_key });
+    if (!_quiet && !_driverOnly) await push(sb, sec, set, [...new Set(staff)], { title: row.title, body: row.body, url: fleetAlert ? "/admin/#alerts" : "/admin/#live", tag: row.dedupe_key });
     if (_push && !_staffOnly) await push(sb, sec, set, _push.to, { title: _push.title, body: _push.body, url: "/", tag: row.dedupe_key });
     // also drop it in the driver's Messages, so it's there even without push notifications switched on
     if (_msg && row.driver) { const owner = Object.values(ppl).find((p: any) => p.role === "owner") as any; if (owner) { const { data: m } = await sb.from("messages").insert({ sender: owner.id, body: _msg, needs_confirm: false }).select("id").single(); if (m) await sb.from("message_recipients").insert({ message_id: m.id, person: row.driver }); } }
