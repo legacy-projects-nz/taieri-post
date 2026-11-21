@@ -55,7 +55,7 @@ export function briefCard(wk) {
     ${sent ? statusList(wk) : ""}
     ${can && ppl.length ? `<button class="btn full" id="br-send" style="margin-top:8px">${sent ? "Send updated brief" : "Send roster brief"} to ${ppl.length} driver${ppl.length === 1 ? "" : "s"}</button>` : ""}</div>`;
 }
-function statusList(wk) {
+export function statusList(wk) {
   const st = briefStatus(wk); const ppl = [...new Set([...briefPeople(wk), ...Object.keys(st)])].sort((a, b) => nm(a).localeCompare(nm(b)));
   return `<div class="list" style="margin-top:8px">${ppl.map(d => { const x = st[d];
     const cls = !x ? "" : x.r.confirmed_at ? "ok done" : x.r.read_at ? "warn" : "crit";
@@ -74,7 +74,7 @@ export function wireBrief(wk) {
   $("#br-send")?.addEventListener("click", async () => { await save(); await loadAll(); sendSheet(wk); });
   wireNudge(document);
 }
-function wireNudge(root) {
+export function wireNudge(root) {
   root.querySelectorAll("[data-brnudge]").forEach(b => b.onclick = async e => { e.stopPropagation(); b.disabled = true; const [mid] = b.dataset.brnudge.split("|");
     try { await fn("notify", { type: "message", message_id: mid }); toast("Nudge sent", "ok"); } catch (err) { b.disabled = false; toast(err.message, "err"); } });
 }

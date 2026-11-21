@@ -26,7 +26,7 @@ export function liveTab() {
 // Admin tab: sign-offs and the to-do list (moved off Live)
 export function adminTop() { const n = nzNow(); const wk = monOf(n.date); const D = scoreData();
   const scores = S.drivers.map(d => scoreFor(d.id, wk, addDays(wk, 6), D, S.C));
-  return `${S.me.isOwner || S.me.role === "admin" ? `<div class="grid2">${sodReqCard()}${xtCard()}</div>` : ""}${actionCentre(scores, n)}`; }
+  return actionCentre(scores, n); }
 export function adminEnd() { return addonBoard(nzNow().date, nzNow()); }
 export function hoursCard(wk) { return hoursByDay(wk); }
 
@@ -235,78 +235,24 @@ function actionCentre(scores, n) {
   const mist = S.entries.filter(e => e.kind === "mistake" && !e.excused && e.day >= monOf(t)).length;
   const lic = S.drivers.filter(p => [p.licence_expiry, p.dg_expiry].some(d => d && (new Date(d) - new Date(t)) / 86400000 <= R.dueSoonDays));
   const vans = S.vans.filter(v => v.active && v.plate !== "OTHER" && ([v.wof_due, v.rego_due].some(d => d && (new Date(d) - new Date(t)) / 86400000 <= R.dueSoonDays) || v.wof_failed || (!v.no_ruc && v.ruc_paid_to && v.odometer && v.ruc_paid_to - v.odometer <= R.rucSoonKm)));
-  const alerts = S.alerts.filter(a => !a.resolved_at && !["sod_late", "eod_late"].includes(a.kind)).length;   // late SOD / EOD are already counted in "Overdue right now"
-  const rows = [[reviews, "Reviews to do", "posts to confirm or excuse", "reviews", reviews ? "warn" : ""], [overdue, "Overdue right now", "SOD/EOD not in yet today", "overdue", overdue ? "crit" : ""], [pending, "Missing EOD figures", "runs that can't be scored yet · tap to fix or ask", "pending", pending ? "warn" : ""], [aw, "Roster changes to approve", "made by Alejandro", "approve", aw ? "warn" : ""], [unc, "Roster changes not confirmed", "drivers haven't tapped Got it", "unconfirmed", unc ? "crit" : ""], [leave, "Leave requests waiting", "approve or decline", "leave", leave ? "warn" : ""], [mist, "Mistakes logged this week", "Driver Mistakes Record", "mistakes", mist ? "crit" : ""], [lic.length, "Licences & DG due", lic.map(p => first(p.name)).slice(0, 3).join(", "), "licences", lic.length ? "warn" : ""], [vans.length, "Vehicles due", "WOF, rego, RUCs", "vehicles", vans.length ? "warn" : ""], [alerts, "Open alerts", "resolve or let them clear", "alerts", alerts ? "warn" : ""]].filter(r => r[0]);
-  return `<div class="card" id="todo"><h2>To do<span>${rows.length ? `${rows.length} item${rows.length > 1 ? "s" : ""}` : "all done"}</span></h2>${rows.length ? `<div class="list">${rows.map(([c, l, s, tab, cls]) => `<button class="item ${cls}" data-todo="${tab}" style="border:0;color:inherit;text-align:left;cursor:pointer" title="Tap to sort these out"><div class="row" style="justify-content:space-between"><b>${esc(l)}</b><span class="pill ${cls || "grey"}" style="flex:0 0 auto">${c}</span></div><div class="meta">${esc(s)}</div></button>`).join("")}</div>` : `<p class="empty">✓ All complete<br><span class="meta">No reviews, overdue posts, approvals or mistakes waiting.</span></p>`}</div>`;
+  const openA = k => S.alerts.filter(a => !a.resolved_at && k(a)).length;
+  const addonA = openA(a => ["timing_missed", "pickup_missing"].includes(a.kind)), fleetA = openA(a => String(a.dedupe_key || "").startsWith("vchk|")), otherA = openA(a => !["sod_late", "eod_late", "timing_missed", "pickup_missing"].includes(a.kind) && !String(a.dedupe_key || "").startsWith("vchk|"));
+  const boss = S.me.isOwner || S.me.role === "admin"; const sreq = boss ? (S.sodReqs || []).filter(r => r.status === "pending").length : 0, xreq = S.me.isOwner ? (S.extra || []).filter(r => r.status === "pending").length : 0;
+  const unread = briefUnread();
+  // five groups, in order: Approvals > Roster > SOD / EOD > Add-ons > Fleet & people. Each opens one pop-up with everything in it.
+  const G = [
+    ["approvals", "Approvals", sreq + xreq + aw + leave, [sreq && `${sreq} start time${sreq > 1 ? "s" : ""}`, xreq && `${xreq} hours`, aw && `${aw} roster change${aw > 1 ? "s" : ""}`, leave && `${leave} leave`], "warn"],
+    ["roster", "Roster", unc + unread, [unc && `${unc} change${unc > 1 ? "s" : ""} not confirmed`, unread && `${unread} brief${unread > 1 ? "s" : ""} not read`], "crit"],
+    ["sodeod", "SOD / EOD", overdue + reviews + pending, [overdue && `${overdue} overdue now`, reviews && `${reviews} to review`, pending && `${pending} missing figures`], overdue ? "crit" : "warn"],
+    ["addons", "Add-ons", addonA, [addonA && `${addonA} task${addonA > 1 ? "s" : ""} missed or pick-ups not in`], "warn"],
+    ["fleet", "Fleet & people", vans.length + fleetA + lic.length + mist + otherA, [vans.length && `${vans.length} vehicle${vans.length > 1 ? "s" : ""} due`, fleetA && `${fleetA} vehicle check${fleetA > 1 ? "s" : ""}`, lic.length && `${lic.length} licence${lic.length > 1 ? "s" : ""}`, mist && `${mist} mistake${mist > 1 ? "s" : ""}`, otherA && `${otherA} other`], mist ? "crit" : "warn"],
+  ].filter(g => g[2]);
+  return `<div class="card" id="todo"><h2>To do<span>${G.length ? `${G.reduce((a, g) => a + g[2], 0)} to sort out` : "all done"}</span></h2>${G.length ? `<div class="list">${G.map(([k, l, c, bits, cls]) => `<button class="item ${cls}" data-todo="${k}" style="border:0;color:inherit;text-align:left;cursor:pointer" title="Tap to sort these out"><div class="row" style="justify-content:space-between"><b>${esc(l)}</b><span class="pill ${cls}" style="flex:0 0 auto">${c}</span></div><div class="meta">${esc(bits.filter(Boolean).join(" · "))}</div></button>`).join("")}</div>` : `<p class="empty">✓ All complete<br><span class="meta">No approvals, roster, SOD / EOD, add-on or fleet items waiting.</span></p>`}</div>`;
 }
-
-/* ---- Roster changes not confirmed ---- */
-function notConfirmed(n) {
-  const t = n.date; const ackOf = {}; for (const a of S.acks) (ackOf[a.item_id] ??= {})[a.driver] = a; const by = {};
-  for (const i of S.items.filter(i => i.roster_changes.status === "sent" && i.day >= t)) for (const d of i.affects) { const a = ackOf[i.id]?.[d]; const st = toMin(i.after?.start_at); const past = i.day === t && st != null && n.min >= st; if (!a?.confirmed_at && !a?.dismissed_at && !past) (by[d] ??= []).push(i); }
-  const L = Object.entries(by).sort((a, b) => (a[1][0].roster_changes.sent_at || "").localeCompare(b[1][0].roster_changes.sent_at || ""));
-  return `<div class="card ${L.length ? "hot" : ""}"><h2>Roster changes — not confirmed<span>${L.length ? `${L.length} driver${L.length > 1 ? "s" : ""} waiting, oldest first` : "nothing waiting"}</span></h2>${L.length ? `<div class="list">${L.map(([d, items]) => `<div class="item crit clk" data-changes="${d}" title="Tap for every change sent to ${esc(fnm(d))}"><div class="row" style="justify-content:space-between"><b>${esc(nm(d))}</b><span class="meta">sent ${fmtTs(items[0].roster_changes.sent_at)} · ${ago(items[0].roster_changes.sent_at)}</span><span class="row" style="flex:0;gap:4px;flex-wrap:wrap;justify-content:flex-end">${actBtns("chg", `data-drv="${d}" data-items="${items.map(i => i.id).join(",")}"`)}</span></div><ul style="margin:4px 0;padding-left:18px;color:var(--crit)">${items.map(i => `<li>${esc(i.summary)}</li>`).join("")}</ul></div>`).join("")}</div>` : ""}<p class="meta">Drivers confirm with one tap in the app. <button class="linkbtn" data-go="runboard">History of all roster changes →</button></p></div>`;
-}
-
-/* ---- Drivers grid ---- */
-function driversGrid(scores, wk) {
-  const list = scores.filter(s => s.closed || s.effDays.length || s.nMist).sort((a, b) => (a.overall ?? 101) - (b.overall ?? 101));
-  return `<div class="card"><h2>Drivers<span>this week · tap a name for history and results · <span class="c-ok">light green</span> = signed in to the app · <b class="c-ok">dark green</b> = GPS in the last 20 min</span></h2>${list.length ? `<div class="dgrid">${list.map(s => { const d = S.peopleBy[s.driver]; const hrs = Object.values(s.days).reduce((a, x) => a + x.hours, 0);
-    const lg = S.login?.[s.driver], gps = S.locs.find(l => l.driver === s.driver && Date.now() - new Date(l.at) <= 20 * 60e3); const st = gps ? "gps" : lg?.sessions > 0 ? "on" : "";
-    return `<button class="dcard ${st}" data-driver="${s.driver}" style="border:0;color:inherit;text-align:left" title="${gps ? `In the app · GPS ${ago(gps.at)}` : st ? "Signed in to the app · no GPS in the last 20 min" : "Not signed in to the app"}"><div class="ring" style="--p:${Math.round(s.overall || 0)};--c:var(--${col(s.overall) === "grey" ? "grey" : col(s.overall)})"><span>${pct(s.overall)}</span></div><div style="flex:1"><b>${esc(d.name)}</b>${(pb => pb.b != null ? ` ${pill(`Band ${pb.b || "<1"}${pb.rate != null ? ` · ${money(pb.rate)}/h` : ""} · fortnight`, "accent")}<div class="meta">${pb.rate != null ? `Fortnight avg ${Math.round(pb.eff)}% → ${money(pb.rate)}/h${pb.note ? ` + ${esc(pb.note)}` : ""} ·` : `Band ${pb.b || "<1"} ·`} on ${money(pb.now)}/h now${(pb.diff == null ? "" : pb.diff > 0 ? ` <span class="c-ok">↑</span>` : pb.diff < 0 ? ` <span class="c-crit">↓</span>` : "")}</div>` : `<div class="meta">On ${money(pb.now)}/h now · no band yet this fortnight</div>`)(payBand(S.peopleBy[s.driver] || { id: s.driver }, wk, scoreData(), S.C))}<div class="meta">${hrs.toFixed(1)} h rostered · ${s.onTime}/${s.closed} on time</div><div class="mini">${[["Adm", s.admin], ["Eff", s.eff], ["Acc", s.acc], ["Saf", s.safe]].map(([l, v]) => `<span>${l}</span><div class="bar"><i class="bg-${col(v)}" style="width:${Math.min(100, v || 0)}%"></i></div><span class="c-${col(v)}">${pct(v)}</span>`).join("")}</div><div class="meta">${[s.missing ? `<span class="c-crit">${s.missing} missing</span>` : "", s.late ? `<span class="c-warn">${s.late} late</span>` : "", s.nMist ? `<span class="c-crit">${s.nMist} mistake${s.nMist > 1 ? "s" : ""}</span>` : ""].filter(Boolean).join(" · ") || "no issues"}</div></div></button>`; }).join("")}</div>` : `<p class="empty">No driver data for this week yet. Scores appear once SODs and EODs come in.</p>`}</div>`;
-}
-// amber note on a run's EOD: its start wasn't recorded (not the first shift of the day, no ▶ Start tap / EOD time), or the sorting minutes
-// typed on the EOD are more than 15 min off what the taps say
-function stageFlag(e, D) {
-  if (!e.row || !e.shift || !D) return ""; const i = D.segs.findIndex(x => x.shift.id === e.shift.id); const f = [];
-  if (i > 0 && !D.segs[i].sort && !e.shift.sor_at) f.push(`start of ${esc(e.shift.run)} not recorded`);
-  const tap = e.row.extra?.sort_tap, typed = e.row.sort_min; if (tap != null && typed != null && Math.abs(typed - tap) > 15) f.push(`sorting ${typed} min typed vs ${tap} min from taps`);
-  return f.length ? `<div class="meta c-warn" style="font-size:11px">⚠ ${f.join(" · ")}</div>` : "";
-}
-function postsBoard(selScores, days, t) {
-  if (days.length === 1) { const d = days[0]; const rows = selScores.filter(s => s.items.length).map(s => { const D = s.days[d]; const sod = s.items.find(i => i.kind === "SOD"); const eods = s.items.filter(i => i.kind === "EOD"); return `<tr><td class="clk" data-dayof="${s.driver}|${d}" title="Tap for ${esc(fnm(s.driver))}'s day"><b>${esc(nm(s.driver))}</b><div class="meta">${D ? `${fmtT(D.start)}–${fmtT(D.end)} · ${D.hours}h · ${D.segs.map(x => x.shift.run + (x.shift.trainee ? " (training " + fnm(x.shift.trainee) + ")" : "")).join(" · ")}` : ""}</div></td><td>${sod ? chip(sod) : ""}</td><td>${eods.map(e => `<div style="margin:2px 0"><span class="meta mono">${esc(e.code || "day")}</span> ${chip(e)}${stageFlag(e, D)}</div>`).join("")}</td></tr>`; });
-    return rows.length ? `<div class="scroll"><table class="dt"><tr><th>Driver</th><th>SOD</th><th>EOD (one per run)</th></tr>${rows.join("")}</table></div><p class="hint"><span class="c-ok">●</span> on time · <span class="c-ok" style="opacity:.6">●</span> waiting (past rostered time, inside the allowance) · <span class="c-crit">●</span> late / overdue / missing · ● due · <span class="chip exc" style="padding:0 5px;cursor:default">grey</span> = excused · outlined = set by hand</p>` : `<p class="empty">Nobody tracked is rostered on ${label(d)}.</p>`; }
-  return `<div class="scroll"><table class="dt"><tr><th>Driver</th>${days.map(d => `<th class="${d === t ? "c-accent" : ""}">${label(d).slice(0, 6)}</th>`).join("")}<th>On time</th><th>Late</th><th>Missing</th><th>Rate</th><th>Admin</th></tr>${selScores.filter(s => s.items.length).map(s => `<tr><td class="clk" data-driver="${s.driver}" title="Tap for ${esc(fnm(s.driver))}'s sheet"><b>${esc(nm(s.driver))}</b></td>${days.map(d => `<td style="white-space:nowrap">${s.items.filter(i => i.day === d).map(it => `<button class="chip ${it.st}" data-item="${esc(it.key)}" title="${esc(it.label)} · ${itemNote(it)}" style="width:14px;height:14px;padding:0;border-radius:3px;margin:1px"></button>`).join("")}</td>`).join("")}<td class="num">${s.onTime}</td><td class="num">${s.late}</td><td class="num">${s.missing}</td><td class="num">${s.closed ? Math.round(s.onTime / s.closed * 100) + "%" : "—"}</td><td class="c-${col(s.admin)}">${pct(s.admin)}</td></tr>`).join("")}</table></div><p class="hint">One square per required post · tap a square to review it</p>`;
-}
-/* ---- Breaks · who's on a break right now, and every break on the selected days (staff only) ---- */
-// Live: just who is on a break right now
-function onBreakCard() {
-  const open = (S.breaks || []).filter(b => !b.ended_at).sort((a, b) => a.started_at.localeCompare(b.started_at));
-  const runOf = b => S.shifts.find(s => s.id === b.shift_id)?.run || ""; const mins = b => Math.max(0, Math.round((Date.now() - new Date(b.started_at)) / 60000));
-  return `<div class="card ${open.length ? "warnc" : ""}" id="onbreak"><h2><i class="ico">☕</i>On break<span>${open.length ? `${open.length} now` : "nobody"}</span></h2>${open.length ? `<div class="list">${open.map(b => `<div class="item warn"><div class="row" style="justify-content:space-between"><b>${esc(nm(b.driver))}</b><span class="meta">${esc(runOf(b))} · since ${fmtTime(b.started_at)} · ${mins(b)} min</span></div></div>`).join("")}</div>` : `<p class="empty">Nobody on a break.</p>`}</div>`;
-}
-function breaksCard(days, n) {
-  const B = S.breaks || []; const dayOf = b => nzNow(new Date(b.started_at)).date; const mins = b => Math.max(0, Math.round(((b.ended_at ? new Date(b.ended_at) : new Date()) - new Date(b.started_at)) / 60000));
-  const open = B.filter(b => !b.ended_at).sort((a, b) => a.started_at.localeCompare(b.started_at));
-  const list = B.filter(b => days.includes(dayOf(b))).sort((a, b) => b.started_at.localeCompare(a.started_at));
-  const runOf = b => S.shifts.find(s => s.id === b.shift_id)?.run || "";
-  const now = open.length ? `<div class="list">${open.map(b => `<div class="item warn"><div class="row" style="justify-content:space-between"><b>☕ ${esc(nm(b.driver))}</b><span class="meta">${esc(runOf(b))} · since ${fmtTime(b.started_at)} · ${mins(b)} min</span></div></div>`).join("")}</div>` : `<p class="empty">Nobody on an unpaid break right now</p>`;
-  const tbl = list.length ? `<div class="scroll"><table class="dt"><tr><th>Driver</th><th>Date</th><th>Run</th><th>Start</th><th>End</th><th>Length</th></tr>${list.map(b => `<tr><td><b>${esc(nm(b.driver))}</b></td><td>${label(dayOf(b))}</td><td>${esc(runOf(b))}</td><td class="mono">${fmtTime(b.started_at)}</td><td class="mono">${b.ended_at ? fmtTime(b.ended_at) : `<span class="c-warn">on break</span>`}</td><td class="mono">${mins(b)} min</td></tr>`).join("")}</table></div>` : `<p class="empty">No unpaid breaks on ${days.length === 1 ? label(days[0]) : "these days"}</p>`;
-  return `<div class="card ${open.length ? "warnc" : ""}"><h2>Unpaid breaks<span>${open.length ? `${open.length} on an unpaid break now` : "nobody on a break"}</span></h2>${now}<h3 style="margin:10px 0 4px;font-size:14px">${days.length === 1 ? label(days[0]) : `${label(days[0])} – ${label(days[days.length - 1])}`}</h3>${tbl}</div>`;
-}
-
-function feed(t) {
-  const ev = [];
-  const nzDay = iso => iso ? nzNow(new Date(iso)).date : null;
-  for (const s of S.sods) { const sh = S.shifts.find(x => x.id === s.shift_id); if (sh?.day === t) ev.push({ at: s.sent_at, txt: `${nm(s.driver)} · SOD${s.van ? ` · ${s.van}` : ""}${s.note ? ` · ${s.note}` : ""}`, cls: "ok", go: { k: "item", key: itemKeyFor(sh, "SOD") || "" } }); }
-  for (const e of S.eods) { const sh = S.shifts.find(x => x.id === e.shift_id); if (sh?.day === t) ev.push({ at: e.sent_at, txt: `${nm(e.driver)} · EOD ${sh.run}${e.parcels != null ? ` · ${e.parcels} parcels` : ""}${e.stops != null ? ` · ${e.stops} stops` : ""}${e.note ? ` · ${e.note}` : ""}`, cls: "accent", go: { k: "item", key: itemKeyFor(sh, "EOD") || "" } }); }
-  for (const b of S.breaks || []) { if (nzDay(b.started_at) === t) ev.push({ at: b.started_at, txt: `${nm(b.driver)} · started an unpaid break`, cls: "", go: null }); if (nzDay(b.ended_at) === t) ev.push({ at: b.ended_at, txt: `${nm(b.driver)} · ended unpaid break (${Math.round((new Date(b.ended_at) - new Date(b.started_at)) / 60000)} min)`, cls: "", go: null }); }
-  for (const a of S.acks) if (nzDay(a.confirmed_at) === t) ev.push({ at: a.confirmed_at, txt: `${nm(a.driver)} confirmed a roster change${a.confirmed_by ? ` (by ${fnm(a.confirmed_by)})` : ""}`, cls: "ok", go: { k: "changes", d: a.driver } });
-  for (const r of S.recips) if (nzDay(r.read_at) === t) ev.push({ at: r.confirmed_at || r.read_at, txt: `${nm(r.person)} ${r.confirmed_at ? "confirmed" : "read"} a message`, cls: "", go: { k: "msg", id: r.message_id } });
-  for (const r of S.sodReqs || []) if (nzDay(r.created_at) === t) ev.push({ at: r.created_at, txt: `${nm(r.driver)} · ${r.kind === "early" ? "early" : "late"} start ${fmtT(toMin(r.started))} to sign off${r.status !== "pending" ? ` · ${r.status}` : ""}`, cls: r.status === "pending" ? "warn" : "", go: null });
-  for (const l of S.leave) if (nzDay(l.created_at) === t) ev.push({ at: l.created_at, txt: `${nm(l.driver)} asked for leave · ${label(l.date_from)}`, cls: "warn", go: { k: "leave", id: l.id } });
-  for (const a of S.alerts) if (nzDay(a.created_at) === t) ev.push({ at: a.created_at, txt: `⚠ ${a.title}`, cls: a.resolved_at ? "" : "crit", go: { k: "alert", id: a.id } });
-  for (const w of S.washes || []) if (nzDay(w.at) === t) ev.push({ at: w.at, txt: `${nm(w.driver)} · washed ${w.van}`, cls: "ok", go: null });
-  for (const c of S.vchk) if (nzDay(c.at) === t) ev.push({ at: c.at, txt: `${nm(c.driver)} · vehicle check ${c.van}`, cls: "ok", go: { k: "vchk", id: c.id } });
-  ev.sort((a, b) => b.at.localeCompare(a.at));
-  return ev.length ? `<div class="list" style="max-height:420px;overflow:auto">${ev.slice(0, 60).map(e => `<div class="item clk ${e.cls}" style="padding:6px 10px" ${e.go && (e.go.key !== "") ? `data-feed="${esc(JSON.stringify(e.go))}"` : ""} title="Tap to open"><span class="m">${fmtTime(e.at)}</span> ${esc(e.txt)}</div>`).join("")}</div><p class="hint">Tap a line to open the post, alert or check behind it.</p>` : `<p class="empty">Nothing yet today. SODs, EODs, confirmations and alerts show here as they happen.</p>`;
-}
-
-/* ---- Start-time sign-off: SODs posted more than 20 min before or after the rostered start. Approving moves that driver's
-   run times for the day by the same amount (start and end); declining leaves the roster as it was. Jeremy (owner) and admins decide,
-   and can edit the time started first (that time is then used for hours, and the run times move to match). ---- */
-const canSign = () => S.me.isOwner || S.me.role === "admin";
-const t24 = t => String(t || "").slice(0, 5);
+// roster briefs for this week (and next week from Sunday) that drivers haven't submitted
+function briefUnread() { const t = today(); const wks = [monOf(t), ...(dow(t) === 6 ? [addDays(monOf(t), 7)] : [])]; let n = 0;
+  for (const wk of wks) { const by = {}; for (const m of S.msgs.filter(m => m.kind === "brief" && m.week_start === wk).sort((a, b) => a.created_at.localeCompare(b.created_at))) for (const r of S.recips.filter(r => r.message_id === m.id)) by[r.person] = r; n += Object.values(by).filter(r => !r.confirmed_at).length; }
+  return n; }
 const minsOff = m => { const a = Math.abs(m); return a >= 60 ? `${Math.floor(a / 60)} h${a % 60 ? ` ${a % 60} min` : ""}` : `${a} min`; };
 function sodReqCard() {
   const all = S.sodReqs || []; const pend = all.filter(r => r.status === "pending"); const recent = all.filter(r => r.status !== "pending").slice(0, 8);
@@ -366,6 +312,25 @@ async function todoSheet(kind) {
       return L.length ? `<div class="list">${L.map(({ v, why }) => `<div class="item clk warn" data-van-edit="${esc(v.plate)}"><b>${esc(v.plate)}</b>${v.make ? ` <span class="meta">${esc(v.make)}</span>` : ""}<div class="meta">${esc(why.join(" · "))}</div></div>`).join("")}</div>` : none("Nothing due."); }, () => { }],
     alerts: ["Open alerts", "Tap an alert for the detail and to resolve it.", () => ad.openAlerts(true), () => ad.wireAlerts()],
   };
+  const alertList = (f, msg) => { const L = S.alerts.filter(a => !a.resolved_at && f(a)); return L.length ? `<div class="list">${L.map(alertRow).join("")}</div>` : none(msg); };
+  const brief = await import("/admin/brief.js"); const wkB = dow(t) === 6 ? addDays(monOf(t), 7) : monOf(t);
+  const wireSign = () => { $$(".todo-body [data-sreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideSodReq(b.dataset.sreq, b.dataset.ok === "1"); }); $$(".todo-body [data-xreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; decideXt(b.dataset.xreq, b.dataset.ok === "1"); }); };
+  const GROUPS = {
+    approvals: ["Approvals", [["Start times to sign off", () => (S.me.isOwner || S.me.role === "admin") ? sodReqCard() : "", wireSign], ["Hours to sign off", () => S.me.isOwner ? xtCard() : "", () => { }], ["Roster changes to approve", B.approve[2], B.approve[3]], ["Leave requests", B.leave[2], B.leave[3]]]],
+    roster: ["Roster", [["Changes not confirmed", B.unconfirmed[2], B.unconfirmed[3]], [`Roster brief · week of ${label(wkB)}`, () => Object.keys(brief.briefStatus(wkB)).length ? brief.statusList(wkB) : none("No brief sent for this week yet (Run Board → This week)."), () => brief.wireNudge(document)]]],
+    sodeod: ["SOD / EOD", [["Overdue right now", B.overdue[2], B.overdue[3]], ["Reviews", B.reviews[2], B.reviews[3]], ["Missing EOD figures", () => { const n = pendingRuns().length; return n ? `<button class="btn ghost full" id="td-pend">${n} run${n > 1 ? "s" : ""} can't be scored yet · open</button>` : none("All EOD figures in."); }, () => $("#td-pend")?.addEventListener("click", () => pendingSheet())]]],
+    addons: ["Add-ons", [["Timed tasks missed · pick-ups not in", () => alertList(a => ["timing_missed", "pickup_missing"].includes(a.kind), "Nothing missed."), () => ad.wireAlerts()]]],
+    fleet: ["Fleet & people", [["Vehicles due", B.vehicles[2], () => { }], ["Vehicle checks not done", () => alertList(a => String(a.dedupe_key || "").startsWith("vchk|"), "All checks in."), () => ad.wireAlerts()], ["Licences & DG due", B.licences[2], () => { }], ["Mistakes this week", B.mistakes[2], () => { }], ["Other alerts", () => alertList(a => !["sod_late", "eod_late", "timing_missed", "pickup_missing"].includes(a.kind) && !String(a.dedupe_key || "").startsWith("vchk|"), "None."), () => ad.wireAlerts()]]],
+  };
+  if (GROUPS[kind]) { const [title, secs] = GROUPS[kind];
+    const open = () => { const parts = secs.map(([h, html]) => { let body = ""; try { body = html() || ""; } catch (e) { body = `<p class="hint">Couldn't show this: ${esc(e?.message || e)}</p>`; } return body && !/class="empty"/.test(body.slice(0, 200)) || secs.length === 1 ? `<h4 style="margin:14px 0 4px">${esc(h)}</h4>${body}` : ""; }).filter(Boolean);
+      const { bg } = sheet(`<h3>${title}</h3><div class="todo-body">${parts.join("") || none("Nothing waiting.")}</div>`, () => { for (const [, , w] of secs) try { w(); } catch (e) { console.error(e); } }, { wide: true });
+      bg._reopen = open;
+      bg.addEventListener("click", e => { if (!e.target.closest("button:not(.x), [data-entry], [data-personof], [data-van-edit], [data-alert], [data-leaveof]")) return; let tries = 0;
+        const tick = async () => { if (!bg.isConnected || ++tries > 400) return; const all = $$(".sheet-bg"); if (all[all.length - 1] !== bg || document.activeElement?.matches("input,textarea,select")) return setTimeout(tick, 1500);
+          await loadAll(); if (!bg.isConnected) return; const top = $$(".sheet-bg"); if (top[top.length - 1] !== bg) return setTimeout(tick, 1500); bg.remove(); open(); render(); };
+        setTimeout(tick, 1500); }); };
+    return open(); }
   const b = B[kind]; if (!b) return;
   const open = () => {
     const [title, hint, html, wire] = b; let body; try { body = html(); } catch (e) { console.error(e); body = `<p class="hint">This list couldn't be shown: ${esc(e?.message || e)}</p>`; }

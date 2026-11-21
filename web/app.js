@@ -185,6 +185,41 @@ function askCard() {
   const L = askList(); if (!L.length) return "";
   return `<div class="card hot"><h2 class="c-crit">Did you do these? ${ib("ask")}<span>${L.length} asked</span></h2><div class="list">${L.map(({ s, k, name }) => `<div class="item crit"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(name)}</b><span class="meta"> · ${esc(s.run)} · ${label(s.day)}</span></span><span class="row" style="flex:0;gap:4px"><button class="btn sm" data-ans="${s.id}|${esc(k)}" data-yes="1" data-name="${esc(name)}">Yes, done</button><button class="btn sm ghost" data-ans="${s.id}|${esc(k)}" data-yes="0" data-name="${esc(name)}">No</button></span></div></div>`).join("")}</div></div>`;
 }
+/* ---------- Before your SOD: everything outstanding from an earlier day has to be sorted first ----------
+   tasks (carried over, or Jeremy asked): Upload · Done · Late · Not done  ·  missing SOD / EOD, or EOD figures missing: Edit */
+function gateItems() {
+  const t = today(); const out = []; const seen = new Set();
+  for (const x of [...askList(), ...carryOver()]) { const id = x.s.id + "|" + x.k; if (seen.has(id)) continue; seen.add(id); out.push({ type: "task", ...x }); }
+  for (const i of (S.sc?.items || [])) if (i.day < t && !i.row && !i.pre && i.shift && ["late", "miss", "over"].includes(i.st)) out.push({ type: "post", kind: i.kind, s: i.shift, day: i.day, name: `${i.kind} not sent` });
+  for (const e of (S.sc?.effDays || [])) if (e.day < t && e.pending && e.need && !String(e.need).includes("EOD")) { const r = (e.rows || []).find(r => r.eod && r.shift); if (r) out.push({ type: "figs", s: r.shift, day: e.day, name: `EOD figures missing: ${e.need}` }); }
+  return out.sort((a, b) => (a.s.day || a.day).localeCompare(b.s.day || b.day));
+}
+function gateCard() {
+  const L = gateItems(); if (!L.length) return "";
+  return `<div class="card hot" id="gate"><h2 class="c-crit">Before your SOD<span>${L.length} to sort out</span></h2><p class="meta">From an earlier day. Pick what happened for each one, then you can start your day.</p><button class="btn crit full" id="gate-open">Sort them out</button></div>`;
+}
+function gateSheet(sodShift) {
+  const L = gateItems();
+  const row = (x, i) => { const where = `<span class="meta"> · ${esc(x.s.run || "")} · ${label(x.s.day || x.day)}</span>`;
+    const btns = x.type === "task" ? `<label class="btn sm accent" style="cursor:pointer">📷 Upload<input type="file" accept="image/*" capture="environment" data-gup="${i}" hidden></label><button class="btn sm" data-gst="${i}|done">Done</button><button class="btn sm warn" data-gst="${i}|late">Late</button><button class="btn sm ghost" data-gst="${i}|miss">Not done</button>`
+      : `<button class="btn sm accent" data-gedit="${i}">Edit</button>`;
+    return `<div class="item crit"><div><b>${esc(x.name)}</b>${where}</div><div class="row" style="gap:4px;margin-top:6px;flex-wrap:wrap">${btns}</div></div>`; };
+  sheet(L.length ? `<h3>Sort these out first</h3><p class="hint"><b>Done</b> = done on the day, just not ticked · <b>Late</b> = done after the day · <b>Not done</b> = it didn't happen · <b>Upload</b> = add a photo of it. <b>Edit</b> opens the post to fill in.</p><div class="list">${L.map(row).join("")}</div>`
+    : `<h3>All sorted ✓</h3><p class="meta">Nothing left from earlier days.</p>${sodShift ? `<button class="btn full" id="g-sod">Post my SOD</button>` : ""}`, (bg, close) => {
+    const again = async msg => { toast(msg, "ok"); await loadAll(); render(); close(); gateSheet(sodShift); };
+    bg.querySelector("#g-sod")?.addEventListener("click", () => { close(); sendSod(sodShift); });
+    bg.querySelectorAll("[data-gst]").forEach(b => b.onclick = async () => { const [i, st] = b.dataset.gst.split("|"); const x = L[+i]; b.parentElement.querySelectorAll("button").forEach(z => z.disabled = true);
+      const { error } = await sb.rpc("task_resolve", { p_shift: x.s.id, p_addon: x.k, p_status: st, p_name: x.name }); if (error) { b.parentElement.querySelectorAll("button").forEach(z => z.disabled = false); return toast(error.message, "err"); }
+      again(st === "done" ? "Ticked ✓" : st === "late" ? "Recorded as done late" : "Recorded as not done"); });
+    bg.querySelectorAll("[data-gup]").forEach(inp => inp.onchange = async () => { const f = inp.files?.[0]; if (!f) return; const x = L[+inp.dataset.gup]; toast("Uploading photo…");
+      const f1 = await shrinkPhoto(f); const path = `${x.s.driver || S.me.id}/${x.s.day}/${x.s.id}-${x.k}-${Date.now()}.jpg`;
+      const { error } = await sb.storage.from("runsheets").upload(path, f1, { upsert: true, contentType: f1.type || "image/jpeg" }); if (error) return toast(`Photo didn't upload: ${error.message}`, "err");
+      const { error: e2 } = await sb.rpc("task_photo_done", { p_shift: x.s.id, p_addon: x.k, p_path: path, p_note: null }); if (e2) return toast(e2.message, "err");
+      await sb.rpc("task_resolve", { p_shift: x.s.id, p_addon: x.k, p_status: "done", p_name: x.name }); again("Photo saved ✓"); });
+    bg.querySelectorAll("[data-gedit]").forEach(b => b.onclick = () => { const x = L[+b.dataset.gedit]; close();
+      if (x.type === "post" && x.kind === "SOD") sendSod(x.s.id, true); else eodForm(x.s.id, false, x.type === "figs"); });
+  }, { wide: true });
+}
 function carryCard() {
   const L = carryOver(); if (!L.length) return "";
   return `<div class="card hot"><h2 class="c-crit">Do these first ${ib("carry")}<span>${L.length} from an earlier day</span></h2><div class="list">${L.map(({ s, k, name }) => `<div class="item crit"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(name)}</b><span class="meta"> · ${esc(s.run)} · ${label(s.day)}</span></span><button class="btn sm" data-carry="${s.id}|${esc(k)}" data-name="${esc(name)}">Done</button></div></div>`).join("")}</div></div>`;
@@ -203,8 +238,7 @@ function renderNow() {
     ${S.loadErr ? `<p class="hint" style="margin:0 0 8px;color:var(--crit)">No connection. Showing what loaded at ${fmtT(nzNow(new Date(S.loadedAt)).min)}. Trying again on its own.</p>` : ""}
     ${part("Roster brief", () => briefCard())}
     ${T ? "" : part("My scores", () => scoresCard())}
-    ${part("Did you do these", () => askCard())}
-    ${part("Do these first", () => carryCard())}
+    ${part("Before your SOD", () => gateCard())}
     ${T ? part("SOD / EOD", () => quickBar(T, n)) : ""}
     ${part("Lawrence", () => lawBar(T))}
     ${!T ? "" : dayDone ? part("Next shift", () => nextShiftCard(nextDay, n)) : part("Today", () => todayCard(T, nextDay, n))}
@@ -926,6 +960,7 @@ function wire() {
   $$("[data-ans]").forEach(b => b.onclick = async () => { const [sid, ...kk] = b.dataset.ans.split("|"); const yes = b.dataset.yes === "1"; b.parentElement.querySelectorAll("button").forEach(x => x.disabled = true);
     const { error } = await sb.rpc("task_answer", { p_shift: sid, p_addon: kk.join("|"), p_done: yes, p_name: b.dataset.name || null }); if (error) { b.parentElement.querySelectorAll("button").forEach(x => x.disabled = false); return toast(error.message, "err"); }
     toast(yes ? "Thanks · ticked off, recorded as late" : "Thanks · recorded as not done", "ok"); await loadAll(); render(); });
+  $("#gate-open")?.addEventListener("click", () => gateSheet(Object.values(S.days[today()]?.segs || []).map(x => x.shift?.id).find(Boolean) || null));
   $$("[data-carry]").forEach(b => b.onclick = async () => { const [sid, k] = b.dataset.carry.split("|"); b.disabled = true; const { error } = await sb.rpc("task_done_late", { p_shift: sid, p_addon: k, p_name: b.dataset.name || null }); if (error) { b.disabled = false; return toast(error.message, "err"); } toast("Done · recorded as late", "ok"); await loadAll(); render(); });
   $$("[data-eod]").forEach(b => b.onclick = () => eodForm(b.dataset.eod, !!b.dataset.sort));
   $$("[data-eodedit]").forEach(b => b.onclick = () => eodForm(b.dataset.eodedit, !!b.dataset.sort, true));
@@ -1087,8 +1122,7 @@ const opt = (list, val) => list.map(([v, l]) => `<option value="${esc(v)}" ${v =
 
 async function sendSod(shiftId, lateMode = false) {
   const shift = S.shifts.find(s => s.id === shiftId); const D = S.days[shift.day];
-  if (!lateMode && !S.viewAs && askList().length) { window.scrollTo(0, 0); return toast("Answer the tasks you were asked about first, then post your SOD", "err"); }
-  if (!lateMode && !S.viewAs && carryOver().length) { window.scrollTo(0, 0); return toast("Do the red tasks from an earlier day first, then post your SOD", "err"); }
+  if (!lateMode && !S.viewAs && gateItems().length) return gateSheet(shiftId);   // outstanding items from earlier days come first
   const runs = D.segs.filter(x => !x.sort).map(x => x.shift.run); const van = D.segs.map(x => x.shift.van).find(Boolean) || null;
   const runId = runs.map(r => S.C.runCodes[r] || r).join(" + ");
   if (lateMode) { // late: ask for the actual start time
