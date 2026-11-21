@@ -90,7 +90,7 @@ function vchkTodo() {
 }
 function vchkSection() {
   const L = vchkTodo();
-  return `<div class="card"><h2>Vehicle checks not done<span>${L.length || "all clear"}</span></h2><p class="hint">Monthly check due Thursday ${esc(S.C.rules.vchkTime || "17:00")}: week 1 is the fleet check (${esc(nm(S.C.rules.vchkFleet || "ST"))}, every van), week 3 goes against the driver who had the van most that week. ${HINT}</p>${allBar(L.length)}
+  return `<div class="card"><h2>Vehicle checks not done<span>${L.length || "all clear"}</span></h2><p class="hint">Monthly check due Thursday ${esc(S.C.rules.vchkTime || "17:00")}: week 1 is the fleet check (${esc(nm(S.C.rules.vchkFleet || "ST"))}, every van), week 3 goes against the driver who had the van most that week (Not done = ${esc(String(S.C.rules.vchkPenalty ?? 50))} points off their Admin score). ${HINT}</p>${allBar(L.length)}
     ${L.length ? `<div class="list">${L.map(i => `<div class="item warn"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(i.van)}</b> · ${esc(nm(i.drv))}<span class="meta"> week of ${label(i.wk)}</span></span>${btnRow(actBtns("vchk", `data-van="${esc(i.van)}" data-wk="${i.wk}" data-drv="${esc(i.drv)}"`))}</div></div>`).join("")}</div>` : `<p class="empty">✓ Nothing to fix.</p>`}</div>`;
 }
 

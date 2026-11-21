@@ -296,7 +296,9 @@ function scoreForRaw(driver, from, to, D, C) {
   const nPart = closed.filter(i => i.st === "part").length;
   const ents = D.entries.filter(e => e.driver === driver && e.day >= from && e.day <= to);
   const adj = ents.filter(e => e.admin_pts).reduce((a, e) => a + (+e.admin_pts), 0);
-  const admin = closed.length || adj ? Math.max(C.rules.adminFloor, Math.min(100, 100 - events * C.rules.perEvent - nPart * (C.rules.partEvent ?? 0) + adj)) : null;
+  // a missed monthly vehicle check (rules.vchkPenalty, 50 points) comes off after the admin floor, so it always bites
+  const hard = ents.filter(e => e.admin_pts && isVchkMiss(e) && !e.excused).reduce((a, e) => a + (+e.admin_pts), 0);
+  const admin = closed.length || adj ? Math.max(0, Math.max(C.rules.adminFloor, Math.min(100, 100 - events * C.rules.perEvent - nPart * (C.rules.partEvent ?? 0) + adj - hard)) + hard) : null;
   // accuracy
   const mist = ents.filter(e => e.kind === "mistake" && !e.excused);
   let items_ = 0, comp = 0; const accDays = [];
@@ -341,6 +343,8 @@ export const money = v => "$" + (Number.isInteger(v) ? v : v.toFixed(2));
 
 /* Vehicle checks are monthly: week 1 of the month (Monday on the 1st–7th) is the fleet check (Stu, every active van),
    week 3 (Monday on the 15th–21st) is the drivers' check (main driver / responsible person per van). Other weeks: none due. */
+export const VCHK_MISS = "Not done · Monthly vehicle check";
+export const isVchkMiss = e => String(e?.title || "").startsWith(VCHK_MISS);
 // rules.vchkWeeks: one-off changes by week start, e.g. { "2026-11-23": "drivers", "2026-12-07": null } (null = no check that week)
 let VW = {};
 export const vchkWho = wk => { if (Object.prototype.hasOwnProperty.call(VW, wk)) return VW[wk] || null; const d = +String(wk).slice(8, 10); return d <= 7 ? "fleet" : d >= 15 && d <= 21 ? "drivers" : null; };

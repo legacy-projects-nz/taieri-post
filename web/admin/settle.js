@@ -8,7 +8,7 @@
 //   hz    → data-drv                      a driver's hazard confirmations
 // An "All" bar (data-stall) applies one outcome to every item in the same box.
 import { sb, q, today, label, esc, first, toast, $$ } from "/shared/core.js";
-import { scoreFor, addName } from "/shared/score.js";
+import { scoreFor, addName, vchkWho } from "/shared/score.js";
 import { S, loadAll, render, scoreData, fn } from "/admin/admin.js";
 
 export const ACTS = [["done", "Done", ""], ["late", "Late", "ghost"], ["miss", "Not done", "ghost"], ["exc", "Excuse", "ghost"]];
@@ -35,9 +35,9 @@ export async function settle(list, act, note) {
   if (of("add").length) await adds(of("add"), act, ctx);
   for (const i of of("alert")) await settleAlert(i, act, ctx, note);
   if (of("chg").length) await changes(of("chg"), act, ctx);
-  if (of("vchk").length) await simple(of("vchk"), act, ctx, i => `vchk|${i.wk}|${i.van}`, i => `Monthly vehicle check · ${i.van} · week of ${label(i.wk)}`);
+  if (of("vchk").length) await simple(of("vchk"), act, ctx, i => `vchk|${i.wk}|${i.van}`, i => `Monthly vehicle check · ${i.van} · week of ${label(i.wk)}`, true);
   if (of("hz").length) await simple(of("hz"), act, ctx, i => `hz|${i.drv}|${today().slice(0, 7)}`, () => "Hazard confirmations in the app");
-  if (ctx.pen.length) { const { error } = await sb.from("entries").insert(ctx.pen.map(p => ({ driver: p.driver, day: p.day || today(), run: p.run || null, kind: "adjust", title: p.title, note: p.note || null, admin_pts: -perEvent(), show_driver: true, created_by: S.me.id }))); if (error) ctx.errs.push(error.message); }
+  if (ctx.pen.length) { const { error } = await sb.from("entries").insert(ctx.pen.map(p => ({ driver: p.driver, day: p.day || today(), run: p.run || null, kind: "adjust", title: p.title, note: p.note || null, admin_pts: -(p.pts ?? perEvent()), show_driver: true, created_by: S.me.id }))); if (error) ctx.errs.push(error.message); }
   if (ctx.resolve.size) { const { error } = await sb.from("alerts").update({ resolved_at: now(), resolved_by: S.me.id }).in("id", [...ctx.resolve]); if (error) ctx.errs.push(error.message); }
   if (ctx.late.length) emailLate(ctx.late);
   if (ctx.errs.length) toast(ctx.errs[0], "err");
@@ -91,9 +91,11 @@ async function changes(list, act, ctx) {
     for (const a of openAlerts(a => a.kind === "change_unconfirmed" && a.driver === i.drv)) ctx.resolve.add(a.id); }
 }
 /* Things with no record of their own to change (vehicle check, hazard confirmations): the outcome is kept as a mark */
-async function simple(list, act, ctx, keyOf, whatOf) {
+async function simple(list, act, ctx, keyOf, whatOf, vchk = false) {
   await mark(list.map(i => ({ key: keyOf(i), driver: i.drv || null, status: MARK[act], note: `${whatOf(i)} · ${ACT_T[act]}`, ...base() })), ctx);
-  for (const i of list) if (i.drv) { if (act === "late" || act === "miss") ctx.pen.push({ driver: i.drv, day: i.wk, title: `${act === "late" ? "Late" : "Not done"} · ${whatOf(i)}` }); if (act === "late") ctx.late.push({ driver: i.drv, what: whatOf(i) }); }
+  for (const i of list) if (i.drv) { if (vchk && vchkWho(i.wk) !== "drivers") continue;   // fleet check (Stu): no driver score
+    // vehicle check not done by the driver: rules.vchkPenalty (50) points off Admin, after the floor
+    if (act === "late" || act === "miss") ctx.pen.push({ driver: i.drv, day: i.wk, title: `${act === "late" ? "Late" : "Not done"} · ${whatOf(i)}`, pts: vchk && act === "miss" ? +(S.C?.rules?.vchkPenalty ?? 50) : null }); if (act === "late") ctx.late.push({ driver: i.drv, what: whatOf(i) }); }
 }
 /** Marked late: one polite email per driver asking for it to be done on time tomorrow */
 async function emailLate(list) {
