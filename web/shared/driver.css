@@ -121,6 +121,8 @@ hr.gl{display:none}
 .folds{display:flex;flex-direction:column;gap:10px}
 .folds .pair{display:contents}
 .card.fold{transition:padding .15s ease}
+/* every folding box gets the grey left edge Next shift has; boxes with their own colour (red, amber, blue) keep it */
+.fold{border:1px solid var(--line);border-left:7px solid var(--grey)}
 .card.fold>h2{cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;justify-content:flex-start;align-items:center;min-height:28px;white-space:nowrap}
 .card.fold>h2>span{margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .card.fold>h2:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:8px}
