@@ -110,12 +110,13 @@ function hzSection() {
     ${L.length ? `<div class="list">${L.map(r => `<div class="item warn"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(r.d.name)}</b><span class="meta"> ${r.left} of ${r.n} not confirmed</span></span>${btnRow(actBtns("hz", `data-drv="${esc(r.d.id)}"`))}</div></div>`).join("")}</div>` : `<p class="empty">✓ Nothing to fix.</p>`}</div>`;
 }
 
-const SECTIONS = [["SOD / EOD", postSection], ["Add-ons", addSection], ["Roster changes", chgSection], ["Vehicle checks", vchkSection], ["Hazards", hzSection], ["Alerts", openAlerts]];
+// SOD / EOD, roster changes, alerts and reviews live inside the To do pop-ups, so only these show as (collapsed) rows below it
+const SECTIONS = [["Add-ons", addSection], ["Vehicle checks", vchkSection], ["Hazards", hzSection]];
 export function fixCount() { try { return todo().filter(i => i.st === "miss" || i.st === "part").length + addTodo().length + chgTodo().length + vchkTodo().length; } catch { return 0; } }
 
 export function fixTab() {
   return `${adminTop()}${weekBar(`<label class="chk ${both ? "on" : ""}"><input type="checkbox" id="fx-both" ${both ? "checked" : ""}>include last week</label>`)}
-    ${SECTIONS.map(([name, f]) => { try { return f(); } catch (e) { console.error(name, e); return `<div class="card"><h2>${name}</h2><p class="hint">This box couldn't be shown: ${esc(e?.message || e)}</p></div>`; } }).join("")}${scoreAdmin()}`;
+    ${SECTIONS.map(([name, f]) => { try { return f(); } catch (e) { console.error(name, e); return `<div class="card"><h2>${name}</h2><p class="hint">This box couldn't be shown: ${esc(e?.message || e)}</p></div>`; } }).join("")}`;
 }
 
 function findItem(key) {
