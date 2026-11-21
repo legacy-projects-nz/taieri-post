@@ -257,7 +257,6 @@ function renderNow() {
     ${pair(part("To fix", () => toFixCard(n)), part("Notes from Jeremy", () => fromJeremy()))}
     ${rbBtn()}
     ${part("This week's notes", () => notesBtn())}
-    ${part("Passwords & logins", () => accessCard())}
     ${part("More", () => moreCard(t))}
     </div>
     <p class="foot">Signed in as ${esc((S.viewer || S.me).email || "")}</p>
@@ -930,9 +929,9 @@ function editAccess() {
     bg.querySelector("#acf").addEventListener("submit", async e => { e.preventDefault(); const body = bg.querySelector("#ac-body").value; const { error } = await sb.from("access_info").upsert({ id: 1, body, updated_at: new Date().toISOString(), updated_by: S.viewer.id }); if (error) return toast(error.message, "err"); S.access = { body }; close(); toast("Saved", "ok"); render(); });
   });
 }
-function moreCard(t) {   // More (last on the page): the buttons, then Calendar, Leave and My details (at the bottom)
+function moreCard(t) {   // More (last on the page): the buttons, then Passwords & logins, Calendar, Leave and My details (at the bottom)
   const vault = S.set.links?.vault;
-  return `<div class="card" id="more"><h2>More</h2>${part("Calendar", () => calendarCard(t))}${part("Leave", () => leaveCard())}${part("My details", () => detailsCard())}<div class="row">
+  return `<div class="card" id="more"><h2>More</h2>${part("Passwords & logins", () => accessCard())}${part("Calendar", () => calendarCard(t))}${part("Leave", () => leaveCard())}${part("My details", () => detailsCard())}<div class="row">
     ${vault ? `<a class="btn ghost" href="${esc(vault)}" target="_blank" rel="noopener">🔐 Vault (Damstra)</a>` : ""}
     <button class="btn ghost" id="push-btn">🔔 Notifications: <span id="push-state">…</span></button>
     <button class="btn ghost" id="vchk-btn">🚐 Weekly vehicle check</button>
