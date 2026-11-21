@@ -213,3 +213,4 @@ function shiftSheet(drv, day) {
       if (error) { b.disabled = false; return toast(error.message, "err"); } toast("Shift deleted", "ok"); close(); await loadAll(); render(); });
   });
 }
+export function fixCount() { try { return todo().filter(i => i.st === "miss" || i.st === "part").length + addTodo().length + chgTodo().length + vchkTodo().length; } catch { return 0; } }
