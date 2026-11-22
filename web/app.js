@@ -422,9 +422,15 @@ async function endBreak() { const { error } = await sb.rpc("break_end"); if (err
 
 /* ---------- Roster changes ---------- */
 function linePast(item, n) {
-  if (item.day < n.date) return true; if (item.day > n.date) return false;
-  const en = toMin(item.after?.end_at) ?? toMin(item.before?.end_at) ?? (() => { const w = S.runsBy[item.run]?.windows?.[dayName(item.day)]; return w ? toMin(w[0][1]) : null; })();
-  return en != null ? n.min >= en : false;   // today's change stays until the shift is over, so one sent after the run started can still be confirmed
+  // today's changes stay up all day until confirmed, even when the shift is already over (a change sent after the shift ended could never be confirmed before)
+  return item.day < n.date;
+}
+// a shift or van change for this driver's day that went out after their rostered start: the SOD is due from when it was sent, not from the old start
+function chgStart(D) {
+  let m = null;
+  for (const i of S.changes || []) { if (i.day !== D.day || !needsConfirm(i) || !i.roster_changes?.sent_at) continue;
+    const n = nzNow(new Date(i.roster_changes.sent_at)); if (n.date === D.day && n.min > D.start - 30 && (m == null || n.min > m)) m = n.min; }
+  return m == null ? null : Math.max(m, D.start);
 }
 function rosterChanges(n) {
   const ackBy = Object.fromEntries(S.acks.map(a => [a.item_id, a]));
@@ -1184,11 +1190,18 @@ async function sendSod(shiftId, lateMode = false) {
     sheet(`<h3>Post your SOD for ${label(shift.day)}</h3>
       <label class="f">When did you start?<input class="in" type="time" id="st" value="${fmt24s(D.start)}"></label><label class="f">Van<select class="in" id="van">${opt([["", "—"], ...Object.keys(S.vans).map(p => [p, p])], van)}</select></label><label class="f">Note (optional)<input class="in" id="note" placeholder="e.g. forgot to post"></label><button class="btn" id="go">Send SOD</button>`, (bg, close) => {
       bg.querySelector("#go").onclick = async () => { const t = bg.querySelector("#st").value; const note = bg.querySelector("#note").value || null; const { error } = await sb.from("sod").insert({ shift_id: shiftId, driver: S.me.id, van: bg.querySelector("#van").value || null, run_id: runId, note, sent_at: nzToIso(shift.day, t) }); if (error) return toast(error.message, "err");
-        const off = toMin(t) - D.start; if (Math.abs(off) > reqMins()) await sendSodReq(shiftId, D, toMin(t), note);
+        const cs = chgStart(D); const off0 = toMin(t) - D.start; const off = cs != null && off0 > 0 ? toMin(t) - cs : off0;   // roster changed after the start: judged from when the change went out
+        if (Math.abs(off) > reqMins()) await sendSodReq(shiftId, D, toMin(t), note);
         close(); toast(Math.abs(off) > reqMins() ? "SOD sent · start time sent to Jeremy to sign off" : "SOD sent", "ok"); await loadAll(); render(); };
     }); return;
   }
   const now = nzNow().min; const off = shift.day === nzNow().date ? now - D.start : 0;
+  // roster changed after the start: late against the old time isn't the driver's fault, so judge it from when the change was sent
+  const cs = shift.day === nzNow().date ? chgStart(D) : null; const offC = cs != null && off > 0 ? now - cs : off;
+  if (cs != null && off > 0 && offC <= reqMins()) {
+    const { error } = await sb.from("sod").insert({ shift_id: shiftId, driver: S.me.id, van, run_id: runId, note: `Roster changed ${fmtT(cs)}` }); if (error) return toast(error.message, "err");
+    toast(`SOD sent ${fmtT(now)} ✓`, "ok"); await loadAll(); render(); return;
+  }
   if (Math.abs(off) > reqMins()) {   // more than 20 min early or late: the SOD still goes in, plus a sign-off request to Jeremy
     const early = off < 0; const mins = Math.abs(off);
     sheet(`<h3>${early ? "Starting early" : "Starting late"}</h3><p class="hint"><b>${minsTxt(mins)} ${early ? "early" : "late"}</b> (rostered ${fmtT(D.start)}). Jeremy signs it off.</p>

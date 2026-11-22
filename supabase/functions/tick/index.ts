@@ -15,7 +15,7 @@ Deno.serve(async (req) => {
   const [{ data: runs }, { data: people }, { data: shifts }, { data: rules }, { data: addons }, { data: open }, { data: items }, { data: acks }] = await Promise.all([
     sb.from("runs").select("*"), sb.from("people").select("*"), sb.from("shifts").select("*").gte("day", addDays(t, -6)).lte("day", addDays(t, 1)),
     sb.from("timing_rules").select("*").eq("active", true), sb.from("addons").select("*"), sb.from("alerts").select("*").is("resolved_at", null),
-    sb.from("roster_change_items").select("*, roster_changes!inner(status)").eq("roster_changes.status", "sent").gte("day", t).lte("day", addDays(t, 1)), sb.from("change_acks").select("*"),
+    sb.from("roster_change_items").select("*, roster_changes!inner(status, sent_at)").eq("roster_changes.status", "sent").gte("day", t).lte("day", addDays(t, 1)), sb.from("change_acks").select("*"),
   ]);
   const runsBy = Object.fromEntries((runs || []).map(r => [r.code, r])); const ppl = Object.fromEntries((people || []).map(p => [p.id, p]));
   const todays = (shifts || []).filter(s => s.day === t && s.driver && s.run !== "BU");
@@ -28,6 +28,7 @@ Deno.serve(async (req) => {
   const win = (s: any) => { const w = runsBy[s.run]?.windows?.[["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][dow(s.day)]]; return { st: toMin(s.start_at) ?? (w ? toMin(w[0][0]) : null), en: toMin(s.end_at) ?? (w ? toMin(w[0][1]) : null) }; };
   const isSort = (c: string) => /^SUP/.test(c);
   const alertsOpen = open || []; const newAlerts: any[] = []; const resolve: string[] = [];
+  const excuse: any[] = [];
   const raise = (a: any) => { if (alertsOpen.some(x => x.dedupe_key === a.dedupe_key)) return; newAlerts.push(a); };
   const inWindow = now.min >= (toMin(rem.from) ?? 420) && now.min <= (toMin(rem.to) ?? 1200);
 
@@ -45,7 +46,14 @@ Deno.serve(async (req) => {
     const start = Math.min(...segs.map(x => x.st!)); const end = Math.max(...segs.map(x => x.en ?? x.st!));
     const sod = segs.map(x => sodBy[x.s.id]).find(Boolean); const name = first(ppl[drv]?.name);
     const key = `sod_late|${t}|${drv}`;
-    if (!sod && now.min > start + R.sodGrace && now.min < end + R.eodHours * 60) raise({ kind: "sod_late", driver: drv, shift_id: segs[0].s.id, title: `${name}: no SOD yet`, body: `Rostered ${fmtT(start)} (${segs.filter(x => !x.sort).map(x => x.s.run).join(", ") || "sort"}) · due by ${fmtT(start + R.sodGrace)}`, dedupe_key: key, _push: { to: [drv], title: "Your SOD is due", body: `Tap Start of day in the app. It was due by ${fmtT(start + R.sodGrace)}.` }, _email: "sod" });
+    // a shift/van change for this driver's day sent after their start: the SOD is due from when the change went out, and a late SOD is excused
+    let chg: number | null = null;
+    for (const i of (items || [])) { if (i.day !== t || !(i.affects || []).includes(drv) || !needsConfirm(i) || !i.roster_changes?.sent_at) continue;
+      const n = nz(new Date(i.roster_changes.sent_at)); if (n.date === t && n.min > start - 30 && (chg == null || n.min > chg)) chg = n.min; }
+    const sodFrom = chg == null ? start : Math.max(start, chg);
+    if (!sod && chg != null && now.min <= sodFrom + R.sodGrace) for (const a of alertsOpen) if (a.dedupe_key === key) resolve.push(a.id);
+    if (sod && chg != null && nz(new Date(sod.sent_at)).min > start + R.sodGrace) excuse.push({ key: `${t}|${drv}|day|SOD`, driver: drv, status: "exc", note: `Roster changed after the start (sent ${fmtT(chg)})` });
+    if (!sod && now.min > sodFrom + R.sodGrace && now.min < end + R.eodHours * 60) raise({ kind: "sod_late", driver: drv, shift_id: segs[0].s.id, title: `${name}: no SOD yet`, body: `Rostered ${fmtT(start)} (${segs.filter(x => !x.sort).map(x => x.s.run).join(", ") || "sort"}) · due by ${fmtT(sodFrom + R.sodGrace)}${chg != null ? " (roster changed)" : ""}`, dedupe_key: key, _push: { to: [drv], title: "Your SOD is due", body: `Tap Start of day in the app. It was due by ${fmtT(sodFrom + R.sodGrace)}.` }, _email: "sod" });
     if (sod) for (const a of alertsOpen) if (a.dedupe_key === key) resolve.push(a.id);
     const runSegs = segs.filter(x => !x.sort);
     for (const x of segs.filter(s => !s.sort || (s.s.addons || []).length)) { const due = (x.en ?? x.st!) + R.eodHours * 60; const k = `eod_late|${t}|${drv}|${x.s.run}`; const e = eodBy[x.s.id];
@@ -132,6 +140,7 @@ Deno.serve(async (req) => {
     if (_email && rem.enabled && inWindow) { const p = ppl[row.driver]; if (p?.email) { const what = _email === "sod" ? "SOD" : _email === "eod" ? `EOD for ${row.title.split(" for ")[1]?.split(" ")[0] || "your run"}` : (_rule?.name || "a timed task");
       await sendEmail(sec, set, p.email, `[TP SYSTEM EMAIL] Heads up: ${what} is overdue`, wrap(`<p>Hi ${esc(first(p.name))},</p><p>Quick one from the driver system (automatic, so nobody is chasing you personally).</p><p><b>${esc(row.title.replace(/^[^:]+: /, ""))}</b> — ${esc(row.body || "")}.</p><p>${_email === "timing" ? "If it's done, tap <b>Done</b> in the app. Otherwise let Jeremy know what's happening." : "If you can, pop it in now from the app: one tap for the SOD, or the EOD form for your run."}</p><p>Why it matters: every late or missing post counts against your Admin score. A post on time keeps you at 100%.</p><p>Thanks for keeping things tidy, it makes a real difference. 🙌</p>`), rem.cc || undefined); } }
   }
+  if (excuse.length) await sb.from("marks").upsert(excuse, { onConflict: "key", ignoreDuplicates: true });   // never overrides a mark Jeremy already set
   if (resolve.length) await sb.from("alerts").update({ resolved_at: new Date().toISOString() }).in("id", [...new Set(resolve)]);
   return json({ ok: true, at: now.hhmm, raised: out, resolved: resolve.length });
 });
