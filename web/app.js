@@ -109,7 +109,7 @@ async function viewAs() {
     const p = await q(sb.from("people").select("*").eq("id", id).maybeSingle());
     if (p) { S.viewAs = p; S.me = { ...p, isOwner: false, isStaff: false, can: () => false }; }
   }
-  S.drivers = S.viewer.isStaff ? await q(sb.from("people").select("id,name,role").eq("active", true).eq("cleared", false).in("role", ["driver", "owner"]).order("name")) : [];
+  S.drivers = S.viewer.isStaff ? await q(sb.from("people").select("id,name,role").eq("active", true).eq("cleared", false).in("role", S.viewer.isOwner ? ["driver", "owner", "admin"] : ["driver", "owner"]).order("name")) : [];   // the owner can also open office staff's (Stu, Alejandro) app
   S.login = {}; if (S.viewer.isStaff) { const { data: ls } = await sb.rpc("login_status"); for (const l of ls || []) S.login[l.person_id] = l; }
   await loadGps();
 }
