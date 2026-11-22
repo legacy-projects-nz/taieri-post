@@ -120,7 +120,9 @@ async function loadReadOnly() {
   setAddonNames(addons); S.C = cfg(set); S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vansBy = Object.fromEntries(vans.map(v => [v.plate, v])); S.peopleBy = Object.fromEntries(people.map(p => [p.id, p]));
   S.drivers = people.filter(p => p.active); S.sodBy = Object.fromEntries(S.sods.map(x => [x.shift_id, x])); S.eodBy = {};
 }
-const MENU_TABS = ["classic", "records", "timings", "formulas", "reports", "routes", "pickups", "messages", "allowances", "hazards", "leave", "fleet", "timing", "people", "pay"];
+const MENU_ALL = ["classic", "records", "timings", "formulas", "reports", "routes", "pickups", "messages", "allowances", "hazards", "leave", "fleet", "timing", "people", "pay"];
+/* staff with only a few pages (e.g. Stu: Fleet, Messages, Routes) get them all on the bar, nothing hidden behind ☰ */
+const menuTabs = () => { const mine = S.ro ? [] : TABS.filter(([, , a]) => a === "owner" ? !!S.me?.isOwner : S.me?.can?.(a)); return mine.length <= 5 ? [] : MENU_ALL; };
 /* collapsible boxes: every box can be collapsed by tapping its heading. A box with something in it starts open; an empty one starts collapsed. */
 S.open ??= {};
 function folds() {
@@ -142,21 +144,22 @@ function folds() {
 export function render(soft = false) {
   if (soft && (document.activeElement?.matches("input,textarea,select") || $(".sheet-bg"))) return;
   const n = nzNow(); const tabs = S.ro ? [["runboard", "Run Board"]] : TABS.filter(([, , a]) => a === "owner" ? !!S.me.isOwner : S.me.can(a));
-  if (!tabs.some(([k]) => k === S.tab)) S.tab = tabs[0][0];
+  if (!S.me.can("scorecard") && tabs.some(([k]) => k === "fleet")) tabs.sort((a, b) => (b[0] === "fleet") - (a[0] === "fleet"));   // fleet staff: Fleet is their first page
+  if (!tabs.some(([k]) => k === S.tab)) S.tab = (tabs.find(([k]) => k === "fleet") || tabs[0])[0];   // no Live tab (fleet staff): land on Fleet
   const badge = { hazards: hazardBadge(), live: 0, leave: S.leave.filter(l => l.status === "pending").length, runboard: S.items.filter(i => i.roster_changes.status === "awaiting_approval").length, fix: (S.me.can("scorecard") ? fixCount() : 0) + (S.me.isOwner || S.me.role === "admin" ? (S.sodReqs || []).filter(r => r.status === "pending").length : 0) + (S.me.isOwner ? (S.extra || []).filter(r => r.status === "pending").length : 0), alerts: S.alerts.filter(a => !a.resolved_at).length };
   app.innerHTML = `<div class="wrap">
     <div class="top"><div><div class="brand">${S.ro ? `Taieri Post · view only · <a href="/" style="color:inherit">back to my app</a>` : "Taieri Ops"}</div><h1>${({ live: "Live board", runboard: "Run Board", classic: "Run Board (classic)", scorecard: "Driver Scorecard", fix: "Admin", income: "Income & costs", formulas: "Run formulas", reports: "Reports", records: "Records", timings: "Alerts & timings", routes: "Routes", allowances: "Back-up & on-call allowances", pickups: "Pick-ups to invoice", hazards: "Hazard register", alerts: "Alerts & timings", messages: "Messages", leave: "Leave", fleet: "Fleet", timing: "Timing rules", people: "People & settings", pay: "Penalties & pay" })[S.tab]}</h1></div>
       <div class="upd">${S.me.can("scorecard") ? `<span class="row" style="gap:6px;justify-content:flex-end;flex-wrap:nowrap;margin-bottom:6px"><a class="btn ghost sm" href="/" style="flex:0 0 auto;text-decoration:none">Driver portals</a>${S.me.isOwner ? `<button class="btn ghost sm" id="view-staff" style="flex:0 0 auto">Staff portals</button>` : ""}<button class="btn ghost sm" id="quick-err" style="flex:0 0 auto">+ Record</button></span>` : ""}<span class="dot live"></span>live · ${fmtT(n.min)}<br>${esc(first(S.me.name))} · <button class="linkbtn" id="signout">sign out</button></div></div>
     ${S.viewingAs ? `<div class="card" style="border:2px solid var(--accent);background:var(--accent-fill);padding:8px 12px"><div class="row" style="justify-content:space-between;align-items:center"><span><b>Viewing as ${esc(S.viewingAs.name)}</b><span class="meta"> · their tabs and permissions · anything you do is done as you</span></span><a class="btn sm" href="/admin/" style="flex:0 0 auto;text-decoration:none">Exit</a></div></div>` : ""}
-    <nav class="nav">${tabs.filter(([k]) => !MENU_TABS.includes(k)).map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? "on" : ""}">${l}${badge[k] ? `<span class="b ${k === "runboard" ? "warn" : ""}">${badge[k]}</span>` : ""}</button>`).join("")}${tabs.some(([k]) => MENU_TABS.includes(k)) ? `<button id="nav-menu" class="${MENU_TABS.includes(S.tab) ? "on" : ""}" aria-label="More pages" title="More">☰${MENU_TABS.includes(S.tab) ? ` ${tabs.find(([k]) => k === S.tab)?.[1] || ""}` : ""}${(c => c ? `<span class="b">${c}</span>` : "")(tabs.filter(([k]) => MENU_TABS.includes(k)).reduce((x, [k]) => x + (+badge[k] || 0), 0))}</button>` : ""}</nav>
+    <nav class="nav">${tabs.filter(([k]) => !menuTabs().includes(k)).map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? "on" : ""}">${l}${badge[k] ? `<span class="b ${k === "runboard" ? "warn" : ""}">${badge[k]}</span>` : ""}</button>`).join("")}${tabs.some(([k]) => menuTabs().includes(k)) ? `<button id="nav-menu" class="${menuTabs().includes(S.tab) ? "on" : ""}" aria-label="More pages" title="More">☰${menuTabs().includes(S.tab) ? ` ${tabs.find(([k]) => k === S.tab)?.[1] || ""}` : ""}${(c => c ? `<span class="b">${c}</span>` : "")(tabs.filter(([k]) => menuTabs().includes(k)).reduce((x, [k]) => x + (+badge[k] || 0), 0))}</button>` : ""}</nav>
     <div id="view">${(() => { try { return ({ live: liveTab2, runboard: runBoardTab, classic: classicTab, scorecard: scorecardTab, formulas: formulasTab, reports: reportsTab, records: recordsTab, timings: alertsTab, fix: fixTab, income: incomeTab, routes: routesTab, allowances: allowancesTab, pickups: pickupsTab, hazards: hazardsTab, alerts: alertsTab, messages: messagesTab, leave: leaveTab, fleet: fleetTab, timing: timingTab, people: peopleTab, pay: payTab })[S.tab](); } catch (e) { reportError("view:" + S.tab, e); return `<div class="card"><h2>This page hit a problem</h2><p class="hint">It couldn't be shown just now and the error has been logged. The other tabs still work.</p><button class="btn ghost sm" onclick="location.reload()">Reload</button></div>`; } })()}</div>
     <p class="foot">Safe. Sharp. Swift. · <a href="/">driver portal</a></p></div>`;
   $("#signout").onclick = signOut;
   $("#quick-err")?.addEventListener("click", () => errorCard());
-  $("#view-staff")?.addEventListener("click", () => { const L = S.people.filter(p => p.active && p.role === "admin");   // office staff: their owner portal (as they see it) and their driver app
-    sheet(`<h3>Staff portals</h3>${L.length ? `<div class="list">${L.map(p => `<div class="item"><div class="row" style="justify-content:space-between;align-items:center"><b>${esc(p.name)}</b><span class="row" style="flex:0 0 auto;gap:6px"><a class="btn sm" href="/admin/?as=${esc(p.id)}" style="text-decoration:none">Owner portal</a><a class="btn ghost sm" href="/#as=${esc(p.id)}" style="text-decoration:none">Driver app</a></span></div><div class="meta">${esc((p.perms || []).join(" · ") || "no permissions")}</div></div>`).join("")}</div>` : `<p class="empty">No office staff.</p>`}`); });
+  $("#view-staff")?.addEventListener("click", () => { const L = S.people.filter(p => p.active && p.role === "admin");   // office staff (not drivers): the portal as they see it
+    sheet(`<h3>Staff portals</h3><p class="meta">Opens the portal with only the pages that person has. Anything you change there is done as you.</p>${L.length ? `<div class="list">${L.map(p => `<div class="item"><div class="row" style="justify-content:space-between;align-items:center"><b>${esc(p.name)}</b><a class="btn sm" href="/admin/?as=${esc(p.id)}" style="flex:0 0 auto;text-decoration:none">Open</a></div><div class="meta">${esc((p.perms || []).map(a => AREA_LABEL[a] || a).join(" · ") || "no areas")}</div></div>`).join("")}</div>` : `<p class="empty">No office staff.</p>`}`); });
   $$("[data-tab]").forEach(b => b.onclick = () => { S.tab = b.dataset.tab; location.hash = S.tab; render(); });
-  $("#nav-menu")?.addEventListener("click", () => { const list = tabs.filter(([k]) => MENU_TABS.includes(k));
+  $("#nav-menu")?.addEventListener("click", () => { const list = tabs.filter(([k]) => menuTabs().includes(k));
     sheet(`<h3>More</h3><div class="list">${list.map(([k, l]) => `<button class="btn ${S.tab === k ? "" : "ghost"} full" data-menutab="${k}" style="justify-content:flex-start">${l}${badge[k] ? ` <span class="pill warn" style="margin-left:6px">${badge[k]}</span>` : ""}</button>`).join("")}</div>`, bg => {
       bg.querySelectorAll("[data-menutab]").forEach(b => b.onclick = () => { closeSheets(); S.tab = b.dataset.menutab; location.hash = S.tab; render(); }); }); });
   // classic Run Board in its own full-size browser window (falls back to a new tab if pop-ups are blocked)
@@ -344,13 +347,31 @@ function wireLeave() {
 function fleetTab() {
   const wk = monOf(today()); const R = S.C.rules;
   const st = d => { if (!d) return pill("not set", "grey"); const n = Math.round((new Date(d) - new Date(today())) / 86400000); return n < 0 ? pill("overdue", "crit") : n <= R.dueSoonDays ? pill(`due in ${n}d`, "warn") : pill("✓", "ok"); };
-  return `<div class="card"><h2>WOF, rego and RUCs<span>due soon = within ${R.dueSoonDays} days or under ${R.rucSoonKm} km</span></h2><div class="scroll"><table class="dt"><tr><th>Van</th><th>Model</th><th>WOF</th><th>Rego</th><th>RUCs</th><th>Odometer</th><th>Last washed</th><th>Responsible</th><th></th></tr>
+  return `${fleetAttn()}<div class="card"><h2>WOF, rego and RUCs<span>due soon = within ${R.dueSoonDays} days or under ${R.rucSoonKm} km</span></h2><div class="scroll"><table class="dt"><tr><th>Van</th><th>Model</th><th>WOF</th><th>Rego</th><th>RUCs</th><th>Odometer</th><th>Last washed</th><th>Responsible</th><th></th></tr>
     ${S.vans.filter(v => v.plate !== "OTHER").map(v => { const chk = S.vchk.filter(c => c.van === v.plate).sort((a, b) => b.at.localeCompare(a.at))[0]; const odo = chk?.odometer && (!v.odometer_at || chk.at.slice(0, 10) >= v.odometer_at) ? chk.odometer : v.odometer; const left = v.ruc_paid_to && odo ? v.ruc_paid_to - odo : null;
       return `<tr class="clk" data-vanof="${esc(v.plate)}"><td><b class="mono">${esc(v.plate)}</b>${v.active ? "" : pill("inactive", "grey")}</td><td>${esc(v.model || "")}</td><td>${v.wof_due ? label(v.wof_due, true) : ""} ${v.wof_failed ? pill("failed", "crit") : st(v.wof_due)}</td><td>${v.rego_due ? label(v.rego_due, true) : ""} ${st(v.rego_due)}</td>
         <td>${v.no_ruc ? "petrol, no RUCs" : v.ruc_paid_to ? `paid to ${v.ruc_paid_to.toLocaleString()} km${left != null ? `<br>${left.toLocaleString()} km left ${left <= 0 ? pill("overdue", "crit") : left <= R.rucSoonKm ? pill("low", "warn") : pill("✓", "ok")}` : ""}` : pill("not set", "grey")}</td>
         <td>${odo ? `${odo.toLocaleString()} km` : "—"}${chk?.odometer ? `<div class="meta">check ${label(chk.at.slice(0, 10))}</div>` : ""}</td><td>${(w => w ? `${label(nzNow(new Date(w.at)).date)} ${(d => d > 21 ? pill(d + "d ago", "crit") : d > 14 ? pill(d + "d ago", "warn") : "")(Math.round((Date.now() - Date.parse(w.at)) / 86400e3))}<div class="meta">${esc(fnm(w.driver))}</div>` : pill("none recorded", "grey"))((S.washes || []).find(x => x.van === v.plate))}</td><td>${v.responsible ? esc(nm(v.responsible)) : "<span class='meta'>main driver</span>"}</td><td><button class="btn ghost sm" data-van-edit="${v.plate}">Edit</button></td></tr>`; }).join("")}</table></div>
     <p class="hint">Tap a van for its history: checks, odometer, who's had it and what's due.</p><button class="btn ghost sm" id="van-add">+ Add a van</button></div>
     ${vchkCard()}`;
+}
+/* Fleet › Needs attention: what the person on maintenance has to act on. Vans with WOF / rego / RUCs due, vehicle-check alerts still open
+   (Done just clears the alert, nothing goes against a driver) and, in a fleet-check week, the vans still to check. */
+function fleetAttn() {
+  const t = today(); const R = S.C.rules; const wk = monOf(t); const can = S.me.can("fleet") || S.me.isOwner;
+  const dueIn = d => d ? Math.round((new Date(d) - new Date(t)) / 86400000) : null; const soon = d => { const n = dueIn(d); return n != null && n <= R.dueSoonDays; };
+  const txt = (what, d) => { const n = dueIn(d); return `${what} ${n < 0 ? `overdue ${-n}d` : n === 0 ? "due today" : `due in ${n}d`}`; };
+  const vans = S.vans.filter(v => v.active && v.plate !== "OTHER");
+  const due = vans.map(v => { const chk = S.vchk.filter(c => c.van === v.plate).sort((a, b) => b.at.localeCompare(a.at))[0]; const odo = chk?.odometer && (!v.odometer_at || chk.at.slice(0, 10) >= v.odometer_at) ? chk.odometer : v.odometer;
+    const bad = [dueIn(v.wof_due), dueIn(v.rego_due)].some(n => n != null && n < 0) || v.wof_failed || (!v.no_ruc && v.ruc_paid_to && odo && v.ruc_paid_to - odo <= 0);
+    return { v, bad, why: [v.wof_failed ? "WOF failed" : "", soon(v.wof_due) ? txt("WOF", v.wof_due) : "", soon(v.rego_due) ? txt("Rego", v.rego_due) : "", !v.no_ruc && v.ruc_paid_to && odo && v.ruc_paid_to - odo <= R.rucSoonKm ? `RUCs ${Math.max(0, v.ruc_paid_to - odo).toLocaleString()} km left` : ""].filter(Boolean) }; }).filter(x => x.why.length);
+  const al = S.alerts.filter(a => !a.resolved_at && String(a.dedupe_key || "").startsWith("vchk|"));
+  const todo = vchkWho(wk) === "fleet" ? vans.filter(v => !S.vchk.some(c => c.van === v.plate && c.week_start === wk)) : [];
+  const n = due.length + al.length + todo.length;
+  return `<div class="card ${n ? "hot" : ""}" id="fleet-attn"><h2>Needs attention<span>${n || "all clear"}</span></h2>${n ? `<div class="list">
+    ${due.map(({ v, bad, why }) => `<div class="item ${bad ? "crit" : "warn"}"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span class="clk" data-vanof="${esc(v.plate)}"><b class="mono">${esc(v.plate)}</b> · ${esc(why.join(" · "))}</span>${can ? `<button class="btn sm" data-van-edit="${esc(v.plate)}" style="flex:0 0 auto">Update</button>` : ""}</div></div>`).join("")}
+    ${todo.length ? `<div class="item warn"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>Fleet check week</b> · ${todo.length} van${todo.length > 1 ? "s" : ""} to check: <span class="mono">${esc(todo.map(v => v.plate).join(", "))}</span></span>${can ? `<button class="btn sm" data-vchk-go="1" style="flex:0 0 auto">Record</button>` : ""}</div></div>` : ""}
+    ${al.map(a => `<div class="item warn"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span><b>${esc(a.title)}</b>${a.body ? `<div class="meta">${esc(a.body)}</div>` : ""}</span>${S.me.can("alerts") ? `<button class="btn sm" data-fleet-done="${a.id}" style="flex:0 0 auto">Done</button>` : ""}</div></div>`).join("")}</div>` : `<p class="empty">✓ Nothing due on any van.</p>`}</div>`;
 }
 /* Monthly vehicle checks: week 1 = fleet check (Stu, every van), week 3 = drivers. Columns are the last 6 check weeks. */
 function vchkCard() {
@@ -392,6 +413,10 @@ export function editVan(plate) { const v = S.vansBy[plate] || { plate: "", activ
 function wireFleet() {
   $("#vchk-rec")?.addEventListener("click", vchkForm);
   $("#van-add")?.addEventListener("click", () => editVan(""));
+  $$("[data-vchk-go]").forEach(b => b.onclick = vchkForm);
+  $$("[data-fleet-done]").forEach(b => b.onclick = async () => { b.disabled = true; const it = b.closest(".item"); if (it) it.style.display = "none";
+    const { error } = await sb.from("alerts").update({ resolved_at: new Date().toISOString(), resolved_by: S.me.id }).eq("id", b.dataset.fleetDone);
+    if (error) { if (it) it.style.display = ""; b.disabled = false; return toast(error.message, "err"); } toast("Done", "ok"); await loadAll(); render(true); });
 }
 
 /* ================= TIMING RULES ================= */

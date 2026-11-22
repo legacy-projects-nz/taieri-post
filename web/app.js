@@ -109,7 +109,7 @@ async function viewAs() {
     const p = await q(sb.from("people").select("*").eq("id", id).maybeSingle());
     if (p) { S.viewAs = p; S.me = { ...p, isOwner: false, isStaff: false, can: () => false }; }
   }
-  S.drivers = S.viewer.isStaff ? await q(sb.from("people").select("id,name,role").eq("active", true).eq("cleared", false).in("role", S.viewer.isOwner ? ["driver", "owner", "admin"] : ["driver", "owner"]).order("name")) : [];   // the owner can also open office staff's (Stu, Alejandro) app
+  S.drivers = S.viewer.isStaff ? await q(sb.from("people").select("id,name,role").eq("active", true).eq("cleared", false).in("role", ["driver", "owner"]).order("name")) : [];   // drivers only: office staff (Stu, Alejandro) have no driver portal
   S.login = {}; if (S.viewer.isStaff) { const { data: ls } = await sb.rpc("login_status"); for (const l of ls || []) S.login[l.person_id] = l; }
   await loadGps();
 }
@@ -1334,7 +1334,7 @@ function leaveForm() {
 }
 /* Profile: everyone (owner included) fills in / confirms their details the next time they open the app (can't be closed until saved) */
 function profilePop() {
-  if (S.viewAs || (S.me.profile_confirmed_at && S.me.licence_front && S.me.licence_back) || document.querySelector(".sheet-bg")) return; profileForm(true);
+  if (S.viewAs || S.me.role === "admin" || (S.me.profile_confirmed_at && S.me.licence_front && S.me.licence_back) || document.querySelector(".sheet-bg")) return; profileForm(true);
 }
 function profileForm(must = false) {
   const p = S.me; const forOther = S.viewAs && S.viewer?.can?.("people");

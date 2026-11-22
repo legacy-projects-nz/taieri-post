@@ -52,8 +52,8 @@ export function longLabel(iso) { const d = new Date(iso + "T12:00:00Z"); const L
 export function toMin(t) { if (t == null || t === "") return null; const m = /^(\d{1,2}):(\d{2})/.exec(String(t)); return m ? (+m[1]) * 60 + (+m[2]) : null; }
 export function fmtT(min) { if (min == null) return ""; let h = Math.floor(min / 60) % 24, m = min % 60; const ap = h >= 12 ? "pm" : "am"; h = h % 12 || 12; return m ? `${h}:${String(m).padStart(2, "0")}${ap}` : `${h}${ap}`; }
 export function fmt24(min) { if (min == null) return ""; return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`; }
-export function fmtTs(iso) { if (!iso) return ""; const d = new Date(iso); const n = nzNow(d); return `${label(n.date)} ${fmtT(n.min)}`; }
-export function fmtTime(iso) { if (!iso) return ""; return fmtT(nzNow(new Date(iso)).min); }
+export function fmtTs(iso) { if (!iso) return ""; const d = new Date(iso); if (isNaN(d)) return String(iso); const n = nzNow(d); return `${label(n.date)} ${fmtT(n.min)}`; }
+export function fmtTime(iso) { if (!iso) return ""; const d = new Date(iso); return isNaN(d) ? String(iso) : fmtT(nzNow(d).min); }
 export function ago(iso) { if (!iso) return ""; const s = (Date.now() - new Date(iso)) / 1000; if (s < 60) return "just now"; if (s < 3600) return `${Math.floor(s / 60)} min ago`; if (s < 86400) return `${Math.floor(s / 3600)} h ago`; return `${Math.floor(s / 86400)} d ago`; }
 export function hours(a, b) { const x = toMin(a), y = toMin(b); if (x == null || y == null || y <= x) return 0; return Math.round((y - x) / 6) / 10; }
 // NZ local date+time → ISO instant
