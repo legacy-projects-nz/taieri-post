@@ -67,6 +67,7 @@ async function loadAllNow() {
     q(sb.from("nzpost_feed").select("*").gte("day", from)),
     q((S.viewer?.isStaff ? sb.from("vehicle_checks").select("*").eq("driver", m) : sb.from("vehicle_checks").select("*")).order("at", { ascending: false }).limit(12)),
   ]);
+  try { const { data } = await sb.from("calendar_events").select("*").gte("day", addDays(t, -400)).order("day"); S.events = data || []; } catch { S.events = []; }
   S.set = set; S.C = cfg(set); S.runs = runs; S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vans = Object.fromEntries(vans.map(v => [v.plate, v])); S.addons = addons; setAddonNames(addons); S.rules = rules;
   S.people = Object.fromEntries(people.map(p => [p.id, p])); S.shifts = shifts.filter(s => s.driver === m); S.trainee = shifts.filter(s => s.trainee === m && s.driver !== m);
   S.changes = changes; S.acks = acks; S.briefs = (msgs || []).filter(m => m.messages.kind === "brief"); S.msgs = (msgs || []).filter(m => m.messages.kind !== "brief"); S.leave = leave; S.alerts = alerts; S.entries = entries; S.marks = marks; S.feed = feed; S.vchk = vchk || [];
@@ -1070,6 +1071,8 @@ function bindDetail(root) {
   on("[data-entryv]", el => { const e = S.entries.find(x => x.id === el.dataset.entryv); if (e) entrySheet(e); });
   on("[data-weekv]", el => weekSheet(el.dataset.weekv));
   on("[data-dayv]", el => daySheet(el.dataset.dayv));
+  on("[data-evnew]", el => eventForm(null, el.dataset.evnew));
+  on("[data-evedit]", el => { const e = (S.events || []).find(x => x.id === el.dataset.evedit); if (e) eventForm(e); });
   on("[data-vanv]", el => vanSheet(el.dataset.vanv));
   $$("[data-gotit-alert]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; gotItAlert(b.dataset.gotitAlert); });
   on("[data-alertv]", el => { const a = S.alerts.find(x => x.id === el.dataset.alertv); if (a) alertSheet(a); });
@@ -1440,7 +1443,7 @@ function daySheet(day) {
     return `<div class="seg"><div class="tm">${fmtT(x.st)} – ${fmtT(x.en)}</div><div class="rn">${x.sort ? esc(x.lab || r?.label || "Sort") : `${esc(code)}<span class="sub">${esc(runName(code))}</span>`}<div class="tags">${x.shift.van ? `<button class="tag van" data-vanv="${esc(x.shift.van)}" style="border:0;cursor:pointer">${esc(x.shift.van)}</button>` : ""}${x.shift.trainee ? `<span class="tag tr">training ${esc(first(S.people[x.shift.trainee]?.name || ""))}</span>` : ""}${(x.shift.addons || []).map(a => `<span class="tag">+ ${esc(S.addons.find(z => z.id === a)?.name || addName(a))}${x.shift.done?.[a] ? ` ✓ ${fmtTime(x.shift.done[a])}` : x.shift.plan?.[a] ? ` ~${fmtT(toMin(x.shift.plan[a]))}` : ""}</span>`).join("")}</div>${x.shift.note ? `<div class="meta">${esc(x.shift.note)}</div>` : ""}${win}
       ${past ? (x.sort ? (x.eod ? `<div class="meta c-ok">✓ sort finished ${fmtTime(x.eod.sent_at)}</div>` : "") : x.eod ? `<div class="meta c-ok">✓ EOD ${fmtTime(x.eod.sent_at)}${x.eod.finish_time ? ` · finished ${fmtT(toMin(x.eod.finish_time))}` : ""}${x.eod.parcels != null ? ` · ${x.eod.parcels} ${NET(code) === "tge" ? "deliveries" : "parcels"}` : ""}${x.eod.stops != null ? ` · ${x.eod.stops} ${NET(code) === "tge" ? "jobs" : "stops"}` : ""}${x.eod.edited_at ? " · edited" : ""}</div>${rawRow(x.eod)}${canEditEod(day) ? `<button class="btn ghost sm" data-eodedit="${x.shift.id}" data-sort="${x.sort ? 1 : ""}">Edit EOD</button>` : ""}` : `<div class="meta c-crit">No EOD for this run</div>${!S.viewAs ? `<button class="btn accent sm" data-eodv="${x.shift.id}">Post it now</button>` : ""}`) : ""}</div></div>`; }).join("") : "";
   const sodSeg = D?.segs.find(x => x.sod);
-  sheet(`<h3>${label(day, true)}${isT ? " · today" : ""}</h3><p class="meta">${stat ? `${esc(stat)} (stat day) · ` : ""}${D ? `${fmtT(D.start)} – ${fmtT(D.end)} · ${D.hours} h rostered` : lv.some(l => l.status === "approved") ? "On leave" : "Day off"}${e && !e.pending ? ` · efficiency <b class="c-${col(Math.min(100, e.v))}">${Math.round(e.v)}%</b>` : ""}</p>
+  sheet(`<h3>${label(day, true)}${isT ? " · today" : ""}</h3><p class="meta">${stat ? `${esc(stat)} (stat day) · ` : ""}${D ? `${fmtT(D.start)} – ${fmtT(D.end)} · ${D.hours} h rostered` : lv.some(l => l.status === "approved") ? (lv.some(l => l.type === "sick") ? "Off sick" : "On leave") : "Day off"}${e && !e.pending ? ` · efficiency <b class="c-${col(Math.min(100, e.v))}">${Math.round(e.v)}%</b>` : ""}</p>
     ${D ? `<div class="row"><button class="btn ghost sm" data-dayv="${addDays(day, -1)}">‹ ${label(addDays(day, -1)).slice(0, 6)}</button>${past ? `<button class="btn ghost sm" data-effv="${day}">Efficiency working</button>` : ""}<button class="btn ghost sm" data-weekv="${monOf(day)}">Whole week</button><button class="btn ghost sm" data-dayv="${addDays(day, 1)}">${label(addDays(day, 1)).slice(0, 6)} ›</button></div>` : `<div class="row"><button class="btn ghost sm" data-dayv="${addDays(day, -1)}">‹ ${label(addDays(day, -1)).slice(0, 6)}</button><button class="btn ghost sm" data-dayv="${addDays(day, 1)}">${label(addDays(day, 1)).slice(0, 6)} ›</button></div>`}
     ${past && D ? `<h4>Start of day</h4>${sodSeg ? `<div class="meta c-ok">✓ SOD ${fmtTime(sodSeg.sod.sent_at)}${sodSeg.sod.van ? ` · ${esc(sodSeg.sod.van)}` : ""}${sodSeg.sod.edited_at ? " · edited" : ""}</div>${sodSeg.sod.note ? `<div class="meta">${esc(sodSeg.sod.note)}</div>` : ""}` : `<div class="meta c-crit">No SOD posted</div>${!S.viewAs ? `<button class="btn sm" data-sodv="${D.segs[0].shift.id}">Post it now</button>` : ""}`}` : ""}
     ${D ? `<h4>Shifts</h4>${segs}` : ""}
@@ -1448,6 +1451,7 @@ function daySheet(day) {
     ${s && s.accDays.length ? `<h4>Accuracy</h4><div class="row" style="gap:3px">${s.accDays.map(a => `<button class="chip ${col(a.v) === "ok" ? "ok" : col(a.v) === "grey" ? "due" : "late"}" data-accv="${a.day}|${esc(a.code)}">${esc(a.code)} ${a.v == null ? "—" : a.v.toFixed(0) + "%"}</button>`).join("")}</div>` : ""}
     ${ch.length ? `<h4>Roster changes for this day</h4><div class="list">${ch.map(i => `<div class="item"><div>${esc(i.summary)}</div><div class="meta">sent ${fmtTs(i.roster_changes.sent_at)} · ${ackBy[i.id]?.confirmed_at ? `✓ confirmed ${fmtTs(ackBy[i.id].confirmed_at)}` : ackBy[i.id]?.dismissed_at ? "✓ cleared" : "not confirmed yet"}</div></div>`).join("")}</div>` : ""}
     ${ents.length ? `<h4>From Jeremy</h4><div class="list">${ents.map(x => `<div class="item clk ${x.excused ? "accent" : x.kind === "mistake" ? "crit" : x.kind === "praise" ? "ok" : ""}" data-entryv="${x.id}">${esc(x.title)}</div>`).join("")}</div>` : ""}
+    ${eventsOn(day).length || canEvents() ? `<h4>Events</h4>${eventsOn(day).map(e => `<div class="item" style="border-left:4px solid #8b5cf6"><div class="row" style="justify-content:space-between"><b>${esc(e.title)}</b>${canEvents() ? `<button class="btn ghost sm" data-evedit="${e.id}">Edit</button>` : ""}</div><div class="meta">${e.day_to && e.day_to !== e.day ? `${label(e.day)} – ${label(e.day_to)} · ` : ""}${e.time_txt ? `${esc(e.time_txt)} · ` : ""}${EV_WHO[e.who] || "Everyone"}</div>${e.note ? `<div>${esc(e.note)}</div>` : ""}</div>`).join("")}${canEvents() ? `<button class="btn ghost sm" data-evnew="${day}">+ Add an event on this day</button>` : ""}` : ""}
     ${lv.length ? `<h4>Leave</h4><div class="list">${lv.map(l => `<div class="item ${l.status === "approved" ? "ok" : "warn"} clk" data-leavev="${l.id}">${esc(LEAVE_T[l.type] || l.type)}${l.part && l.part !== "full" ? ` · ${l.part === "AM" ? "morning" : "afternoon"}` : ""} · ${l.status === "approved" ? "approved" : "waiting for approval"}</div>`).join("")}</div>` : ""}`, null, { wide: true });
 }
 function vanSheet(plate) {
@@ -1489,6 +1493,24 @@ function statDays(y) {
   pair(`${y}-12-25`, `${y}-12-26`, "Christmas Day", "Boxing Day");
   return o;
 }
+const eventsOn = d => (S.events || []).filter(e => d >= e.day && d <= (e.day_to || e.day));
+const canEvents = () => !S.viewAs && !!(S.viewer || S.me)?.isStaff;   // owner and admin staff post events (database: is_boss)
+const EV_WHO = { all: "Everyone", nzp: "NZ Post staff", tge: "TGE staff" };
+function eventForm(ev, day) {
+  const e = ev || { day, who: "all" };
+  sheet(`<h3>${ev ? "Edit event" : "Add an event"}</h3><form class="frm" id="evf"><label class="f">What<input class="in" id="ev-title" required maxlength="80" value="${esc(e.title || "")}" placeholder="e.g. NZ Post staff do"></label>
+    <div class="row"><label class="f" style="flex:1">Date<input class="in" type="date" id="ev-day" required value="${e.day || ""}"></label><label class="f" style="flex:1">To (optional)<input class="in" type="date" id="ev-to" value="${e.day_to || ""}"></label></div>
+    <label class="f">Time / place (optional)<input class="in" id="ev-time" maxlength="80" value="${esc(e.time_txt || "")}" placeholder="e.g. 6pm at the depot"></label>
+    <label class="f">For<select class="in" id="ev-who">${Object.entries(EV_WHO).map(([k, v]) => `<option value="${k}" ${e.who === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+    <label class="f">Details (optional)<textarea class="in" id="ev-note" rows="3">${esc(e.note || "")}</textarea></label>
+    <div class="row"><button class="btn" type="submit">${ev ? "Save" : "Add to calendar"}</button>${ev ? `<button class="btn ghost" type="button" id="ev-del">Delete</button>` : ""}</div></form>`, (bg, close) => {
+    bg.querySelector("#evf").onsubmit = async x => { x.preventDefault(); const g = id => bg.querySelector(id).value.trim();
+      const row = { title: g("#ev-title"), day: g("#ev-day"), day_to: g("#ev-to") && g("#ev-to") > g("#ev-day") ? g("#ev-to") : null, time_txt: g("#ev-time") || null, who: g("#ev-who"), note: g("#ev-note") || null };
+      const { error } = ev ? await sb.from("calendar_events").update(row).eq("id", ev.id) : await sb.from("calendar_events").insert({ ...row, created_by: (S.viewer || S.me).id });
+      if (error) return toast(error.message, "err"); toast(ev ? "Saved" : "Added to the calendar", "ok"); close(); $$(".sheet-bg").forEach(b => b.remove()); await loadAll(); render(); };
+    bg.querySelector("#ev-del")?.addEventListener("click", async () => { if (!confirm("Delete this event?")) return; const { error } = await sb.from("calendar_events").delete().eq("id", ev.id); if (error) return toast(error.message, "err"); toast("Deleted", "ok"); close(); $$(".sheet-bg").forEach(b => b.remove()); await loadAll(); render(); });
+  });
+}
 function calendarCard(t) {
   const mon = S.calMonth || t.slice(0, 7); const [y, m] = mon.split("-").map(Number);
   const stats = { ...statDays(y), ...Object.fromEntries(Object.entries(S.C.holidays || {}).map(([d, h]) => [d, h.name])) };
@@ -1496,16 +1518,20 @@ function calendarCard(t) {
   const first = `${mon}-01`; const start = monOf(first); const last = addDays(`${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}-01`, -1);
   const cells = []; for (let d = start; d <= last || dow(d) !== 0; d = addDays(d, 1)) cells.push(d);
   const MON = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  const cell = d => { const out = d.slice(0, 7) !== mon; const st = stats[d]; const lv = leave.find(l => d >= l.date_from && d <= l.date_to); const cls = [out ? "out" : "", d === t ? "now" : "", st ? "stat" : "", lv ? (lv.status === "approved" ? "lv-ok" : "lv-wait") : ""].join(" ");
-    const tip = [st, lv ? `${LEAVE_T[lv.type] || lv.type} (${lv.status === "approved" ? "approved" : "waiting for approval"})` : ""].filter(Boolean).join(" · ");
-    return `<div class="cd ${cls}" data-dayv="${d}" title="${esc(tip || "Tap for this day")}"><span>${+d.slice(8)}</span>${st ? `<i>stat</i>` : lv ? `<i>${lv.status === "approved" ? "leave" : "asked"}</i>` : ""}</div>`; };
+  const cell = d => { const out = d.slice(0, 7) !== mon; const st = stats[d]; const lv = leave.find(l => d >= l.date_from && d <= l.date_to); const ev = eventsOn(d); const D = S.days[d];
+    const sick = lv?.type === "sick"; const cls = [out ? "out" : "", d === t ? "now" : "", st ? "stat" : "", lv ? (sick ? "lv-sick" : lv.status === "approved" ? "lv-ok" : "lv-wait") : "", ev.length ? "ev" : "", D ? "rost" : ""].join(" ");
+    const tip = [st, ...ev.map(e => e.title), lv ? `${LEAVE_T[lv.type] || lv.type} (${lv.status === "approved" ? "approved" : "waiting for approval"})` : "", D ? showSegs(D).filter(x => !x.sort).map(x => x.shift.run).join(", ") : ""].filter(Boolean).join(" · ");
+    const tag = st ? "stat" : ev.length ? ev[0].title : lv ? (sick ? "sick" : lv.status === "approved" ? "leave" : "asked") : D ? showSegs(D).filter(x => !x.sort).map(x => x.shift.run).join(" ") || "sort" : "";
+    return `<div class="cd ${cls}" data-dayv="${d}" title="${esc(tip || "Tap for this day")}"><span>${+d.slice(8)}</span>${tag ? `<i>${esc(tag)}</i>` : ""}</div>`; };
   const inMonth = d => d.slice(0, 7) === mon;
   const statList = Object.entries(stats).filter(([d]) => inMonth(d)).sort();
   const lvList = leave.filter(l => l.date_to >= first && l.date_from <= last);
+  const evList = (S.events || []).filter(e => (e.day_to || e.day) >= first && e.day <= last);
   return `<div class="card" id="cal"><h2>Calendar<span><button class="ar" data-cal="-1">‹</button> ${MON[m - 1]} ${y} <button class="ar" data-cal="1">›</button></span></h2>
     <div class="calg">${["M","T","W","T","F","S","S"].map(x => `<div class="ch">${x}</div>`).join("")}${cells.map(cell).join("")}</div>
-    <div class="calk"><span><b class="k stat"></b>Stat day</span><span><b class="k lv-ok"></b>Leave approved</span><span><b class="k lv-wait"></b>Leave waiting</span></div>
-    ${statList.length || lvList.length ? `<div class="list" style="margin-top:6px">${statList.map(([d, n]) => `<div class="item accent" style="padding:6px 10px"><b>${label(d)}</b> · ${esc(n)}</div>`).join("")}${lvList.map(l => `<div class="item clk ${l.status === "approved" ? "ok" : "warn"}" style="padding:6px 10px" data-leavev="${l.id}"><b>${label(l.date_from)}${l.date_to !== l.date_from ? ` – ${label(l.date_to)}` : ""}</b> · ${esc(LEAVE_T[l.type] || l.type)} · ${l.status === "approved" ? "approved" : "waiting for approval"}</div>`).join("")}</div>` : `<p class="hint">No stat days or leave this month.</p>`}</div>`;
+    <div class="calk"><span><b class="k stat"></b>Stat day</span><span><b class="k ev"></b>Event</span><span><b class="k lv-sick"></b>Sick</span><span><b class="k lv-ok"></b>Leave approved</span><span><b class="k lv-wait"></b>Leave waiting</span></div>
+    ${canEvents() ? `<button class="btn ghost sm" data-evnew="${mon === t.slice(0, 7) ? t : first}" style="margin-top:6px">+ Add an event</button>` : ""}
+    ${statList.length || lvList.length || evList.length ? `<div class="list" style="margin-top:6px">${evList.map(e => `<div class="item clk" style="padding:6px 10px;border-left:4px solid #8b5cf6" data-dayv="${e.day}"><b>${label(e.day)}${e.day_to && e.day_to !== e.day ? ` – ${label(e.day_to)}` : ""}</b>${e.time_txt ? ` · ${esc(e.time_txt)}` : ""} · ${esc(e.title)}${e.who !== "all" ? ` <span class="meta">(${e.who === "nzp" ? "NZ Post staff" : "TGE staff"})</span>` : ""}</div>`).join("")}${statList.map(([d, n]) => `<div class="item accent" style="padding:6px 10px"><b>${label(d)}</b> · ${esc(n)}</div>`).join("")}${lvList.map(l => `<div class="item clk ${l.status === "approved" ? "ok" : "warn"}" style="padding:6px 10px" data-leavev="${l.id}"><b>${label(l.date_from)}${l.date_to !== l.date_from ? ` – ${label(l.date_to)}` : ""}</b> · ${esc(LEAVE_T[l.type] || l.type)} · ${l.status === "approved" ? "approved" : "waiting for approval"}</div>`).join("")}</div>` : `<p class="hint">No events, stat days or leave this month.</p>`}</div>`;
 }
 function leaveSheet(l) {
   const days = []; for (let d = l.date_from; d <= l.date_to && days.length < 31; d = addDays(d, 1)) days.push(d); const clash = days.filter(d => S.days[d]);
