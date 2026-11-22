@@ -344,6 +344,10 @@ function wireLeave() {
 }
 
 /* ================= FLEET ================= */
+// a small van drawn in the van's own colour (vans.colour: white, silver, blue, red …), dark outline so white shows up
+const VAN_COL = { white: "#ffffff", silver: "#c3c7cc", grey: "#8a8f96", gray: "#8a8f96", black: "#222", blue: "#2f6fd6", red: "#d64545", yellow: "#f2c230", green: "#3a9a5b", orange: "#ef8a2d" };
+const vanIcon = col => { const f = VAN_COL[String(col || "").toLowerCase().trim()] || (col ? esc(col) : "var(--soft)");
+  return `<svg width="34" height="20" viewBox="0 0 34 20" aria-label="${esc(col || "van")} van" style="flex:0 0 auto"><path d="M2 15V5a2 2 0 0 1 2-2h17l6 5 4 2v5z" fill="${f}" stroke="#555" stroke-width="1.2" stroke-linejoin="round"/><path d="M21 3.6l5.2 4.4H21z" fill="#bfe0f5" stroke="#555" stroke-width=".8"/><circle cx="9" cy="16" r="2.6" fill="#333"/><circle cx="25" cy="16" r="2.6" fill="#333"/></svg>`; };
 function fleetTab() {
   const wk = monOf(today()); const R = S.C.rules;
   const st = d => { if (!d) return pill("not set", "grey"); const n = Math.round((new Date(d) - new Date(today())) / 86400000); return n < 0 ? pill("overdue", "crit") : n <= R.dueSoonDays ? pill(`due in ${n}d`, "warn") : pill("✓", "ok"); };
@@ -352,7 +356,7 @@ function fleetTab() {
   const vbtn = v => { const chk = S.vchk.filter(c => c.van === v.plate).sort((a, b) => b.at.localeCompare(a.at))[0]; const odo = chk?.odometer && (!v.odometer_at || chk.at.slice(0, 10) >= v.odometer_at) ? chk.odometer : v.odometer; const left = !v.no_ruc && v.ruc_paid_to && odo ? v.ruc_paid_to - odo : null;
     const ds = [dIn(v.wof_due), dIn(v.rego_due)].filter(n => n != null); const over = v.wof_failed || ds.some(n => n < 0) || (left != null && left <= 0), soon = ds.some(n => n <= R.dueSoonDays) || (left != null && left <= R.rucSoonKm);
     const c = !v.active ? "var(--line)" : over ? "var(--crit)" : soon ? "var(--warn)" : "var(--ok)";
-    return `<button type="button" data-vanof="${esc(v.plate)}" style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;min-height:56px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);border-left:5px solid ${c};background:var(--card);color:inherit;font:inherit;cursor:pointer"><b class="mono">${esc(v.plate)}</b><span class="meta">${esc(v.model || "")}${v.active ? "" : " · inactive"}</span><span class="meta">${!v.active ? "" : over ? "overdue" : soon ? "due soon" : "✓ all good"}</span></button>`; };
+    return `<button type="button" data-vanof="${esc(v.plate)}" style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;min-height:56px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);border-left:5px solid ${c};background:var(--card);color:inherit;font:inherit;cursor:pointer"><span style="display:flex;align-items:center;gap:6px">${vanIcon(v.colour)}<b class="mono">${esc(v.plate)}</b></span><span class="meta">${esc(v.model || "")}${v.active ? "" : " · inactive"}</span><span class="meta">${!v.active ? "" : over ? "overdue" : soon ? "due soon" : "✓ all good"}</span></button>`; };
   return `${fleetAttn()}<div class="card"><h2>Vehicles<span>tap one for all its details</span></h2><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px">${S.vans.filter(v => v.plate !== "OTHER").sort((a, b) => (b.active - a.active) || a.plate.localeCompare(b.plate)).map(vbtn).join("")}</div>
     <button class="btn ghost sm" id="van-add" style="margin-top:8px">+ Add a van</button></div>
     ${vchkCard()}`;
