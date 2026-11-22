@@ -1,0 +1,2 @@
+-- Day summary email to the owner (22 Nov 2026): every run, note and photo for the day, missing data in red. The daysum function sends it once a day at/after 8:40pm NZ.
+select cron.schedule('day-summary', '50 * * * *', $$ select net.http_post(url := 'https://vuqlrfyqbezwmftikxwt.supabase.co/functions/v1/daysum', headers := jsonb_build_object('Content-Type','application/json','x-cron-secret',(select value from app_secrets where key='cron_secret')), body := '{}'::jsonb, timeout_milliseconds := 90000) $$);
