@@ -1,8 +1,10 @@
 // Sick days: long-press a Run Board shift tile (or right-click on a computer) to mark the driver off sick.
 // Paid or unpaid: sick leave is paid once the person has been employed 6 months (people.started).
 // The owner can override either way; other staff with the leave area get the default.
-import { sb, q, label, esc, toast, first } from "/shared/core.js";
-import { S, sheet, nm, fn } from "/admin/admin.js";
+import { sb, q, label, esc, toast, first, fmtT } from "/shared/core.js";
+import { S, sheet, nm, fn, opt, loadAll, render } from "/admin/admin.js";
+import { segTimes } from "/shared/score.js";
+import { clashes, clashTxt, sendSheet, isPublished } from "/admin/runboard.js";
 import { sickHours } from "/admin/live.js";
 
 export const SIX_MONTHS_NOTE = "Sick leave is paid once someone has been employed for 6 months.";
@@ -36,9 +38,10 @@ export function sickSheet(driver, day) {
       <label class="f" id="hrs-w" style="margin-top:8px;${paid === false ? "display:none" : ""}">Paid hours for the day<input class="in" id="sk-hrs" inputmode="decimal" value="${hrs0}" ${owner ? "" : "disabled"}></label>
       <p class="hint" style="margin-top:4px" id="hrs-why">${cur?.hours != null ? "Set by hand." : `Their average worked day over the last 4 weeks (at least what was rostered). Counts as staff cost at $${(+(S.peopleBy[driver]?.rate || S.C.rules.hourRate)).toFixed(2)}/h.`}</p>
       <p class="hint" style="margin-top:8px">${esc(def.why)}<br>${SIX_MONTHS_NOTE}${owner ? " You can change it either way." : " Only the owner can change paid / unpaid."}</p></div>
+    ${coverHtml(driver, day)}
     <input class="in" id="sk-note" placeholder="Note (optional), e.g. texted at 5:40am" value="${esc(cur?.notes && !/^Entered by/.test(cur.notes) ? cur.notes : "")}" style="width:100%;margin-bottom:10px">
     <div class="row" style="gap:6px"><button class="btn" id="sk-go" style="flex:2">${cur ? "Save" : "Mark off sick"}</button>${cur ? `<button class="btn crit ghost" id="sk-del" style="flex:1">Not sick</button>` : ""}</div>
-    <p class="hint">Their shift stays on the board marked "sick" so you can see who to cover. Tap the tile as normal to put someone else on it.</p>`, (bg, close) => {
+    <p class="hint">Shifts you don't pick cover for stay on the board marked "sick". When cover is picked, the change is pushed to the drivers straight after.</p>`, (bg, close) => {
     bg.querySelectorAll("[data-paid]").forEach(b => b.onclick = () => { paid = b.dataset.paid === "true"; bg.querySelectorAll("[data-paid]").forEach(x => x.classList.toggle("ghost", x !== b)); bg.querySelector("#hrs-w").style.display = paid ? "" : "none"; });
     bg.querySelector("#sk-go").onclick = async () => {
       if (paid == null) return toast("Pick paid or unpaid", "err");
@@ -46,7 +49,11 @@ export function sickSheet(driver, day) {
       const note = bg.querySelector("#sk-note").value.trim(); const notes = note || `Entered by ${first(S.me.name)}`;
       if (cur) await q(sb.from("leave_requests").update({ paid, notes, hours }).eq("id", cur.id));
       else await q(sb.from("leave_requests").insert({ driver, type: "sick", date_from: day, date_to: day, part: "full", notes, status: "approved", decided_by: S.me.id, decided_at: new Date().toISOString(), acked_email_at: new Date().toISOString(), paid, hours }));
-      close(); toast(`${first(nm(driver))} off sick · ${paid ? `paid ${hours ?? auto} h` : "unpaid"}`, "ok"); };
+      const moved = await applyCover(bg, driver, day);
+      close(); toast(`${first(nm(driver))} off sick · ${paid ? `paid ${hours ?? auto} h` : "unpaid"}${moved ? ` · ${moved} shift${moved === 1 ? "" : "s"} covered` : ""}`, "ok");
+      if (moved) { await loadAll(); render(true); if (isPublished(day) && (S.me.isOwner || S.me.can("roster"))) sendSheet(); } };
+    bg.querySelectorAll("[data-cover]").forEach(sel => sel.onchange = () => { const w = bg.querySelector(`[data-cw="${sel.dataset.cover}"]`); const sh = S.shifts.find(x => x.id === sel.dataset.cover); const tt = segTimes(sh, S.runsBy);
+      const cl = sel.value ? clashes(sel.value, day, tt.st, tt.en, [sh.id]) : []; w.textContent = cl.length ? `⚠ overlaps their ${clashTxt(cl)}` : ""; });
     bg.querySelector("#sk-del")?.addEventListener("click", async () => { await q(sb.from("leave_requests").update({ status: "cancelled", reply: `Not sick after all · ${first(S.me.name)}` }).eq("id", cur.id)); close(); toast("Sick day removed", "ok"); });
   });
 }
@@ -61,4 +68,21 @@ export function onLongPress(el, cb, ms = 550) {
   el.addEventListener("click", e => { if (fired) { e.stopImmediatePropagation(); e.preventDefault(); fired = false; } }, true);
   el.addEventListener("contextmenu", e => { e.preventDefault(); stop(); cb(); });
   el.style.webkitTouchCallout = "none"; el.style.userSelect = "none";
+}
+
+// Cover: one picker per shift the sick driver has that day; the chosen driver takes the shift over
+function coverHtml(driver, day) {
+  const mine = S.shifts.filter(x => x.day === day && x.driver === driver && x.run !== "BU").map(x => ({ x, ...segTimes(x, S.runsBy) })).sort((a, b) => (a.st ?? 0) - (b.st ?? 0));
+  if (!mine.length || !(S.me.isOwner || S.me.can("roster"))) return "";
+  const offOn = d => S.leave.some(l => l.driver === d && l.status === "approved" && day >= l.date_from && day <= l.date_to);
+  const opts = sh => { const L = S.drivers.filter(d => d.id !== driver && !offOn(d.id)).map(d => { const skill = S.skills.find(k => k.driver === d.id && k.run === sh.x.run)?.level; const cl = clashes(d.id, day, sh.st, sh.en, [sh.x.id]);
+    return { d, skill, cl, rank: (cl.length ? 2 : 0) + (skill === "yes" ? 0 : 1) }; }).sort((a, b) => a.rank - b.rank || nm(a.d.id).localeCompare(nm(b.d.id)));
+    return opt([["", "— no cover yet —"], ...L.map(({ d, skill, cl }) => [d.id, `${d.name}${skill === "yes" ? " ✓" : skill === "tr" ? " (training)" : ""}${cl.length ? " · busy" : ""}`])], ""); };
+  return `<div class="card" style="margin:10px 0"><div class="meta mono" style="margin-bottom:6px">COVER · ✓ = signed off on the run</div>${mine.map(sh => `<label class="f">${esc(sh.x.run)} ${sh.st != null ? `${fmtT(sh.st)}–${fmtT(sh.en)}` : ""}<select class="in" data-cover="${sh.x.id}">${opts(sh)}</select></label><p class="hint c-crit" data-cw="${sh.x.id}" style="margin:2px 0 6px"></p>`).join("")}</div>`;
+}
+async function applyCover(bg, driver, day) {
+  let n = 0;
+  for (const sel of bg.querySelectorAll("[data-cover]")) { if (!sel.value) continue;
+    const { error } = await sb.from("shifts").update({ driver: sel.value }).eq("id", sel.dataset.cover).eq("driver", driver); if (error) { toast(error.message, "err"); continue; } n++; }
+  return n;
 }

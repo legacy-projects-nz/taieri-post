@@ -32,6 +32,9 @@ Deno.serve(async (req) => {
   const raise = (a: any) => { if (alertsOpen.some(x => x.dedupe_key === a.dedupe_key)) return; newAlerts.push(a); };
   const inWindow = now.min >= (toMin(rem.from) ?? 420) && now.min <= (toMin(rem.to) ?? 1200);
 
+  // latest shift/van change sent today for this driver on this run (NZ minutes), or null
+  const chgRun = (drv: string, run: string) => { let m: number | null = null; for (const i of (items || [])) { if (i.day !== t || i.run !== run || !(i.affects || []).includes(drv) || !needsConfirm(i) || !i.roster_changes?.sent_at) continue;
+    const n = nz(new Date(i.roster_changes.sent_at)); if (n.date === t && (m == null || n.min > m)) m = n.min; } return m; };
   // per driver today
   const byDrv: Record<string, any[]> = {}; for (const s of todays) (byDrv[s.driver] ??= []).push(s);
   // off for the whole day (sick, annual leave…): don't chase their SOD / EODs, and clear anything already raised
@@ -75,6 +78,8 @@ Deno.serve(async (req) => {
         const done = !!(x.s.done?.[r.done_key || r.addon]) || (r.addon?.startsWith("tw_") && /game plan/i.test(r.name) && Object.keys(x.s.plan || {}).length > 0);
         const closes = toMin(meet ?? r.closes); if (closes == null) continue;
         const kd = `timing_due|${t}|${drv}|${r.id}`, km = `timing_missed|${t}|${drv}|${r.id}`;
+        // this shift was moved / re-timed today and the task closes within 2 hours of that change going out: don't chase it, excuse it
+        const moved = chgRun(drv, x.s.run); if (!done && moved != null && closes < moved + 120) { for (const a of alertsOpen) if (a.dedupe_key === kd || a.dedupe_key === km) resolve.push(a.id); if (now.min >= closes) excuse.push({ key: `add|${x.s.id}|${r.done_key || r.addon || r.id}`, driver: drv, status: "exc", note: `Roster changed on the day (sent ${fmtT(moved)})` }); continue; }
         if (done || (meet && now.min < closes - 15)) { for (const a of alertsOpen) if (a.dedupe_key === kd || a.dedupe_key === km) resolve.push(a.id); if (done) continue; }   // a later Milton time clears an alert raised for the old one
         if (!done && now.min >= closes - 15 && now.min < closes) raise({ kind: "timing_due", driver: drv, shift_id: x.s.id, rule_id: r.id, title: `${name}: ${r.name} due by ${fmtT(closes)}`, body: `${x.s.run} · ${r.note || ""}`.trim(), dedupe_key: kd, _driverOnly: true, _push: { to: [drv], title: `${r.name} by ${fmtT(closes)}`, body: `${r.note || "Tap Done in the app when it's sorted."}` } });
         if (!done && now.min >= closes && now.min < closes + 240) raise({ kind: "timing_missed", driver: drv, shift_id: x.s.id, rule_id: r.id, title: `${name}: ${r.name} not done by ${fmtT(closes)}`, body: `${x.s.run}`, dedupe_key: km, _push: { to: [drv], title: `${r.name} was due by ${fmtT(closes)}`, body: "If it's done, tap Done in the app. Otherwise let Jeremy know." }, _email: "timing", _rule: r });

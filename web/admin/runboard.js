@@ -17,6 +17,12 @@ const canon = o => o ? JSON.stringify([o.driver ?? null, o.van ?? null, o.start_
 const canonBU = o => o ? JSON.stringify([o.driver ?? null, o.bu_kind ?? "voluntary", o.bu_kind === "committed" ? (o.bu_block ?? 5) : null]) : "null";   // back-up: who, and voluntary / compulsory (the free hours follow the roster)
 const same = (a, b, bu) => bu ? canonBU(a) === canonBU(b) : canon(a) === canon(b);
 
+/** other shifts the driver already has that day whose times overlap st–en (minutes). Back-up doesn't count. */
+export function clashes(driver, day, st, en, skip = []) {
+  if (!driver || st == null || en == null) return [];
+  return S.shifts.filter(o => o.day === day && o.driver === driver && o.run !== "BU" && !skip.includes(o.id)).map(o => ({ o, ...segTimes(o, S.runsBy) })).filter(x => x.st != null && x.en != null && x.st < en && st < x.en);
+}
+export const clashTxt = L => L.map(x => `${x.o.run} ${fmtT(x.st)}–${fmtT(x.en)}`).join(", ");
 function weekShifts() { const end = addDays(S.week, 6); return S.shifts.filter(s => s.day >= S.week && s.day <= end); }
 function sentBy() { return Object.fromEntries(S.sent.map(x => [x.shift_key, x])); }
 export function weekInfo(wk = S.week) { return S.notes.find(x => x.week_start === wk) || null; }
@@ -209,6 +215,10 @@ function slotSheet(day, run, slot) {
       const row = { day, run, slot, driver: drv, van: g("van")?.value || null, start_at: g("st").value || null, end_at: g("en").value || null, addons: [...bg.querySelectorAll("input[name=add]:checked")].map(i => i.value), trainee: g("tr")?.value || null, note: g("note").value || null };
       if (run === "BU") { row.bu_kind = g("bk").value; row.bu_block = row.bu_kind === "committed" ? +g("bb").value : null; }
       if (row.trainee && row.trainee === drv) row.trainee = null;
+      // overlap check: warn once, a second Save goes ahead
+      if (run !== "BU" && !all && drv) { const tt = row.start_at && row.end_at ? { st: toMin(row.start_at), en: toMin(row.end_at) } : segTimes({ ...row }, S.runsBy); const cl = clashes(drv, day, tt.st, tt.en, s ? [s.id] : []);
+        const sig = cl.map(x => x.o.id).join(","); if (cl.length && bg._clashOk !== sig) { bg._clashOk = sig; const w = bg.querySelector("#clash") || (() => { const d = document.createElement("p"); d.id = "clash"; d.className = "item crit full"; bg.querySelector("#sf .row.full").before(d); return d; })();
+          w.textContent = `⚠ Overlaps ${nm(drv)}'s ${clashTxt(cl)}. Change the times or clear the other shift — or tap Save again to keep both.`; return; } }
       // Copy for the week: same item on every ticked day (pre-ticked = this day + days the run usually runs)
       const rows = all ? [...bg.querySelectorAll("input[name=wkday]:checked")].map(i => ({ ...row, day: i.value })) : [row]; if (!rows.length) return toast("Tick at least one day", "err");
       const { error } = await sb.from("shifts").upsert(rows, { onConflict: "day,run,slot" }); if (error) return toast(error.message, "err"); close(); toast(all ? `Saved to ${rows.length} day${rows.length === 1 ? "" : "s"} this week` : "Saved", "ok"); await loadAll(); render(true); };
@@ -221,7 +231,7 @@ function slotSheet(day, run, slot) {
   });
 }
 
-function sendSheet() {
+export function sendSheet() {
   const pend = pendingChanges().map(ch => ({ ...ch, ...summarize(ch) })); const byDrv = {}; for (const p of pend) for (const d of p.affects) (byDrv[d] ??= []).push(p.text);
   const direct = S.me.isOwner || S.me.can("roster_approve");
   sheet(`<h3>Push ${pend.length} change${pend.length === 1 ? "" : "s"} to drivers</h3><p class="hint">${direct ? "Only the drivers affected are told: a notification and an email with their lines, and a Got it button on their page. You'll see their ✓ live." : "These go to Jeremy for approval first. Once he approves, the drivers are told."}</p>
