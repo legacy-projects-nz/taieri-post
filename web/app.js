@@ -24,6 +24,7 @@ S.open = {};   // which folded boxes are open this visit (not saved: everything 
       await new Promise(r => { const t = setTimeout(r, Math.min(30000, 4000 * (i + 1))); const bt = $("#boot-retry"); if (bt) bt.onclick = () => { clearTimeout(t); bt.disabled = true; bt.textContent = "Trying…"; r(); }; }); }
   }
   render();
+  ensurePush().catch(e => reportError("push", e));
   window.addEventListener("hashchange", async () => { try { await viewAs(); await loadAll(); render(); } catch (e) { reportError("viewas", e); toast("Couldn't load that just now. Try again.", "err"); } });
   live(["extra_time", "shifts", "sod", "eod", "alerts", "roster_changes", "roster_change_items", "change_acks", "messages", "message_recipients", "leave_requests", "entries", "marks", "vans", "settings", "timing_rules", "addons", "breaks", "van_washes", "sod_requests", "hazards", "hazard_acks"], debounce(async () => { await loadAll(); render(true); }, 400), "drv");
   setInterval(() => render(true), 60000);
@@ -1172,6 +1173,20 @@ function estLine(x, D) {
   if (e.scan == null) return `<div class="meta" style="margin:2px 0 6px">⏱ Time estimated for your run shows once the runsheet photo + scanner total are in.</div>`;
   const mailTxt = e.mail != null ? `${e.mail} mail stops` : e.mailDue ? "mail stops to come (tray photo)" : "no mail today";
   return `<div class="meta" style="margin:2px 0 6px">⏱ Time estimated for your run: <b>${hm(e.dur)}</b>${e.end != null ? ` · finish ≈ <b>${fmtT(e.end % 1440)}</b>` : ""}<br>${e.scan} parcels · ${autoStops(S.C, e.scan)} stops · ${mailTxt}</div>`;
+}
+/* Notifications on by default: keep this phone's subscription saved, subscribe quietly when already allowed,
+   otherwise ask each time the app opens (the phone only lets a site ask after a tap, so it's a one-tap sheet). */
+async function ensurePush() {
+  if (S.viewAs || DEMO) return;
+  const st = await pushState();
+  if (st === "on") { const reg = await navigator.serviceWorker.getRegistration(); const j = (await reg.pushManager.getSubscription()).toJSON();
+    await sb.from("push_subs").upsert({ person: S.me.id, endpoint: j.endpoint, keys: j.keys }, { onConflict: "endpoint" }); return; }
+  if (st === "off" && Notification.permission === "granted") { const r = await enablePush(S.me.id, VAPID_PUBLIC); if (r.ok) return; }
+  const day = today(); const k = "tp-push-ask"; if (st !== "off" && localStorage.getItem(k) === day) return; localStorage.setItem(k, day);   // blocked / unsupported: remind once a day
+  sheet(st === "off" ? `<h3>🔔 Turn on notifications</h3><p>Roster changes, cover requests and reminders come through as notifications. Tap below and choose <b>Allow</b>.</p><button class="btn" id="np-go" style="width:100%">Turn on notifications</button>`
+    : st === "denied" ? `<h3>🔔 Notifications are blocked</h3><p>Roster changes and cover requests can't reach you. Turn them on in your phone: <b>Settings → Apps → Chrome (or the Taieri Post app) → Notifications → Allow</b>, then open the app again.</p>`
+    : `<h3>🔔 Notifications need the Home Screen app</h3><p>On iPhone, open this site in Safari, tap <b>Share → Add to Home Screen</b>, then open Taieri Post from your Home Screen. You'll be asked to allow notifications.</p>`, (bg, close) => {
+    bg.querySelector("#np-go")?.addEventListener("click", async () => { const r = await enablePush(S.me.id, VAPID_PUBLIC); toast(r.ok ? "Notifications are on ✓" : r.why, r.ok ? "ok" : "err"); close(); render(); }); });
 }
 function sheet(html, onOpen, opts = {}) {
   const bg = h(`<div class="sheet-bg"><div class="sheet ${opts.wide ? "wide" : ""}" role="dialog" aria-modal="true" style="position:relative"><button class="x" aria-label="Close">×</button>${html}</div></div>`);
