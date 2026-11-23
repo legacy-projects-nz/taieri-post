@@ -507,7 +507,9 @@ function rulesFor(x, day) {
     out.push(meetRule(r, x.shift));
   }
   const LAST = ["tw_baynext"];   // Bay/NC photo always sits at the end of the list
-  return out.sort((a, b) => LAST.includes(a.addon) - LAST.includes(b.addon) || (toMin(a.closes) ?? toMin(a.opens) ?? 0) - (toMin(b.closes) ?? toMin(b.opens) ?? 0));
+  // a run's task order set by Jeremy (settings.taskSeq[run] = rule ids or add-on ids, in order); anything not listed goes after, by time
+  const seq = S.set?.taskSeq?.[code] || []; const pos = r => { const i = seq.findIndex(k => k === r.id || k === r.addon); return i < 0 ? 1e6 : i; };
+  return out.sort((a, b) => LAST.includes(a.addon) - LAST.includes(b.addon) || pos(a) - pos(b) || (toMin(a.closes) ?? toMin(a.opens) ?? 0) - (toMin(b.closes) ?? toMin(b.opens) ?? 0));
 }
 function winTxt(r) { const f = toMin(r.opens), t = toMin(r.closes); return f != null && t != null ? `${fmtT(f)} – ${fmtT(t)}` : t != null ? `by ${fmtT(t)}` : f != null ? `from ${fmtT(f)}` : "any time"; }
 /** Every timed task on a run, each with its own Done button on the day (what Jeremy's Alerts and "Timings today" read). */
@@ -650,6 +652,7 @@ function tasksCard(D, n, next, bare = false) {
       items.push({ key, title: r.name, short: r.short, code: r.code, desc: meetEdit ? `${r.note || ""} Tap 📍 to pick Milton or Balclutha and the time; the Lawrence driver gets it straight away.`.trim() : r.note || (key && !key.startsWith("tw_") ? (S.addons.find(a => a.id === key)?.name || "") : ""), time: winTxt(r), opens: toMin(r.opens), closes: toMin(r.closes), doneAt: key ? done[key] : null, planned, meetEdit, meetVal: String(x.shift.milton_at || r.closes || "").slice(0, 5) }); }
     for (const id of x.shift.addons || []) { if (covered.has(id)) continue; const o = S.addons.find(a => a.id === id); if (!o) continue;   // tw_ tasks without a timed rule (e.g. NZQA pick up) show here too
       items.push({ key: id, title: o.name, desc: plan[id] ? `planned ${fmtT(toMin(plan[id]))}` : o.minutes ? `${o.minutes} min allowed on the run` : "add-on on this run", time: "any time", opens: null, closes: null, doneAt: done[id], planned: false }); }
+    { const seq = S.set?.taskSeq?.[code] || []; if (seq.length) { const pos = t => { const i = seq.indexOf(t.key); return t.key === "tw_baynext" ? 2e6 : i < 0 ? 1e6 : i; }; items.sort((a, b) => pos(a) - pos(b)); } }   // set order, extra add-ons (Waihola, NZQA) slotted in too
     const nDone = items.filter(t => t.doneAt || t.planned).length;
     const row = t => { const isDone = !!(t.doneAt || t.planned); let cls = "", st = "";
       if (isDone) { cls = "ok"; st = t.doneAt ? `✓ done ${fmtTime(t.doneAt)}` : "✓ game plan in"; }
@@ -663,7 +666,7 @@ function tasksCard(D, n, next, bare = false) {
     return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${items.length && isT ? `${nDone}/${items.length} done` : ""}</span></div>${isT ? estLine(x, D) : ""}
       ${items.length ? (() => { const isDone = t => !!(t.doneAt || t.planned); const todo = items.filter(t => !isDone(t)), fin = items.filter(isDone);
         // pick-ups not done yet sit together at the top of the list (Owaka Rural, Owaka Town, …)
-        const isPu = t => !!puAreaOf(t.key); todo.sort((a, b) => isPu(b) - isPu(a));
+        const isPu = t => !!puAreaOf(t.key); if (!(S.set?.taskSeq?.[code] || []).length) todo.sort((a, b) => isPu(b) - isPu(a));   // a run with a set order keeps it
         // done ones shrink into half-height tiles with a short name; tap a tile to undo (pick-up tiles open the pick-up editor instead)
         const tile = t => { const pu = puAreaOf(t.key); const can = isT && t.key && !t.planned && (!S.viewAs || S.viewer?.isStaff);
           const puOk = pu && puAreaLines(pu, x.shift.day).length; const attrs = !can ? "" : pu ? (puOk ? `data-puarea="${esc(pu)}" data-puday="${x.shift.day}"` : "") : `data-done="${esc(t.key)}" data-undo="1" data-shift="${x.shift.id}"`;
