@@ -2,13 +2,13 @@
 //   Income – each run's base (a day, week or month figure, shared between the runs in its group whichever of them are on)
 //            For the runs with a total (PCB+RSB, TUA+Flyer, Lawrence, TGE, food bag) the base is half the total and the other half is
 //            parcels × a rate worked out from the 8-week average parcels (see groupRate). Parcels come from the EOD, the average until it's in.
-//            Outram, TUA and Flyer also earn a flat $5 for each rural TGE parcel delivered (typed into the EOD).
-//            Plus pick-ups: NZ Couriers + Post Haste at $5 small / $8 large, TGE at $6 small / $7.50 large (Rural → TUA; Lawrence, Owaka,
+//            Outram, TUA and Flyer also earn a flat rate for each rural TGE parcel delivered (typed into the EOD).
+//            Plus pick-ups: NZ Couriers, Post Haste and TGE at their small / large rates (Rural → TUA; Lawrence, Owaka,
 //            Balclutha and South TGE → D>B, which earns nothing per parcel delivered). GST 15% on top.
 //   Staff  – each driver's cost for the day (the same hours × rate as Labour), split across their runs by rostered minutes.
 //            Jeremy's hours are unpaid, so his runs show $0 staff cost.
-//   Costs  – business running costs (fuel, RUC, insurance, ACC, loan, software…) as a monthly figure each, defaulted to the Xero Aug–Oct 2026
-//            average (excl GST), spread over the 6 working days a week and charged on any day a run is rostered. Always an estimate (grey).
+//   Costs  – business running costs (fuel, RUC, insurance, ACC, loan, software…) as a monthly figure each, set in settings.money_model
+//            (excl GST), spread over the 6 working days a week and charged on any day a run is rostered. Always an estimate (grey).
 //   Anything not in yet is estimated from the past 8 weeks (same weekday where there's enough) and shown grey; real figures show green.
 //   Tap a run (or a total) for the full detail. The "month at this pace" tile adds up the whole week and scales it to a month.
 import { sb, q, esc, $, $$, toast, fmtT, today, addDays, dow, monOf, label, nzNow, toMin } from "/shared/core.js";
@@ -24,13 +24,13 @@ const money = n => (n < 0 ? "−$" : "$") + Math.abs(n).toFixed(2);
 const money0 = n => (n < 0 ? "−$" : "$") + Math.round(Math.abs(n)).toLocaleString();
 // shared bases: per = "day" | "week" | "month"; days = working days a week it's spread over
 const GROUPS = {
-  "PCB + RSB": { runs: ["PCB", "RSB", "WH"], per: "month", amt: 17000, days: 6 },
-  "TUA + Flyer": { runs: ["TUA", "FLY"], per: "month", amt: 17000, days: 5 },   // about $17,000 a month between them, split roughly evenly → ~$785/day combined
-  "Lawrence": { runs: ["LAW"], per: "month", amt: 4500, days: 5 },
-  // TGE: one group per run, from the TGE weekly summary emails (net excl GST), average of the 7 full weeks w/e 20 Sep – 8 Nov 2026
-  // (w/e 1 Nov left out: short week). Truck 9363 = S, 4682 = T. Base is a fixed $ a week; the rest is paid by the parcel.
-  "TGE S": { runs: ["S"], per: "week", amt: 2247, days: 5, base: 1150 },   // $2,247/wk avg · $1,150 base · ≈ $1,097 parcels
-  "TGE T": { runs: ["T"], per: "week", amt: 2069, days: 5, base: 850 },    // $2,069/wk avg · $850 base · ≈ $1,219 parcels
+  "PCB + RSB": { runs: ["PCB", "RSB", "WH"], per: "month", amt: 0, days: 6 },
+  "TUA + Flyer": { runs: ["TUA", "FLY"], per: "month", amt: 0, days: 5 },
+  "Lawrence": { runs: ["LAW"], per: "month", amt: 0, days: 5 },
+  // TGE: one group per run, from the TGE weekly summary emails (net excl GST), average of the 7 full weeks w/e 20 Sep – 8 Nov 2026.
+  // Truck 9363 = S, 4682 = T. Base and totals are set in settings.money_model.
+  "TGE S": { runs: ["S"], per: "week", amt: 0, days: 5, base: null },
+  "TGE T": { runs: ["T"], per: "week", amt: 0, days: 5, base: null },
 };
 // Each total above is split: a fixed base (base $, or basePct % of the total) and the rest is paid by the parcel. The per-parcel rate is that parcel share of the total
 // divided by the parcels the group's runs normally carry in the same period (8-week EOD average per run-day × days a week), so an average
@@ -38,20 +38,21 @@ const GROUPS = {
 const BASE_PCT = 50;
 const pctOf = m => m.base != null && m.base !== "" && +m.amt ? Math.min(100, Math.max(0, +m.base / +m.amt * 100)) : Math.min(100, Math.max(0, m.basePct ?? BASE_PCT));   // a fixed base $ wins over the %
 const RUN_DAYS = { FLY: 4 };   // days a week a run goes out, where it's fewer than its group's (Flyer: Mon, Tue, Wed, Fri)
-// business costs, $ a month excl GST — Xero Aug–Oct 2026 average (the Biz CashFlow sheet assumes less: fuel $1,739, RUC $479, insurance $617)
-const COSTS = [["fuel", "Fuel", 4251.46], ["ruc", "Road user charges", 590.78], ["veh", "Vehicle costs & repairs", 336.22], ["sub", "Subcontractors", 573.91], ["ins", "Insurance", 1569.09], ["acc", "ACC levy", 714.93],
-  ["loan", "Loan fees & interest", 1078.66], ["soft", "Software", 897.35], ["staffx", "Staff training, uniforms, meetings", 1660.74], ["acct", "Accountancy", 496.57], ["office", "Office, phone, rent, marketing, bank", 597.8]];
+// business costs, $ a month excl GST — figures live in settings.money_model (owner-only)
+const COSTS = [["fuel", "Fuel", 0], ["ruc", "Road user charges", 0], ["veh", "Vehicle costs & repairs", 0], ["sub", "Subcontractors", 0], ["ins", "Insurance", 0], ["acc", "ACC levy", 0],
+  ["loan", "Loan fees & interest", 0], ["soft", "Software", 0], ["staffx", "Staff training, uniforms, meetings", 0], ["acct", "Accountancy", 0], ["office", "Office, phone, rent, marketing, bank", 0]];
 const COST_DAYS = 6;   // working days a week the monthly costs are spread over
 const PARCEL_RUNS = ["TUA", "FLY", "RAM", "PCB", "RSB", "LAW", "S", "T", "SG"];
-// TGE Surge (SG, Nov 2026): paid by the hour plus by the parcel, no base — hours × $45 + parcels × $1.50 (excl GST).
+// TGE Surge (SG): paid by the hour plus by the parcel, no base (rates in settings.money_model).
 // Until the EOD is in (and with no history yet) parcels are estimated at EST_PARCELS.
 const HOURLY_RUNS = ["SG"];
 const EST_PARCELS = { SG: 30 };
 const TGE_RURAL_RUNS = ["RAM", "TUA", "FLY"];   // these runs' EODs ask for the rural TGE parcels delivered, paid at tgeRural each
-// My Food Bag: paid by the box, about $450 a run (AM or PM) for 82 boxes. Boxes come from the EOD; until then the estimate is fbEst (80),
+// My Food Bag: paid by the box (rate in settings.money_model). Boxes come from the EOD; until then the estimate is fbEst (80),
 // or that week's figure in fbWeek (e.g. { "2026-11-23": 66 }).
 const FB_RUNS = ["FB", "FBP", "FB2", "FB2P", "MFB1", "MFB2"];
-const DEF = { fbBox: 450 / 82, fbEst: 80, fbWeek: {}, small: 5, large: 8, tgeSmall: 6, tgeLarge: 7.5, tgeRural: 5, owakaMed: 10, telford: 5, balMin: 5, target: 70000, oncost: 11, assets: { value: 0, depPct: 30, principal: 5000 }, parcel: { TUA: 0, FLY: 0, DB: 0, RAM: 1.8, PCB: 0, RSB: 0, LAW: 0, S: 0, T: 0, SG: 1.5 }, hourly: { SG: 45 }, groups: Object.fromEntries(Object.entries(GROUPS).map(([k, g]) => [k, { per: g.per, amt: g.amt, days: g.days, basePct: BASE_PCT, base: g.base ?? null }])), costs: Object.fromEntries(COSTS.map(([k, , a]) => [k, a])) };
+// All $ figures come from settings.money_model (owner-only by RLS); this file is publicly served, so no real figures here.
+const DEF = { fbBox: 0, fbEst: 80, fbWeek: {}, small: 0, large: 0, tgeSmall: 0, tgeLarge: 0, tgeRural: 0, owakaMed: 0, telford: 0, balMin: 0, target: 0, oncost: 11, assets: { value: 0, depPct: 30, principal: 0 }, parcel: { TUA: 0, FLY: 0, DB: 0, RAM: 0, PCB: 0, RSB: 0, LAW: 0, S: 0, T: 0, SG: 0 }, hourly: { SG: 0 }, groups: Object.fromEntries(Object.entries(GROUPS).map(([k, g]) => [k, { per: g.per, amt: g.amt, days: g.days, basePct: BASE_PCT, base: g.base ?? null }])), costs: Object.fromEntries(COSTS.map(([k, , a]) => [k, a])) };
 const model = () => { const v = S.set?.money_model || {}; return { ...DEF, ...v, parcel: { ...DEF.parcel, ...(v.parcel || {}) }, hourly: { ...DEF.hourly, ...(v.hourly || {}) }, groups: Object.fromEntries(Object.keys(GROUPS).map(k => [k, { ...DEF.groups[k], ...(v.groups?.[k] || {}) }])), costs: { ...DEF.costs, ...(v.costs || {}) }, assets: { ...DEF.assets, ...(v.assets || {}) } }; };
 const onc = () => 1 + (+model().oncost || 0) / 100;   // holiday pay 8% + KiwiSaver 3% on top of gross wages
 const costMonth = () => Object.values(model().costs).reduce((a, b) => a + (+b || 0), 0);
@@ -90,7 +91,7 @@ function feedWeek(run) { const fc = feedCode(run); if (!fc) return null; const t
 const parcelsSrc = shift => { if (!shift) return null; const ov = S.ovs.find(o => o.shift_id === shift.id); if (ov?.parcels != null) return { n: +ov.parcels, src: "fixed" }; const f = feedRow(shift.run, shift.day); if (f) return { n: +f.items || 0, src: "NZ Post email" }; const e = S.eodBy?.[shift.id]; return e?.parcels != null ? { n: +e.parcels, src: "EOD" } : null; };
 const parcelsOf = shift => parcelsSrc(shift)?.n ?? null;
 // income streams for the Income tab
-export const STREAMS = [["wh", "NZ Post West Harbour", "RSB, PCB and the Saturday combined run. Full amount, before Gina's share."], ["nzp", "NZ Post TP", "TUA, Flyer, Outram, Lawrence and food bag."], ["tge", "TGE", "TGE S and T."], ["tgeSurge", "TGE Surge", "TGE Surge: hours × $45 + parcels × $1.50, plus GST."], ["tgeRural", "TGE Rural", "Rural TGE parcels delivered on Outram, TUA and Flyer, from the EOD."], ["tgeSouth", "TGE South", "South TGE pick-ups."], ["ruralPH", "Rural PH", "Rural Post Haste pick-ups."], ["ruralNZC", "Rural NZC", "Rural NZ Couriers pick-ups."], ["owakaPH", "Owaka PH", "Owaka and Balclutha Post Haste pick-ups."], ["owakaNZC", "Owaka NZC", "Owaka and Balclutha NZ Couriers pick-ups, Owaka Medical, Telford mail and the Balclutha minimum."], ["lawPH", "Lawrence PH", "Lawrence Post Haste pick-ups."], ["lawNZC", "Lawrence NZC", "Lawrence NZ Couriers pick-ups."]];
+export const STREAMS = [["wh", "NZ Post West Harbour", "RSB, PCB and the Saturday combined run. Full amount, before Gina's share."], ["nzp", "NZ Post TP", "TUA, Flyer, Outram, Lawrence and food bag."], ["tge", "TGE", "TGE S and T."], ["tgeSurge", "TGE Surge", "TGE Surge: hours plus parcels, plus GST."], ["tgeRural", "TGE Rural", "Rural TGE parcels delivered on Outram, TUA and Flyer, from the EOD."], ["tgeSouth", "TGE South", "South TGE pick-ups."], ["ruralPH", "Rural PH", "Rural Post Haste pick-ups."], ["ruralNZC", "Rural NZC", "Rural NZ Couriers pick-ups."], ["owakaPH", "Owaka PH", "Owaka and Balclutha Post Haste pick-ups."], ["owakaNZC", "Owaka NZC", "Owaka and Balclutha NZ Couriers pick-ups, Owaka Medical, Telford mail and the Balclutha minimum."], ["lawPH", "Lawrence PH", "Lawrence Post Haste pick-ups."], ["lawNZC", "Lawrence NZC", "Lawrence NZ Couriers pick-ups."]];
 const TGE_RUNS = ["S", "T", "SG"];
 const WH_RUNS = ["PCB", "RSB", "WH"];
 const runStream = run => run === "SG" ? "tgeSurge" : TGE_RUNS.includes(run) ? "tge" : WH_RUNS.includes(run) ? "wh" : "nzp";
@@ -200,7 +201,7 @@ function breakdown(d) {
       else { const ev = feedAvg(r.run, d) || evidenceFor(r.run, d); if (ev?.parcels != null) add(r, Math.round(ev.parcels) * rate, `${Math.round(ev.parcels)} parcels${incl} × ${rt} (average ${ev.scope === "weekday" ? "for this weekday" : "of recent days"} until the EOD is in)${why}`, true); else if (EST_PARCELS[r.run]) add(r, EST_PARCELS[r.run] * rate, `${EST_PARCELS[r.run]} parcels${incl} × ${rt} (estimate until the EOD is in)`, true); else { r.feeEst = true; r.feeLines.push({ amt: 0, line: `parcels × ${rt} · no history yet`, est: true }); } } } }
   // My Food Bag: boxes × the per-box rate (each AM / PM run on its own)
   for (const r of rows) { if (r.sort || !FB_RUNS.includes(r.run)) continue; const rt = +M.fbBox || 450 / 82; const b = S.eodBy?.[r.shift?.id]?.parcels;
-    if (b != null) add(r, +b * rt, `${b} boxes × $${rt.toFixed(2)} (≈ $450 for 82)`, false);
+    if (b != null) add(r, +b * rt, `${b} boxes × $${rt.toFixed(2)}`, false);
     else { const e = +(M.fbWeek?.[monOf(d)] ?? M.fbEst ?? 80); add(r, e * rt, `${e} boxes (estimate until the EOD is in) × $${rt.toFixed(2)}`, true); } }
   // NZ Post email parcels for a run that wasn't rostered that day (e.g. Flyer parcels taken out on TUA): paid on the group-mate that was on
   for (const G of Object.values(GROUPS)) for (const c of G.runs) { if (byRun[c]) continue; const f = feedRow(c, d); if (!f || !+f.items) continue;
@@ -225,7 +226,7 @@ function breakdown(d) {
     const byCu = {}; for (const p of cache[d].hist) { if (p.area !== area) continue; const cu = isT(p) ? "TGE" : p.customer || "NZC"; const by = (byCu[cu] ??= {}); by[p.day] = (by[p.day] || 0) + feeOf(p); }
     const days = new Set(Object.values(byCu).flatMap(b => Object.keys(b)));   // average over every day the area had pick-ups, so a customer missing on a day counts as $0
     for (const [cu, by] of Object.entries(byCu)) { for (const k of days) by[k] ??= 0; const e = avgDays(by, d); if (e) add(r, e, `${area} ${cu} pick-ups (average of recent days)`, true, areaStream(area, cu === "TGE", cu)); } }
-  // D>B fixed extras: Owaka Medical $10 a weekday, Telford mail $5 every day it runs, and the Balclutha depot $5 minimum on a day with no Balclutha pick-ups
+  // D>B fixed extras: Owaka Medical each weekday, Telford mail every day it runs, and the Balclutha depot minimum on a day with no Balclutha pick-ups
   const db = byRun.DB; if (db) { const wd = dow(d) <= 4;   // Mon–Fri
     if (wd) add(db, M.owakaMed, `Owaka Medical · $${M.owakaMed} a weekday`, false, "owakaNZC");
     add(db, M.telford, `Telford mail · $${M.telford} a day`, false, "owakaNZC");

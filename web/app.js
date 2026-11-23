@@ -754,13 +754,13 @@ const PU_CUST = { NZC: "NZ Couriers", PH: "Post Haste", TGE: "TGE (NZ National N
 // Runs that do invoiced pick-ups, and the area they're usually in
 const PU_AREA = { TUA: "Rural", FLY: "Owaka Rural", DB: "Owaka Rural", LAW: "Lawrence" };
 const PU_AREAS = ["Rural", "South", "Owaka Rural", "Owaka Town", "Lawrence", "Balclutha"]; const puCust = a => a === "South" ? ["TGE"] : a === "Rural" ? ["NZC", "PH", "TGE"] : ["NZC", "PH"];   // South = TGE only; TGE also on Rural; never on Owaka / Lawrence / Balclutha
-const PU_MIN = 2.5; const PU_MIN_AREA = "Balclutha";   // Balclutha depot, no parcels: split fee, $2.50 each to NZC and Post Haste
-const puLine = r => r.min_fee != null ? `none · split fee $${(+r.min_fee).toFixed(2)}` : `${r.small} small${r.large ? ` + ${r.large} large` : ""}`;
+const PU_MIN = 2.5; const PU_MIN_AREA = "Balclutha";   // Balclutha depot, no parcels
+const puLine = r => r.min_fee != null ? `none` : `${r.small} small${r.large ? ` + ${r.large} large` : ""}`;
 async function puMinFee(day, shift, key) {
-  const rows = ["NZC", "PH"].map(c => ({ day, area: PU_MIN_AREA, customer: c, source: "depot", small: 0, large: 0, min_fee: PU_MIN, note: "No parcels · split fee", driver: S.me.id, created_by: S.me.id }));
+  const rows = ["NZC", "PH"].map(c => ({ day, area: PU_MIN_AREA, customer: c, source: "depot", small: 0, large: 0, min_fee: PU_MIN, note: "No parcels", driver: S.me.id, created_by: S.me.id }));
   const { error } = await sb.from("pickups").insert(rows); if (error) { toast(error.message, "err"); return false; }
   if (key && shift) { const { error: e2 } = await sb.rpc("task_done", { p_shift: shift, p_addon: key }); if (e2) toast(`Split fee saved, but the task couldn't be ticked: ${e2.message}`, "err"); }
-  toast("No parcels · split fee saved ✓", "ok"); await loadAll(); render(); return true;
+  toast("No parcels saved ✓", "ok"); await loadAll(); render(); return true;
 }
 const PU_SRC = ["depot", "customer"]; const PU_SRC_L = { depot: "depot", customer: "customer" };
 const puToday = T => (T?.segs || []).map(x => x.shift.run).find(r => PU_AREA[r]);
@@ -779,7 +779,7 @@ function editPickup(id) {
   const r = (S.pickups || []).find(x => x.id === id); if (!r) return;
   const isMin = r.min_fee != null;
   sheet(`<h3>Edit pick-ups</h3><p class="hint">${label(r.day)} · ${esc(r.area)} · ${esc(PU_CUST[r.customer] || r.customer)} · ${PU_SRC_L[r.source] || "depot"}</p><form class="frm" id="pe">
-    ${isMin ? `<p class="meta full">No parcels · split fee $${(+r.min_fee).toFixed(2)}. Got parcels after all? Delete this and enter the pick-ups again.</p>` : `<label class="f">Small<input class="in" id="pe-s" inputmode="numeric" value="${r.small}"></label><label class="f">Large<input class="in" id="pe-l" inputmode="numeric" value="${r.large}"></label>
+    ${isMin ? `<p class="meta full">No parcels logged. Got parcels after all? Delete this and enter the pick-ups again.</p>` : `<label class="f">Small<input class="in" id="pe-s" inputmode="numeric" value="${r.small}"></label><label class="f">Large<input class="in" id="pe-l" inputmode="numeric" value="${r.large}"></label>
     <label class="f full">Note (optional)<input class="in" id="pe-n" value="${esc(r.note || "")}"></label><button class="btn full" type="submit">Save changes</button>`}
     <button class="btn ghost full" type="button" id="pe-del">Delete this line</button></form>`, (bg, close) => {
     const done = async (error, msg) => { if (error) return toast(error.message, "err"); close(); toast(msg, "ok"); await loadAll(); render(); };
@@ -804,7 +804,7 @@ function editPickupArea(area, day) {
   sheet(`<h3>Edit pick-ups · ${esc(area)}</h3><form class="frm" id="pa">
     <div class="full"><table class="dt" style="width:100%"><tr><th rowspan="2">Customer</th><th colspan="2">Depot</th><th colspan="2">Customer</th></tr><tr><th>Small</th><th>Large</th><th>Small</th><th>Large</th></tr>${Object.entries(PU_CUST).filter(([k]) => puCust(area).includes(k)).map(([k, v]) => `<tr><td>${esc(v)}</td>${PU_SRC.map(src => `<td><input class="in" data-pa="${k}.${src}.small" inputmode="numeric" placeholder="0" value="${val(k, src, "small") || ""}" style="width:54px"></td><td><input class="in" data-pa="${k}.${src}.large" inputmode="numeric" placeholder="0" value="${val(k, src, "large") || ""}" style="width:54px"></td>`).join("")}</tr>`).join("")}</table></div>
     <label class="f full">Note (optional)<input class="in" id="pa-n" value="${esc(note)}"></label>
-    ${mins.length ? `<p class="meta full">Also logged: none · split fee ($${(+mins[0].min_fee).toFixed(2)} each). It's removed if you enter parcels.</p>` : ""}
+    ${mins.length ? `<p class="meta full">Also logged: none. It's removed if you enter parcels.</p>` : ""}
     <button class="btn full" type="submit">Save changes</button></form>`, (bg, close) => {
     let confirmClear = false;
     bg.querySelector("#pa").addEventListener("submit", async e => { e.preventDefault();
@@ -839,7 +839,7 @@ function logPickup(opt = {}) {
     <label class="f">Area<select class="in" id="pu-area">${PU_AREAS.map(a => `<option ${a === area ? "selected" : ""}>${a}</option>`).join("")}</select></label>
     <div class="full"><table class="dt" style="width:100%"><tr><th rowspan="2">Customer</th><th colspan="2">Depot</th><th colspan="2">Customer</th></tr><tr><th>Small</th><th>Large</th><th>Small</th><th>Large</th></tr>${Object.entries(PU_CUST).map(([k, v]) => `<tr data-cust="${k}"${puCust(area).includes(k) ? "" : " hidden"}><td>${esc(v)}</td>${PU_SRC.map(src => `<td><input class="in" data-pu="${k}.${src}.small" inputmode="numeric" placeholder="0" style="width:54px"></td><td><input class="in" data-pu="${k}.${src}.large" inputmode="numeric" placeholder="0" style="width:54px"></td>`).join("")}</tr>`).join("")}</table></div>
     <label class="f full">Note (optional)<input class="in" id="pu-n"></label><button class="btn full" type="submit">Save pick-ups</button>
-    <button class="btn ghost full" type="button" id="pu-none"${area === PU_MIN_AREA ? "" : " hidden"}>None · split fee ($2.50 each to NZ Couriers &amp; Post Haste)</button></form>`, (bg, close) => {
+    <button class="btn ghost full" type="button" id="pu-none"${area === PU_MIN_AREA ? "" : " hidden"}>None – no parcels here today</button></form>`, (bg, close) => {
     const tgeRow = () => { const a = bg.querySelector("#pu-area").value; const ok = puCust(a); bg.querySelectorAll("[data-cust]").forEach(r => r.hidden = !ok.includes(r.dataset.cust)); bg.querySelector("#pu-none").hidden = a !== PU_MIN_AREA; };
     bg.querySelector("#pu-none").addEventListener("click", async () => { if (await puMinFee(bg.querySelector("#pu-day").value, opt.shift, opt.area === PU_MIN_AREA ? opt.key : null)) close(); });
     bg.querySelector("#pu-area").addEventListener("change", tgeRow);
@@ -1255,7 +1255,7 @@ function editSod(shiftId) {
     bg.querySelector("#go").onclick = async () => { const { error } = await sb.from("sod").update({ van: bg.querySelector("#van").value || null, start_km: +bg.querySelector("#km").value || null, note: bg.querySelector("#note").value || null, edited_at: new Date().toISOString() }).eq("shift_id", shiftId); if (error) return toast(error.message, "err"); close(); toast("SOD updated", "ok"); await loadAll(); render(); };
   });
 }
-// Runs whose EOD asks for the rural TGE parcels delivered (paid at a flat rate each, see the day budget)
+// Runs whose EOD asks for the rural TGE parcels delivered 
 const TGE_RURAL_RUNS = ["RAM", "TUA", "FLY"];
 const EOD_INFO = {
   tgeRural: "How many TGE parcels you delivered on this run today. Put 0 if there were none.",
@@ -1265,7 +1265,7 @@ const EOD_INFO = {
   nzpTotal: "NZ Post parcels you delivered on this run. It's checked against NZ Post's data at 8pm and corrected to match if it's out.",
   thirdTotal: "Every other parcel you delivered on this run that isn't NZ Post's (TGE and other carriers). Put 0 if there were none.",
 };
-Object.assign(INFO, { eod_tgeRural: ["Rural TGE parcels", `<p>${EOD_INFO.tgeRural}</p><p>These are paid at a flat rate each, so count them carefully.</p>`],
+Object.assign(INFO, { eod_tgeRural: ["Rural TGE parcels", `<p>${EOD_INFO.tgeRural}</p><p>Count them carefully.</p>`],
   eod_stops: ["Stops", `<p>${EOD_INFO.stops}</p>`], eod_parcels: ["Total parcels", `<p>${EOD_INFO.parcels}</p>`], eod_tgeParcels: ["Delivery total", `<p>${EOD_INFO.tgeParcels}</p>`],
   eod_nzpTotal: ["NZ Post total", `<p>${EOD_INFO.nzpTotal}</p><p>The app adds the NZ Post and 3rd Party totals together for your parcel total.</p>`], eod_thirdTotal: ["3rd Party total", `<p>${EOD_INFO.thirdTotal}</p><p>This figure is never changed by the 8pm check.</p>`] });
 // RAM, TUA and Flyer: the EOD splits parcels into an NZ Post total and a 3rd Party total (the app adds them up).
