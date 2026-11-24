@@ -320,7 +320,7 @@ function dayStep(T, sod, runs, va, offB, n) {
   if (so) { const out = {}; runBar(T, sod, runs, va, offB, out); main = (out.sort || "").replace('class="btn qb', 'class="btn qb main').replace('class="qb off"', 'class="qb off main"'); }
   if (!main && cur && !cur.x.sort) { const x = cur.x; const after = segs.slice(cur.i + 1).length > 0; const going = x.shift.deliver_at ? `going since ${fmtTime(x.shift.deliver_at)}` : "going";
     main = after ? eodB(x, `■ End ${lab(x)}`, `send its EOD · then ▶ ${lab(segs[cur.i + 1])}`) : eodB(x, `■ EOD ${lab(x)}`, `${lab(x)} ${going}`); }
-  if (!main && nxt) { const x = nxt.x; const sorting = x.sort || (OWN_SORT.includes(x.shift.run) && !isGo(x.shift.run));
+  if (!main && nxt) { const x = nxt.x; const sorting = x.sort || (ownSort(segs, nxt.i) && !isGo(x.shift.run));
     const title = `▶ Start ${sorting ? "sort " : ""}${lab(x)}`;
     main = va ? offB(title, "not started").replace('class="qb off"', 'class="qb off main"') : btn("", `data-runmark="sor" data-shift="${x.shift.id}"`, title, x.st != null ? `rostered ${fmtT(x.st)}` : ""); }
   if (!main && owed.length) return owedB.replace('class="btn qb warn"', 'class="btn qb main warn"');
@@ -339,12 +339,15 @@ const isGo = code => S.C?.sortMin?.[code] === 0;
 const NO_SORT = { includes: isGo };
 // runs with their own sort even straight after a sort shift (D>B: the mail sort comes after the SUP support sort)
 const OWN_SORT = ["DB"];
-const sortCode = c => c === "DB" ? "D>B" : c;
+// a run's own sort shift on the Run Board (Sort – D>B = SUP4): when it comes straight before the run, the run has no sort of its own
+const SORT_FOR = { SUP4: "DB" };
+const ownSort = (segs, i) => !!segs[i] && OWN_SORT.includes(segs[i].shift.run) && SORT_FOR[segs[i - 1]?.shift.run] !== segs[i].shift.run;
+const sortCode = c => c === "DB" || c === "SUP4" ? "D>B" : c;
 // for showing a day: a run with its own sort (D>B) shows as two rows, "Sort – D>B" then the run, split at its expected sort time
 function showSegs(D) {
   if (!D) return [];
-  return D.segs.flatMap(x => {
-    const m = !x.sort && OWN_SORT.includes(x.shift.run) && x.st != null ? sortExp(S.C, x.shift.run, D.day) : null;
+  return D.segs.flatMap((x, i) => {
+    const m = !x.sort && ownSort(D.segs, i) && x.st != null ? sortExp(S.C, x.shift.run, D.day) : null;
     if (!m || (x.en != null && x.st + m >= x.en)) return [x];
     return [{ ...x, shift: { ...x.shift, van: null, addons: [], note: null }, sort: true, inner: true, lab: `Sort – ${sortCode(x.shift.run)}`, en: x.st + m, eod: null, sod: null }, { ...x, st: x.st + m }];
   });
@@ -353,7 +356,7 @@ function showSegs(D) {
 function sortNow(T, cur) {
   if (!cur) return null; const { x, i } = cur; const st = stMs(T, i); if (st == null) return null;
   if (x.sort) { const en = x.rostEn ?? x.en; const exp = en != null && x.st != null && en > x.st ? en - x.st : null; return { st, exp }; }
-  if (isGo(x.shift.run) || x.shift.deliver_at || x.eod || (T.segs[i - 1]?.sort && !OWN_SORT.includes(x.shift.run))) return null;
+  if (isGo(x.shift.run) || x.shift.deliver_at || x.eod || (T.segs[i - 1]?.sort && !ownSort(T.segs, i))) return null;
   return { st, exp: sortExp(S.C, x.shift.run, T.day || today()) };
 }
 function sortTap(T, x, runStartMs) {
@@ -395,8 +398,8 @@ function stageLine(T) {
     const end = e ? `–${tm(e)}` : x.eod ? " ✓" : " – now"; const code = esc(sortCode(x.shift.run));
     if (x.sort) return `<b>Sort ${code}</b> ${tm(s0)}${end}`;
     // a run with its own sort (D>B): "Sort D>B 7:00–8:05 · D>B 8:05 – now"
-    if (x.shift.deliver_at && OWN_SORT.includes(x.shift.run)) { const d = Date.parse(x.shift.deliver_at); return `<b>Sort ${code}</b> ${tm(s0)}–${tm(d)} · <b>${code}</b> ${tm(d)}${end}`; }
-    if (OWN_SORT.includes(x.shift.run) && !e && !x.eod) return `<b>Sort ${code}</b> ${tm(s0)} – now`;
+    if (x.shift.deliver_at && ownSort(segs, i)) { const d = Date.parse(x.shift.deliver_at); return `<b>Sort ${code}</b> ${tm(s0)}–${tm(d)} · <b>${code}</b> ${tm(d)}${end}`; }
+    if (ownSort(segs, i) && !e && !x.eod) return `<b>Sort ${code}</b> ${tm(s0)} – now`;
     return `<b>${code}</b> ${tm(s0)}${x.shift.deliver_at ? ` (${NO_SORT.includes(x.shift.run) ? "on the road" : "delivering"} ${tm(Date.parse(x.shift.deliver_at))})` : ""}${end}`; }).filter(Boolean).join(" · ");
   return line;
 }
