@@ -3,7 +3,7 @@ import { briefHtml, needsConfirm, shrinkPhoto, DEMO, sb, q, me, nzNow, today, ad
 import { requireUser } from "/shared/auth.js";
 import { VAPID_PUBLIC } from "/shared/config.js";
 import { resetDemo, newRuns } from "/shared/demo.js";
-import { vchkWho, cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, NET, PICKUP_RUNS, LEG_RUNS, effCalc, setEvidence, setAddonNames, meetRule, meetOn, needsFix, sortExp, XT_KINDS, extraMins, mailRun, autoStops, runStopRatio, tdtEstimate, sodStart, ownerBreakHrs, standingOn } from "/shared/score.js";
+import { onLeave, vchkWho, cfg, dayShifts, itemsFor, scoreFor, fortnight, itemNote, STATE_LABEL, addName, NET, PICKUP_RUNS, LEG_RUNS, effCalc, setEvidence, setAddonNames, meetRule, meetOn, needsFix, sortExp, XT_KINDS, extraMins, mailRun, autoStops, runStopRatio, tdtEstimate, sodStart, ownerBreakHrs, standingOn } from "/shared/score.js";
 
 const app = $("#app");
 const S = { me: null, set: {}, C: null, runs: [], runsBy: {}, vans: {}, addons: [], rules: [], people: {}, shifts: [], sods: [], eods: [], marks: [], entries: [], feed: [], changes: [], acks: [], msgs: [], leave: [], alerts: [], loc: null, gotit: {}, login: {} };
@@ -97,7 +97,7 @@ async function loadAllNow() {
   S.lawPu = S.shifts.some(z => z.day === t && z.run === "LAW") ? await soft(sb.rpc("law_pickups", { p_day: t }), null) : null;   // D>B driver's Lawrence pick-ups (PH + NZC) for the Lawrence driver
   S.sods = sods; S.eods = eods; S.ovs = ovs; S.pickups = pk || []; S.access = ai || { body: "" }; S.washes = vw || []; S.breaks = br || []; S.sodReqs = sr || []; S.hazards = hz || []; S.hzAckOn = Array.isArray(ha); S.hzAcks = Object.fromEntries((ha || []).map(a => [a.hazard_id, a.acked_at]));   // confirmations only once the table exists
   setEvidence(S.shifts, S.eods);
-  S.days = dayShifts(S.shifts, S.runsBy, m);
+  S.days = dayShifts(S.shifts.filter(s => !onLeave(S.leave, s.driver, s.day)), S.runsBy, m);   // a full day of approved leave (e.g. sick) is a day off: no SOD / EOD asked for
   for (const d of Object.values(S.days)) for (const x of d.segs) { x.sod = S.sods.find(s => s.shift_id === x.shift.id); x.eod = S.eods.find(e => e.shift_id === x.shift.id); x.ov = S.ovs.find(o => o.shift_id === x.shift.id); }
   locationTick();
 }
@@ -749,7 +749,7 @@ function scoresCard() {
     ${selK && SC[selR] ? `<div class="meta mono" style="text-transform:uppercase">${RG[selR].l} · ${label(RG[selR].from)} – ${label(RG[selR].to)}</div>${scoreDetail(SC[selR], selK)}` : ""}
     ${historyBlock()}</div>`;
 }
-function dataFor() { return { extra: S.extra || [], shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, runsBy: S.runsBy, ovs: S.ovs, breaks: S.breaks || [], effBreakFor: S.me.pay_exclude ? [S.me.id] : [] }; }
+function dataFor() { return { leave: S.leave || [], extra: S.extra || [], shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, runsBy: S.runsBy, ovs: S.ovs, breaks: S.breaks || [], effBreakFor: S.me.pay_exclude ? [S.me.id] : [] }; }
 function scoreAt(from, to) { return scoreFor(S.me.id, from, to, dataFor(), S.C); }
 function historyBlock() {
   const t = today(); const weeks = Array.from({ length: 6 }, (_, i) => addDays(monOf(t), -7 * i)).map(w => ({ w, s: scoreAt(w, addDays(w, 6)) })).filter(x => x.s.closed || x.s.effDays.length || x.s.accDays.length);

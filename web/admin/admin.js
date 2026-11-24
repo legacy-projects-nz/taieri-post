@@ -201,7 +201,7 @@ export function teamStats(rg) {
 }
 export function wireRange() { $$("[data-tsr]").forEach(b => b.onclick = () => { S.tsRange = b.dataset.tsr; if (S.tsRange === "custom" && !S.tsFrom) { S.tsFrom = S.week; S.tsTo = addDays(S.week, 6); } render(); });
   $("#tsr-go")?.addEventListener("click", async () => { const f = $("#tsr-from").value, t = $("#tsr-to").value; if (!f || !t || t < f) return toast("Pick a From and To date", "err"); S.tsFrom = f; S.tsTo = t; S._sd = null; await loadAll(); render(); }); }
-export const scoreData = () => S._sd ||= ({ extra: S.extra || [], shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, ovs: S.ovs, runsBy: S.runsBy, breaks: S.breaks || [], effBreakFor: (S.people || []).filter(p => p.pay_exclude).map(p => p.id) });   // unpaid breaks come off efficiency time for everyone; the owner (Jeremy) also before 9 Nov
+export const scoreData = () => S._sd ||= ({ leave: S.leave || [], extra: S.extra || [], shifts: S.shifts, sods: S.sods, eods: S.eods, marks: S.marks, entries: S.entries, feed: S.feed, ovs: S.ovs, runsBy: S.runsBy, breaks: S.breaks || [], effBreakFor: (S.people || []).filter(p => p.pay_exclude).map(p => p.id) });   // unpaid breaks come off efficiency time for everyone; the owner (Jeremy) also before 9 Nov
 
 /* ================= LIVE ================= */
 function liveTab() {

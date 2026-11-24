@@ -55,6 +55,8 @@ export function segTimes(s, runsBy) {
   return { st, en };
 }
 /** Group a driver's shifts into days: {day, segs:[{shift, st, en, sort}], start, end, hours} */
+/** off for the whole day on approved leave (sick, annual…): no SOD / EOD / tasks are due that day */
+export const onLeave = (leave, driver, day) => (leave || []).some(l => l.driver === driver && l.status === "approved" && (l.part || "full") === "full" && l.date_from <= day && l.date_to >= day);
 export function dayShifts(shifts, runsBy, driver) {
   const by = {};
   for (const s of shifts) { if (driver && s.driver !== driver) continue; if (s.run === "BU") continue; (by[s.day] ??= []).push(s); }
@@ -288,7 +290,7 @@ export function scoreFor(driver, from, to, D, C) {
 }
 function scoreForRaw(driver, from, to, D, C) {
   // D: {shifts, sods, eods, marks, entries, feed, runsBy, nowRef}
-  const days = dayShifts(D.shifts.filter(s => s.day >= from && s.day <= to), D.runsBy, driver);
+  const days = dayShifts(D.shifts.filter(s => s.day >= from && s.day <= to && !onLeave(D.leave, s.driver, s.day)), D.runsBy, driver);
   const items = itemsFor(driver, days, D.sods, D.eods, D.marks, C, D.nowRef);
   const closed = items.filter(i => !["due", "wait", "over", "exc"].includes(i.st));
   const onTime = closed.filter(i => i.st === "ok" || i.st === "part" || i.st === "slow" || i.st === "lsub").length;
