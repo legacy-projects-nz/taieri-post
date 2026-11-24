@@ -296,8 +296,36 @@ function quickBar(T, n) {
     : runs.map(x => { const due = (x.en ?? x.st) + S.C.rules.eodHours * 60; const late = sod && !x.eod && n.min > due;
         return x.eod ? `<div class="qb done"><b>✓ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${fmtTime(x.eod.sent_at)}${x.eod.finish_time ? ` · finished ${fmtT(toMin(x.eod.finish_time))}` : ""}</small></div>`
           : va ? offB(`■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}`, late ? "overdue" : "not posted yet") : `<button class="btn qb ${late ? "warn" : "accent"}" data-eod="${x.shift.id}" ${sod ? "" : "disabled"}><b>■ EOD${runs.length > 1 ? ` ${esc(x.shift.run)}` : ""}</b><small>${!sod ? "after your SOD" : late ? "overdue" : ""}</small></button>`; }).join("");
-  const out = {}; const rb = runBar(T, sod, runs, va, offB, out);   // while sorting, the SOD button turns into ■ End sort [code] (one per sort, in order)
-  return `<div class="qbar">${out.sort || sodBtn}${eodBtns}${brkRow(breakBtn(T, sod), hoursBtn(T, sod))}</div>${rb}`;
+  // one button for the whole day: ▶ SOD turns into whatever comes next (■ End sort → ■ End run → ▶ Start sort → … → ■ EOD)
+  if (sortOnly) return `<div class="qbar">${sodBtn}${eodBtns}${brkRow(breakBtn(T, sod), hoursBtn(T, sod))}</div>`;
+  const main = sod ? dayStep(T, sod, runs, va, offB, n) : sodBtn.replace('class="btn qb"', 'class="btn qb main"').replace('class="qb off"', 'class="qb off main"');
+  return `<div class="qbar">${main}${brkRow(breakBtn(T, sod), hoursBtn(T, sod))}</div>`;
+}
+/* The day's next step, as one button. Each step ends the one before it:
+   sorting → ■ End sort [code]; on a run → ■ End [code] (its EOD) or ■ EOD [code] on the last one; between runs → ▶ Start [sort] [code]. */
+function dayStep(T, sod, runs, va, offB, n) {
+  const segs = T.segs; const all = segs.map((x, i) => ({ x, i }));
+  const started = i => stMs(T, i) != null; const ended = (x, i) => !!x.shift.eor_at || !!x.eod || segs.some((y, j) => j > i && started(j));
+  const cur = all.filter(({ x, i }) => started(i) && !ended(x, i)).pop();
+  const nxt = all.find(({ i }) => !started(i));
+  const lab = x => esc(sortCode(x.shift.run));
+  const btn = (cls, attrs, title, sub) => `<button class="btn qb main ${cls}" ${attrs}><b>${title}</b><small>${sub}</small></button>`;
+  const eodB = (x, title, sub) => { const due = (x.en ?? x.st) + S.C.rules.eodHours * 60; const late = n.min > due;
+    return va ? offB(title, late ? "overdue" : "not posted yet").replace('class="qb off"', 'class="qb off main"') : btn(late ? "warn" : "accent", `data-eod="${x.shift.id}"`, title, late ? "overdue" : sub); };
+  // EODs still owed on runs that were ended some other way (older taps): small buttons beside the main one
+  const owed = runs.filter(x => { const i = segs.indexOf(x); return !x.eod && x !== cur?.x && started(i) && ended(x, i); });
+  const owedB = owed.map(x => va ? offB(`■ EOD ${lab(x)}`, "not sent") : `<button class="btn qb warn" data-eod="${x.shift.id}"><b>■ EOD ${lab(x)}</b><small>not sent yet</small></button>`).join("");
+  let main = "";
+  const so = sortNow(T, cur);
+  if (so) { const out = {}; runBar(T, sod, runs, va, offB, out); main = (out.sort || "").replace('class="btn qb', 'class="btn qb main').replace('class="qb off"', 'class="qb off main"'); }
+  if (!main && cur && !cur.x.sort) { const x = cur.x; const after = segs.slice(cur.i + 1).length > 0; const going = x.shift.deliver_at ? `going since ${fmtTime(x.shift.deliver_at)}` : "going";
+    main = after ? eodB(x, `■ End ${lab(x)}`, `send its EOD · then ▶ ${lab(segs[cur.i + 1])}`) : eodB(x, `■ EOD ${lab(x)}`, `${lab(x)} ${going}`); }
+  if (!main && nxt) { const x = nxt.x; const sorting = x.sort || (OWN_SORT.includes(x.shift.run) && !isGo(x.shift.run));
+    const title = `▶ Start ${sorting ? "sort " : ""}${lab(x)}`;
+    main = va ? offB(title, "not started").replace('class="qb off"', 'class="qb off main"') : btn("", `data-runmark="sor" data-shift="${x.shift.id}"`, title, x.st != null ? `rostered ${fmtT(x.st)}` : ""); }
+  if (!main && owed.length) return owedB.replace('class="btn qb warn"', 'class="btn qb main warn"');
+  if (!main) main = `<div class="qb done main"><b>✓ Day done</b><small>all EODs sent${runs.length ? ` · last ${fmtTime(runs[runs.length - 1].eod?.sent_at || new Date().toISOString())}` : ""}</small></div>`;
+  return main + owedB;
 }
 // Runboard (view only for drivers): a full-width button near the end of the page, styled like the break / hours row
 const rbBtn = () => `<a class="card rbrow" href="/admin/#runboard"><h2>Runboard<span>this week's roster, view only</span><i class="fchev" aria-hidden="true"></i></h2></a>`;   // looks like the folded rows, opens the Run Board
@@ -511,6 +539,17 @@ function rulesFor(x, day) {
   const seq = S.set?.taskSeq?.[code] || []; const pos = r => { const i = seq.findIndex(k => k === r.id || k === r.addon); return i < 0 ? 1e6 : i; };
   return out.sort((a, b) => LAST.includes(a.addon) - LAST.includes(b.addon) || pos(a) - pos(b) || (toMin(a.closes) ?? toMin(a.opens) ?? 0) - (toMin(b.closes) ?? toMin(b.opens) ?? 0));
 }
+/* ⓘ on every add-on / task: what it is, when, the code, time allowed and how to tick it off */
+function taskInfo(key, title, desc, time, code) {
+  const ad = key ? S.addons.find(a => a.id === key) : null; const r = key ? S.rules.find(z => (z.done_key || z.addon) === key) : null;
+  const note = desc || r?.note || ""; const when = time || (r ? winTxt(r) : "");
+  const how = key === BAYVAN ? "Tap 📷 Photos and take two photos (your bay and your van), then add your notes. That ticks it off."
+    : key === MAIL_KEY ? "Tap 📷 Photos to photograph the mail trays, or Nil if there's no mail." : puAreaOf(key) ? "Tap Enter to put in the pick-ups, or None if there weren't any."
+    : ad?.photo ? "Tap 📷 Photo and take the photo. That ticks it off." : "Tap Done when it's done. Tap it again to undo.";
+  const k = "t_" + String(key || title).replace(/[^\w]/g, "_");
+  INFO[k] = [title || ad?.name || key, `${note ? `<p>${esc(note)}</p>` : ""}${when && when !== "any time" ? `<p><b>When:</b> ${esc(when)}</p>` : ""}${code || r?.code ? `<p><b>Code:</b> ${esc(code || r.code)}</p>` : ""}${ad?.minutes ? `<p><b>Time allowed:</b> ${ad.minutes} min on the run</p>` : ""}<p>${how}</p><p class="meta">Every task has to be ticked off, or marked Not done, before you can send the run's EOD.</p>`];
+  return ib(k);
+}
 function winTxt(r) { const f = toMin(r.opens), t = toMin(r.closes); return f != null && t != null ? `${fmtT(f)} – ${fmtT(t)}` : t != null ? `by ${fmtT(t)}` : f != null ? `from ${fmtT(f)}` : "any time"; }
 /** Every timed task on a run, each with its own Done button on the day (what Jeremy's Alerts and "Timings today" read). */
 function timingRows(x, day, nowMin) {
@@ -522,7 +561,7 @@ function timingRows(x, day, nowMin) {
     else if (day < today() && key) { st = `✗ not marked done`; cls = "miss"; }
     const btn = !(isT && key && !S.viewAs) ? "" : done ? `<div class="row" style="flex:0 0 auto;gap:6px">${puEditBtn(key, x.shift.day)}<button class="btn sm" data-done="${esc(key)}" data-undo="1" data-shift="${x.shift.id}" title="Tap again to undo" style="flex:0 0 auto;min-height:34px">✓ Done</button></div>` : isPhotoTask(key) ? rsBtn(x.shift.id, key) : puAreaOf(key) ? `<div class="row" style="flex:0 0 auto;gap:6px">${puBtn(key, x.shift.id)}${noneBtn(key, x.shift.id)}</div>` : !(gp && planned) ? `<button class="btn sm ${cls === "miss" ? "warn" : "ghost"}" data-done="${esc(key)}" data-shift="${x.shift.id}" style="flex:0 0 auto;min-height:34px">Done</button>` : "";
     const when = done ? `✓ ${fmtTime(done)}` : gp && planned ? "✓ plan" : cls === "miss" ? `✗ ${t != null ? fmtT(t) : "not done"}` : winTxt(r) === "any time" ? "" : winTxt(r);
-    return `<div class="tw-r ${cls}"><div class="w">${when}${tag ? `<span class="tw-tag">${tag}</span>` : ""}</div><div class="tw-l"><span class="n">${esc(r.short || r.name)}</span>${r.code ? `<span class="tw-code">🔑 ${esc(r.code)}</span>` : ""}</div>${btn}</div>`; });
+    return `<div class="tw-r ${cls}"><div class="w">${when}${tag ? `<span class="tw-tag">${tag}</span>` : ""}</div><div class="tw-l"><span class="n">${esc(r.short || r.name)}${taskInfo(key, r.name, r.note, winTxt(r), r.code)}</span>${r.code ? `<span class="tw-code">🔑 ${esc(r.code)}</span>` : ""}</div>${btn}</div>`; });
   return `<div class="tw"><h4>${isT ? "Tasks today" : "Tasks"}</h4>${rows.join("")}</div>`;
 }
 const canEditEod = day => !S.viewAs && day >= addDays(today(), -1) && day <= today();
@@ -652,7 +691,7 @@ function tasksCard(D, n, next, bare = false) {
       items.push({ key, title: r.name, short: r.short, code: r.code, desc: meetEdit ? `${r.note || ""} Tap 📍 to pick Milton or Balclutha and the time; the Lawrence driver gets it straight away.`.trim() : r.note || (key && !key.startsWith("tw_") ? (S.addons.find(a => a.id === key)?.name || "") : ""), time: winTxt(r), opens: toMin(r.opens), closes: toMin(r.closes), doneAt: key ? done[key] : null, planned, meetEdit, meetVal: String(x.shift.milton_at || r.closes || "").slice(0, 5) }); }
     for (const id of x.shift.addons || []) { if (covered.has(id)) continue; const o = S.addons.find(a => a.id === id); if (!o) continue;   // tw_ tasks without a timed rule (e.g. NZQA pick up) show here too
       items.push({ key: id, title: o.name, desc: plan[id] ? `planned ${fmtT(toMin(plan[id]))}` : o.minutes ? `${o.minutes} min allowed on the run` : "add-on on this run", time: "any time", opens: null, closes: null, doneAt: done[id], planned: false }); }
-    { const seq = S.set?.taskSeq?.[code] || []; if (seq.length) { const pos = t => { const i = seq.indexOf(t.key); return t.key === "tw_baynext" ? 2e6 : i < 0 ? 1e6 : i; }; items.sort((a, b) => pos(a) - pos(b)); } }   // set order, extra add-ons (Waihola, NZQA) slotted in too
+    { const seq = S.set?.taskSeq?.[code] || []; if (seq.length) { const pos = t => { const i = seq.indexOf(t.key); return t.key === "tw_baynext" ? 2e6 : t.key === "tw_scanreport" ? 1.5e6 : i < 0 ? 1e6 : i; }; items.sort((a, b) => pos(a) - pos(b)); } }   // set order, extra add-ons (Waihola, NZQA) slotted in too
     const nDone = items.filter(t => t.doneAt || t.planned).length;
     const row = t => { const isDone = !!(t.doneAt || t.planned); let cls = "", st = "";
       if (isDone) { cls = "ok"; st = t.doneAt ? `✓ done ${fmtTime(t.doneAt)}` : "✓ game plan in"; }
@@ -662,7 +701,7 @@ function tasksCard(D, n, next, bare = false) {
       const pu = puAreaOf(t.key); const btn = isT && !isDone && t.key && (!S.viewAs || S.viewer?.isStaff) ? (isPhotoTask(t.key) ? rsBtn(x.shift.id, t.key) : pu ? `<div class="row" style="flex:0 0 auto;gap:6px">${puBtn(t.key, x.shift.id)}${noneBtn(t.key, x.shift.id)}</div>` : `<button class="btn sm accent" data-done="${esc(t.key)}" data-shift="${x.shift.id}">Done</button>`) : isT && isDone && pu && !S.viewAs ? puEditBtn(t.key, x.shift.day) : "";
       const meet = t.meetEdit && !isDone && D.day >= n.date && (!S.viewAs || S.viewer?.isStaff) ? `<button type="button" class="btn sm ghost" style="flex:0 0 auto;min-height:34px" data-meetset="${x.shift.id}" title="Set where and when to meet the Lawrence driver">📍 ${x.shift.milton_at ? `${esc(x.shift.meet_place === "Balclutha" ? "Bal" : "Mil")} ${fmtT(toMin(t.meetVal))}` : "Set"}</button>` : "";
       const when = t.key === "tw_twrunsheet" && (cls === "over" || cls === "late") ? (cls === "over" ? "✗ 45 min" : `${45 - (n.min - x.st)} min`) : cls === "over" ? `✗ ${fmtT(t.closes)}` : cls === "soon" ? `${t.closes - n.min} min` : t.time === "any time" ? "" : t.time;
-      return `<div class="tk tk1 ${cls}"><div class="tkt"><span class="t">${esc(t.short || tkShort(t.key, t.title))}</span>${when ? `<span class="tkw">${esc(when)}</span>` : ""}${t.code ? `<span class="tkc">🔑 ${esc(t.code)}</span>` : ""}</div>${meet}${btn}</div>`; };
+      return `<div class="tk tk1 ${cls}"><div class="tkt"><span class="t">${esc(t.short || tkShort(t.key, t.title))}${taskInfo(t.key, t.title, t.desc, t.time, t.code)}</span>${when ? `<span class="tkw">${esc(when)}</span>` : ""}${t.code ? `<span class="tkc">🔑 ${esc(t.code)}</span>` : ""}</div>${meet}${btn}</div>`; };
     return `<div class="ablk"><div class="row" style="justify-content:space-between"><b style="font-size:16px">${esc(code)}</b><span class="meta">${items.length && isT ? `${nDone}/${items.length} done` : ""}</span></div>${isT ? estLine(x, D) : ""}
       ${items.length ? (() => { const isDone = t => !!(t.doneAt || t.planned); const todo = items.filter(t => !isDone(t)), fin = items.filter(isDone);
         // pick-ups not done yet sit together at the top of the list (Owaka Rural, Owaka Town, …)
@@ -673,7 +712,7 @@ function tasksCard(D, n, next, bare = false) {
           return `<button type="button" class="tkd" ${attrs} ${attrs ? `title="${esc(t.title)} · tap to ${pu ? "edit" : "undo"}"` : `title="${esc(t.title)}" disabled`}><b>${esc(tkShort(t.key, t.title))}</b><small>✓ ${t.doneAt ? fmtTime(t.doneAt) : "plan in"}</small></button>`; };
         return `${todo.length ? `<div class="tks">${todo.map(row).join("")}</div>` : ""}${fin.length ? `<div class="tkds">${fin.map(tile).join("")}</div>` : ""}`; })() : `""`}
       <details class="abmore"><summary>Change run add-ons</summary><div class="list" style="margin-top:6px">${opts.map(o => { const isOn = on.has(o.id); const rule = S.rules.find(r => r.addon === o.id);
-        return `<div class="row" style="align-items:center"><label class="chk ${isOn ? "on" : ""}" style="flex:1 1 60%"><input type="checkbox" data-addon="${o.id}" data-shift="${x.shift.id}" ${isOn ? "checked" : ""}>${esc(o.name)}${rule ? `<span class="meta" style="margin-left:auto">${winTxt(rule)}</span>` : ""}</label>
+        return `<div class="row" style="align-items:center"><label class="chk ${isOn ? "on" : ""}" style="flex:1 1 60%"><input type="checkbox" data-addon="${o.id}" data-shift="${x.shift.id}" ${isOn ? "checked" : ""}>${esc(o.name)}${rule ? `<span class="meta" style="margin-left:auto">${winTxt(rule)}</span>` : ""}</label>${taskInfo(o.id, o.name, rule?.note, rule ? winTxt(rule) : "", rule?.code)}
           ${o.task && isOn ? `<input class="in" type="time" step="900" style="flex:0 0 120px;min-height:40px" value="${esc(plan[o.id] || "")}" data-plan="${o.id}" data-shift="${x.shift.id}" aria-label="Planned time for ${esc(o.name)}">` : ""}</div>`; }).join("")}</div>
 </details></div>`;
   }).join("");
@@ -835,7 +874,7 @@ const noneBtn = (key, shiftId) => puAreaOf(key) === PU_MIN_AREA ? `<button class
 const puBtn = (key, shiftId) => puAreaOf(key) ? `<button class="btn sm accent" data-puopen="${esc(key)}" data-shift="${shiftId}" style="flex:0 0 auto;min-height:34px">Enter</button>` : "";
 /** Runsheet photo task: the Done button opens the camera; the photo is uploaded and the task ticked */
 const isPhotoTask = key => !!key && !!S.addons.find(a => a.id === key)?.photo;
-const rsBtn = (shiftId, key = "tw_twrunsheet") => key === MAIL_KEY ? `<div class="row" style="flex:0 0 auto;gap:6px"><button type="button" class="btn sm accent" style="flex:0 0 auto;min-height:34px" data-mailtrays="${shiftId}">📷 Photos</button><button type="button" class="btn sm ghost" style="flex:0 0 auto;min-height:34px" data-mailnil="${shiftId}">Nil</button></div>` : `<label class="btn sm accent" style="flex:0 0 auto;min-height:34px;cursor:pointer">📷 Photo<input type="file" accept="image/*" capture="environment" data-rsphoto="${shiftId}" data-rskey="${esc(key)}" hidden></label>`;
+const rsBtn = (shiftId, key = "tw_twrunsheet") => key === BAYVAN ? `<button type="button" class="btn sm accent" style="flex:0 0 auto;min-height:34px" data-bayvan="${shiftId}">📷 Photos</button>` : key === MAIL_KEY ? `<div class="row" style="flex:0 0 auto;gap:6px"><button type="button" class="btn sm accent" style="flex:0 0 auto;min-height:34px" data-mailtrays="${shiftId}">📷 Photos</button><button type="button" class="btn sm ghost" style="flex:0 0 auto;min-height:34px" data-mailnil="${shiftId}">Nil</button></div>` : `<label class="btn sm accent" style="flex:0 0 auto;min-height:34px;cursor:pointer">📷 Photo<input type="file" accept="image/*" capture="environment" data-rsphoto="${shiftId}" data-rskey="${esc(key)}" hidden></label>`;
 function logPickup(opt = {}) {
   const area = opt.area || PU_AREA[puToday(S.days[today()])] || "Lawrence";
   sheet(`<h3>Enter pick-ups${opt.area ? ` · ${esc(opt.area)}` : ""}</h3><form class="frm" id="pf"><label class="f">Date<input class="in" type="date" id="pu-day" value="${today()}" required></label>
@@ -1023,7 +1062,7 @@ function wire() {
     toast(yes ? "Thanks · ticked off, recorded as late" : "Thanks · recorded as not done", "ok"); await loadAll(); render(); });
   $("#gate-open")?.addEventListener("click", () => gateSheet(Object.values(S.days[today()]?.segs || []).map(x => x.shift?.id).find(Boolean) || null));
   $$("[data-carry]").forEach(b => b.onclick = async () => { const [sid, k] = b.dataset.carry.split("|"); b.disabled = true; const { error } = await sb.rpc("task_done_late", { p_shift: sid, p_addon: k, p_name: b.dataset.name || null }); if (error) { b.disabled = false; return toast(error.message, "err"); } toast("Done · recorded as late", "ok"); await loadAll(); render(); });
-  $$("[data-eod]").forEach(b => b.onclick = () => eodForm(b.dataset.eod, !!b.dataset.sort));
+  $$("[data-eod]").forEach(b => b.onclick = () => eodGate(b.dataset.eod, !!b.dataset.sort));
   $$("[data-eodedit]").forEach(b => b.onclick = () => eodForm(b.dataset.eodedit, !!b.dataset.sort, true));
   $$("[data-addon]").forEach(c => c.onchange = async () => { const shift = S.shifts.find(s => s.id === c.dataset.shift); const set = new Set(shift.addons || []); c.checked ? set.add(c.dataset.addon) : set.delete(c.dataset.addon); const { error } = await sb.rpc("set_my_addons", { p_shift: shift.id, p_addons: [...set] }); if (error) { toast(error.message, "err"); c.checked = !c.checked; } else { shift.addons = [...set]; render(); } });
   $$("[data-plan]").forEach(i => i.onchange = async () => { const shift = S.shifts.find(s => s.id === i.dataset.shift); const plan = { ...(shift.plan || {}), [i.dataset.plan]: i.value }; const { error } = await sb.rpc("set_my_plan", { p_shift: shift.id, p_plan: plan }); if (error) toast(error.message, "err"); else { shift.plan = plan; toast("Saved", "ok"); } });
@@ -1091,13 +1130,80 @@ function bindDetail(root) {
   on("[data-copy]", el => { const v = el.dataset.copy.split(" · ")[0].replace(/ or .*$/, ""); navigator.clipboard?.writeText(v).then(() => toast(`Copied ${v}`, "ok"), () => { }); });
   on("[data-brief]", el => { const m = (S.briefs || []).find(x => x.message_id === el.dataset.brief); if (m) briefSheet(m); });
   on("[data-msgv]", el => { const m = S.msgs.find(x => x.message_id === el.dataset.msgv); if (m) msgSheet(m); });
-  on("[data-eodv]", el => eodForm(el.dataset.eodv, !!el.dataset.sort));
+  on("[data-eodv]", el => eodGate(el.dataset.eodv, !!el.dataset.sort));
   on("[data-eodedit]", el => eodForm(el.dataset.eodedit, !!el.dataset.sort, true));
   on("[data-sodv]", el => sendSod(el.dataset.sodv, true));
 }
 
 /* ================= sheets ================= */
 /** Photo task with notes: ask for the note before uploading. Resolves to the text, or undefined if cancelled. */
+/* ---------- Bay / Van photo: two photos (the bay + next run's items, and the van), plus notes ---------- */
+const BAYVAN = "tw_baynext";
+document.addEventListener("click", e => { const b = e.target.closest?.("[data-bayvan]"); if (!b || b.disabled) return; e.preventDefault(); e.stopPropagation(); bayVanSheet(b.dataset.bayvan); }, true);
+function bayVanSheet(shiftId, after) {
+  const ad = S.addons.find(a => a.id === BAYVAN); const sh = S.shifts.find(s => s.id === shiftId); if (!sh) return;
+  const files = { bay: null, van: null }; const LAB = { bay: "Bay photo", van: "Van photo" };
+  sheet(`<h3>${esc(ad?.name || "Bay / Van photo")}</h3><p class="hint">Take both: your bay (with the next run's items) and your van.</p>
+    <form class="frm" id="bv">${Object.keys(LAB).map(k => `<label class="btn ghost full" style="cursor:pointer" id="bvl-${k}">📷 ${LAB[k]}<input type="file" accept="image/*" capture="environment" data-bv="${k}" hidden></label><div class="meta full" id="bvs-${k}" style="margin-top:-4px">not taken yet</div>`).join("")}
+    ${ad?.photo_note ? `<label class="f full">Notes<textarea class="in" id="bv-note" rows="3" placeholder="What's in the bay / for next, anything left behind, anything wrong with the van"></textarea></label>` : ""}
+    <button class="btn full" type="submit" id="bv-go">Save photos</button></form>`, (bg, close) => {
+    bg.querySelectorAll("[data-bv]").forEach(inp => inp.onchange = () => { const f = inp.files?.[0]; if (!f) return; const k = inp.dataset.bv; files[k] = f;
+      bg.querySelector("#bvs-" + k).innerHTML = `<span class="c-ok">✓ ${LAB[k]} taken</span> · tap again to retake`; bg.querySelector("#bvl-" + k).classList.replace("ghost", "accent"); });
+    bg.querySelector("#bv").onsubmit = async e => { e.preventDefault();
+      const miss = Object.keys(LAB).filter(k => !files[k]); if (miss.length) return toast(`Take the ${miss.map(k => LAB[k].toLowerCase()).join(" and the ")} first`, "err");
+      const note = bg.querySelector("#bv-note")?.value.trim() || null; if (ad?.photo_note && !note) return toast("Add a note first", "err");
+      const go = bg.querySelector("#bv-go"); go.disabled = true; go.textContent = "Uploading…";
+      let first = true;
+      for (const k of Object.keys(LAB)) { const f1 = await shrinkPhoto(files[k]); const path = `${sh.driver || S.me.id}/${sh.day}/${shiftId}-${BAYVAN}-${k}-${Date.now()}.jpg`;
+        const { error } = await sb.storage.from("runsheets").upload(path, f1, { upsert: true, contentType: f1.type || "image/jpeg" });
+        if (error) { go.disabled = false; go.textContent = "Save photos"; return toast(`${LAB[k]} didn't upload: ${error.message}`, "err"); }
+        const { error: e2 } = await sb.rpc("task_photo_done", { p_shift: shiftId, p_addon: BAYVAN, p_path: path, p_note: first ? note : null }); first = false;
+        if (e2) { go.disabled = false; go.textContent = "Save photos"; return toast(e2.message, "err"); } }
+      close(); toast("Bay + van photos saved ✓", "ok"); await loadAll(); render(); after?.(); };
+  });
+}
+/* ---------- EOD lock: every add-on / task on the run is ticked off, or marked Not done, before its EOD ---------- */
+function openTasks(x, day) {
+  const mk = {}; for (const m of S.marks || []) mk[m.key] = m;
+  const settled = k => !!(x.shift.done || {})[k] || ["ok", "late", "miss", "exc"].includes(mk[`add|${x.shift.id}|${k}`]?.status);
+  const out = []; const seen = new Set();
+  for (const r of rulesFor(x, day)) { const k = r.done_key || r.addon; if (r.addon) seen.add(r.addon); if (!k || seen.has("k:" + k)) continue; seen.add("k:" + k);
+    const planned = k.startsWith("tw_") && /game plan/i.test(r.name) && Object.keys(x.shift.plan || {}).length > 0;
+    if (!planned && !settled(k)) out.push({ key: k, name: r.name }); }
+  for (const id of x.shift.addons || []) { if (seen.has(id) || seen.has("k:" + id) || settled(id) || !S.addons.some(a => a.id === id)) continue; out.push({ key: id, name: addName(id) }); }
+  const seq = S.set?.taskSeq?.[x.shift.run] || []; const pos = t => t.key === BAYVAN ? 2e6 : t.key === "tw_scanreport" ? 1.5e6 : (seq.indexOf(t.key) + 1 || 1e6);
+  return out.sort((a, b) => pos(a) - pos(b));
+}
+function eodGate(shiftId, sortOnly) {
+  const sh = S.shifts.find(s => s.id === shiftId); const T = sh ? S.days[sh.day] : null; const x = T?.segs.find(y => y.shift.id === shiftId);
+  const L = x && !sortOnly && !x.sort && sh.day === today() && !S.viewAs ? openTasks(x, sh.day) : [];
+  if (!L.length) return eodForm(shiftId, sortOnly);
+  const pts = S.C.rules.perEvent;
+  const again = msg => { if (msg) toast(msg, "ok"); };
+  const row = (t, i) => { const pu = puAreaOf(t.key); const special = t.key === MAIL_KEY || !!pu || t.key === "milton";
+    const doB = t.key === BAYVAN ? `<button class="btn sm accent" data-gbv="${i}">📷 Photos</button>`
+      : isPhotoTask(t.key) && !special ? `<label class="btn sm accent" style="cursor:pointer">📷 Photo<input type="file" accept="image/*" capture="environment" data-gph="${i}" hidden></label>`
+      : special ? `<button class="btn sm accent" data-gopen="${i}">Open</button>` : `<button class="btn sm accent" data-gdone="${i}">Done</button>`;
+    return `<div class="item" data-grow="${i}"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><b>${esc(t.name)}</b><span class="row gacts" style="flex:0 0 auto;gap:4px">${doB}<button class="btn sm ghost" data-gnot="${i}">Not done</button></span></div>
+      <div class="row gsure" style="display:none;margin-top:6px;gap:6px;align-items:center"><span class="meta c-crit" style="flex:1 1 auto">This comes off your Admin score (−${pts}%). Sure it wasn't done?</span><button class="btn sm crit" data-gyes="${i}">Not done</button><button class="btn sm ghost" data-gback="${i}">Back</button></div></div>`; };
+  sheet(`<h3>Before your EOD · ${esc(sortCode(sh.run))}</h3><p class="hint">Tick off every task on this run first. If one didn't happen, tap <b>Not done</b>. Each Not done comes off your Admin score.</p><div class="list">${L.map(row).join("")}</div>`, (bg, close) => {
+    const next = async msg => { again(msg); await loadAll(); render(); close(); eodGate(shiftId, sortOnly); };
+    const lock = el => el.closest("[data-grow]").querySelectorAll("button").forEach(z => z.disabled = true);
+    bg.querySelectorAll("[data-gdone]").forEach(b => b.onclick = async () => { const t = L[+b.dataset.gdone]; lock(b); const { error } = await sb.rpc("task_done", { p_shift: shiftId, p_addon: t.key }); if (error) { b.closest("[data-grow]").querySelectorAll("button").forEach(z => z.disabled = false); return toast(error.message, "err"); } next("Ticked ✓"); });
+    bg.querySelectorAll("[data-gbv]").forEach(b => b.onclick = () => { close(); bayVanSheet(shiftId, () => eodGate(shiftId, sortOnly)); });
+    bg.querySelectorAll("[data-gopen]").forEach(b => b.onclick = () => { close(); S.open.tasks1 = true; S.open.tasks0 = true; render(); setTimeout(() => $("#tasks")?.scrollIntoView({ block: "start", behavior: "smooth" }), 0); toast("Do it here, then tap EOD again"); });
+    bg.querySelectorAll("[data-gph]").forEach(inp => inp.onchange = async () => { const f = inp.files?.[0]; if (!f) return; const t = L[+inp.dataset.gph]; const ad = S.addons.find(a => a.id === t.key);
+      let note = null; if (ad?.photo_note) { note = await photoNote(ad); if (note === undefined) { inp.value = ""; return; } }
+      toast("Uploading photo…"); const f1 = await shrinkPhoto(f); const path = `${sh.driver || S.me.id}/${sh.day}/${shiftId}-${t.key}-${Date.now()}.jpg`;
+      const { error } = await sb.storage.from("runsheets").upload(path, f1, { upsert: true, contentType: f1.type || "image/jpeg" }); if (error) return toast(`Photo didn't upload: ${error.message}`, "err");
+      const { error: e2 } = await sb.rpc("task_photo_done", { p_shift: shiftId, p_addon: t.key, p_path: path, p_note: note }); if (e2) return toast(e2.message, "err"); next("Photo saved ✓"); });
+    bg.querySelectorAll("[data-gnot]").forEach(b => b.onclick = () => { const r = b.closest("[data-grow]"); r.querySelector(".gsure").style.display = "flex"; r.querySelector(".gacts").style.display = "none"; });
+    bg.querySelectorAll("[data-gback]").forEach(b => b.onclick = () => { const r = b.closest("[data-grow]"); r.querySelector(".gsure").style.display = "none"; r.querySelector(".gacts").style.display = "flex"; });
+    bg.querySelectorAll("[data-gyes]").forEach(b => b.onclick = async () => { const t = L[+b.dataset.gyes]; lock(b);
+      const { error } = await sb.rpc("task_resolve", { p_shift: shiftId, p_addon: t.key, p_status: "miss", p_name: t.name }); if (error) { b.closest("[data-grow]").querySelectorAll("button").forEach(z => z.disabled = false); return toast(error.message, "err"); }
+      next(`Recorded as not done · −${pts}% Admin`); });
+  }, { wide: true });
+}
 function photoNote(ad) {
   return new Promise(res => { let done = false; const fin = v => { if (!done) { done = true; res(v); } };
     const { bg } = sheet(`<h3>${esc(ad.name)} · notes</h3><form class="frm" id="pn"><label class="f full">Notes<textarea class="in" id="pn-note" rows="4" required placeholder="What's in the bay / for next, anything left behind or out of place"></textarea></label><button class="btn full" type="submit">Save photo + notes</button></form>`, (bg2, close) => {
@@ -1317,7 +1423,7 @@ function eodForm(shiftId, sortOnly, edit = false) {
   // mail runs with mail today: a photo of any mail left (or All delivered) is needed before the EOD; the stops left come off the TDT
   const needMl = !ex && !sortOnly && !isSort(code) && mailRun(S.C, code) && (shift.mail_stops || 0) > 0 && shift.mail_left == null;
   if (needMl) fields += `<div class="full" id="ml-box"><span class="lbl">Mail left over</span><div class="row" style="gap:6px;margin-top:4px"><label class="btn sm accent" style="flex:1 1 0;min-height:34px;cursor:pointer">📷 Mail left<input type="file" accept="image/*" capture="environment" id="ml-photo" hidden></label><button type="button" class="btn sm ghost" style="flex:1 1 0;min-height:34px" id="ml-none">All delivered</button></div><p class="meta" id="ml-st" style="margin:4px 0 0">Photo of any mail you couldn't deliver (box or tray), or tap All delivered.</p></div>`;
-  const needRs = !ex && !sortOnly && !isSort(code) && !shift.done?.tw_twrunsheet && rulesFor({ shift }, shift.day).some(r => r.addon === "tw_twrunsheet");
+  const needRs = !ex && !sortOnly && !isSort(code) && !shift.done?.tw_twrunsheet && !(S.marks || []).some(m => m.key === `add|${shiftId}|tw_twrunsheet` && m.status !== "ask") && rulesFor({ shift }, shift.day).some(r => r.addon === "tw_twrunsheet");
   if (needRs) fields += `<label class="chk full"><input type="checkbox" id="runsheet" required>Runsheet photo taken (NZ Post needs it before every EOD)</label>`;
   fields += `<label class="f full">Note (optional)<input class="in" id="note" placeholder="anything Jeremy should know" value="${esc(ex?.note || "")}"></label>`;
   sheet(`<h3>${ex ? "Edit EOD" : "EOD"} · ${esc(sortOnly || isSort(code) ? (S.runsBy[code]?.label || "Sort") : code)}</h3><p class="hint">${label(shift.day)}${shift.van ? ` · ${esc(shift.van)}` : ""}. ${ex ? `Sent ${fmtTime(ex.sent_at)}${ex.edited_at ? `, last edited ${fmtTime(ex.edited_at)}` : ""}. Change what's wrong and save — Jeremy sees it was edited.` : "Fill in every box that applies."}</p><form class="frm" id="ef">${fields}<button class="btn full" type="submit">${ex ? "Save changes" : "Send EOD"}</button></form>`, (bg, close) => {

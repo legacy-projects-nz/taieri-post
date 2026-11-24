@@ -30,6 +30,8 @@ export const ADDONS = [
   A("tw_twtidybay", "Tidy bay", ["SUP"], { task: true, no_saturday: true }), A("tw_twtidydesk", "Tidy desk", ["SUP"], { task: true, no_saturday: true }), A("tw_twmissorts", "Missorts", ["SUP"], { task: true, no_saturday: true }), A("tw_tw3rdparty", "3rd Party", ["SUP"], { task: true, no_saturday: true }),
   A("tw_twrcvkey", "Pick up street receiver key", ["SUP", "SUP2", "SUP3", "RSB", "PCB", "WH"], { task: true }), A("tw_twairkeys", "Pick up airport keys", ["SUP", "SUP2", "SUP3", "TUA", "FLY", "RAM"], { task: true }),
   A("tw_twrunsheet", "Runsheet photo", ["TUA", "DB", "FLY", "LAW", "RAM", "PCB", "RSB"], { task: true, always: true, photo: true }),
+  A("tw_scanreport", "Scan report check", ["TUA", "DB", "FLY", "LAW", "RAM", "PCB", "RSB", "WH"], { task: true, always: true, short: "Scan report" }),
+  A("tw_baynext", "Bay/Van photo", ["TUA", "DB", "FLY", "LAW", "RAM", "PCB", "RSB", "WH"], { task: true, always: true, photo: true, photo_note: true, short: "Bay/Van" }),
   A("tw_mailtrays", "Mail tray photo", ["TUA", "FLY", "RAM", "LAW", "PCB", "RSB", "WH"], { task: true, always: true, photo: true, short: "Mail trays", since: new Intl.DateTimeFormat("en-CA", { timeZone: "Pacific/Auckland" }).format(new Date()) }),
 ];
 const R = (id, name, runs, addon, o = {}) => ({ id, name, runs, addon, opens: null, closes: null, days: [1, 2, 3, 4, 5], note: null, active: true, ...o });
@@ -61,6 +63,8 @@ export const RULES = [
   R("twmissorts", "Missorts", ["SUP"], "tw_twmissorts", { note: "Before you finish. Tap Done when missorts are dealt with." }),
   R("tw3rdparty", "3rd Party", ["SUP"], "tw_tw3rdparty", { note: "Before you finish. Tap Done when 3rd Party is sorted." }),
   R("twrunsheet", "Runsheet photo", ["TUA", "DB", "FLY", "LAW", "RAM", "PCB", "RSB"], "tw_twrunsheet", { note: "Take a photo of the completed runsheet, then tap Done." }),
+  R("scanreport", "Scan report check", ["TUA", "DB", "FLY", "LAW", "RAM", "PCB", "RSB", "WH"], "tw_scanreport", { days: [1, 2, 3, 4, 5, 6], note: "Check the scanner at the end of the run: nothing left out for delivery. Put anything delivered through as delivered." }),
+  R("baynext", "Bay/Van photo", ["TUA", "DB", "FLY", "LAW", "RAM", "PCB", "RSB", "WH"], "tw_baynext", { days: [1, 2, 3, 4, 5, 6], note: "Photograph your bay (with the next run's items) and your van, and add your notes." }),
   R("mailtrays", "Mail tray photo", ["TUA", "FLY", "RAM", "LAW"], "tw_mailtrays", { note: "Photograph your mail trays (up to 3 photos). The slots with mail are counted for your mail stops." }),
   R("mailtrays_wh", "Mail tray photo", ["PCB", "RSB", "WH"], "tw_mailtrays", { days: [1, 2, 3, 4, 5, 6], note: "Photograph your mail trays (up to 3 photos). The slots with mail are counted for your mail stops." }),
 ];

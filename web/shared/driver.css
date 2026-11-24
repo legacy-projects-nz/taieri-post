@@ -204,3 +204,7 @@ button.card.rbrow{width:100%;font:inherit;color:inherit;text-align:left;cursor:p
 .card.rbrow.due>h2>span{color:var(--ink);font-weight:700}
 .card.grps{padding:10px 16px;gap:0;background:var(--soft)}
 .card.grps .kv{margin:0}
+
+/* one day button (SOD → End sort → End run → Start → EOD) spans the bar; ⓘ on tasks */
+.qbar>.qb.main{grid-column:1/-1}
+.tkt .ib,.tw-l .ib,.abmore .ib{width:22px;height:22px;font-size:12px;margin-left:6px;vertical-align:middle}

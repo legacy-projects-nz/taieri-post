@@ -163,6 +163,8 @@ function rpc(name, a = {}) {
     case "mail_left_none": { const s = shift(); if (!s) return err("No such shift"); s.mail_left = 0; save(); return { data: null, error: null }; }
     case "mail_none": { const s = shift(); if (!s) return err("No such shift"); s.mail_stops = 0; (s.done ??= {}).tw_mailtrays = nowIso(); save(); return { data: null, error: null }; }
     case "set_run_figs": { const s = shift(); if (!s) return err("No such shift"); if (a.p_scan != null) s.scan_parcels = a.p_scan; if (a.p_mail != null) s.mail_stops = a.p_mail; save(); return { data: null, error: null }; }
+    case "task_resolve": { const s = shift(); if (!s) return err("No such shift"); const k = `add|${s.id}|${a.p_addon}`; if (a.p_status !== "miss") (s.done ??= {})[a.p_addon] = s.done?.[a.p_addon] || nowIso();
+      db.marks = (db.marks || []).filter(m => m.key !== k); db.marks.push({ key: k, driver: ME.id, status: a.p_status === "done" ? "ok" : a.p_status, reviewed: a.p_status !== "done", note: "Driver", at: nowIso() }); save(); return { data: null, error: null }; }
     case "task_undo": { const s = shift(); if (s?.done) delete s.done[a.p_addon]; save(); return { data: null, error: null }; }
     case "set_my_addons": { const s = shift(); if (!s) return err("No such shift"); s.addons = a.p_addons; save(); return { data: null, error: null }; }
     case "set_my_plan": { const s = shift(); if (!s) return err("No such shift"); s.plan = a.p_plan; save(); return { data: null, error: null }; }
