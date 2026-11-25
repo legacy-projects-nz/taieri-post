@@ -1553,7 +1553,7 @@ function effDaySheet(day) {
     <div class="row"><button class="btn ghost sm" data-dayv="${day}">The whole day</button></div>`, null, { wide: true });
 }
 function accSheet(day, code) {
-  const s = scoreAt(day, day); const a = s.accDays.find(x => x.day === day && x.code === code); const fc = S.C.runCodes[code]; const mist = S.entries.filter(e => e.kind === "mistake" && e.day === day && e.show_driver);
+  const s = scoreAt(day, day); const a = s.accDays.find(x => x.day === day && x.code === code); const fc = a?.feed_code || S.C.runCodes[code]; const mist = S.entries.filter(e => e.kind === "mistake" && e.day === day && e.show_driver);
   sheet(`<h3>Accuracy · ${esc(code)} · ${label(day, true)}</h3><p class="meta">${esc(runName(code))}${fc ? ` · NZ Post run ${esc(fc)}` : ""}</p>
     ${a ? `<div class="tiles" style="grid-template-columns:1fr 1fr 1fr"><div class="tile"><div class="l">Items</div><div class="v">${a.items}</div></div><div class="tile"><div class="l">Scanned right</div><div class="v">${a.compliant}</div></div><div class="tile"><div class="l">Compliance</div><div class="v c-${col(a.v)}">${a.v == null ? "—" : a.v.toFixed(1) + "%"}</div></div></div>` : `<p class="meta">No NZ Post report figures for this run on this day.</p>`}
     ${mist.length ? `<h4>Mistakes recorded this day</h4><div class="list">${mist.map(m => `<div class="item crit clk" data-entryv="${m.id}">${esc(m.title)}</div>`).join("")}</div>` : ""}

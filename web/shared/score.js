@@ -35,7 +35,7 @@ export const autoStops = (C, parcels) => parcels == null || parcels === "" || is
 export const runStopRatio = (C, code) => (C?.rules?.stopRatioByRun || { SG: 0.9 })[code] ?? null;
 export const LEG_RUNS = { TUA: ["outram", "pgg", "airport"], FLY: ["airport", "milton", "balclutha", "owaka"], DB: ["milton", "balclutha", "owaka"], RAM: ["airport"] };
 
-export function cfg(settings) { VW = settings.rules?.vchkWeeks || {}; const o = {}; for (const k of Object.keys(DEF)) o[k] = { ...DEF[k], ...(settings[k] || {}) }; o.runCodes = settings.runCodes || {}; o.holidays = settings.holidays || {}; o.bands = settings.bands || {}; return o; }
+export function cfg(settings) { VW = settings.rules?.vchkWeeks || {}; const o = {}; for (const k of Object.keys(DEF)) o[k] = { ...DEF[k], ...(settings[k] || {}) }; o.runCodes = settings.runCodes || {}; o.accCodes = settings.accCodes || null; o.holidays = settings.holidays || {}; o.bands = settings.bands || {}; return o; }
 
 /* ---- Start-time sign-off: a SOD more than rules.sodReqMins (20) before the rostered start counts from the rostered start
    until Jeremy/admin approves the early start (approving moves the roster, so the SOD is no longer early). From rules.sodReqStart on.
@@ -283,6 +283,19 @@ export function extraMins(list, driver, day) { return (list || []).filter(e => e
 // Same driver + dates + data snapshot → same answer, so keep it: a render asks for the same scores many times over (team averages,
 // 8-week trends, pay bands). The cache lives on the data object, so it's dropped as soon as fresh data is loaded.
 const MEMO = new WeakMap();
+/* ---- Accuracy feed row for one rostered shift (NZ Post nightly email, nzpost_feed). A run with its own code (runCodes) takes that code.
+   A combined run (WH, the West Harbour combined run) takes the codes it covers (settings → accCodes, default WH: PPCS63 + PPCS64), but
+   only those no other shift that day is rostered on, so each code is scored against one person a day. Rows are added together. ---- */
+const ACC_CODES = { WH: ["PPCS63", "PPCS64"] };
+export function accRow(shift, day, D, C) {
+  const own = C.runCodes[shift.run];
+  const codes = own ? [own] : ((C.accCodes || ACC_CODES)[shift.run] || []).filter(c => !D.shifts.some(s => s.day === day && s.driver && s.id !== shift.id && C.runCodes[s.run] === c));
+  const rows = codes.map(c => D.feed.find(f => f.day === day && f.feed_code === c)).filter(Boolean);
+  if (!rows.length) return null;
+  if (rows.length === 1) return rows[0];
+  return { day, feed_code: rows.map(r => r.feed_code).join(" + "), items: rows.reduce((a, r) => a + r.items, 0), compliant: rows.reduce((a, r) => a + r.compliant, 0), read_at: rows[0].read_at };
+}
+
 export function scoreFor(driver, from, to, D, C) {
   let m = MEMO.get(D); if (!m || m.C !== C) MEMO.set(D, m = { C, map: new Map() });
   const k = driver + "|" + from + "|" + to; if (m.map.has(k)) return m.map.get(k);
@@ -304,7 +317,7 @@ function scoreForRaw(driver, from, to, D, C) {
   // accuracy
   const mist = ents.filter(e => e.kind === "mistake" && !e.excused);
   let items_ = 0, comp = 0; const accDays = [];
-  for (const d of Object.values(days)) for (const x of d.segs) if (!x.sort && d.day >= (C.rules.accStart || C.rules.startDate)) { const fc = C.runCodes[x.shift.run]; const row = fc && D.feed.find(f => f.day === d.day && f.feed_code === fc); if (row) { items_ += row.items; comp += row.compliant; accDays.push({ day: d.day, code: x.shift.run, ...row, v: row.items ? row.compliant / row.items * 100 : null }); } }
+  for (const d of Object.values(days)) for (const x of d.segs) if (!x.sort && d.day >= (C.rules.accStart || C.rules.startDate)) { const row = accRow(x.shift, d.day, D, C); if (row) { items_ += row.items; comp += row.compliant; accDays.push({ day: d.day, code: x.shift.run, ...row, v: row.items ? row.compliant / row.items * 100 : null }); } }
   const feedPct = items_ ? comp / items_ * 100 : null;
   const acc = feedPct == null && !mist.length ? null : Math.max(0, Math.min(100, (feedPct ?? 100) - mist.reduce((t, e) => t + (e.pct_off != null ? +e.pct_off : C.rules.mistakePct), 0)));
   // safety
