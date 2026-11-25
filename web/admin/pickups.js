@@ -6,11 +6,14 @@
 import { sb, q, today, addDays, label, esc, $, $$, toast } from "/shared/core.js";
 import { S, sheet, opt, nm, render, fn } from "/admin/admin.js";
 
-export const AREAS = ["Rural", "South", "Owaka Rural", "Owaka Town", "Owaka", "Lawrence", "Balclutha"];   // "Owaka" = before it was split into Rural / Town (18 Nov 2026)
+export const AREAS = ["Rural", "South", "Owaka Rural", "Owaka Town", "Owaka", "Lawrence", "Lawrence Local", "Balclutha"];   // "Owaka" = before it was split into Rural / Town (18 Nov 2026)
+// Lawrence is two areas (25 Nov 2026): "Lawrence" = Lawrence parcels picked up at the Dunedin depots on D>B; "Lawrence Local" = picked up in Lawrence by the Lawrence driver
+export const AREA_NAME = { Lawrence: "Lawrence · Dunedin depot (D>B)", "Lawrence Local": "Lawrence · local (Lawrence run)" };
+export const areaName = a => AREA_NAME[a] || a;
 const custFor = a => a === "South" ? ["TGE"] : a === "Rural" ? ["NZC", "PH", "TGE"] : ["NZC", "PH"];   // South = TGE only; TGE also on Rural; never on Owaka / Lawrence / Balclutha
 const custErr = r => custFor(r.area).includes(r.customer) ? null : r.area === "South" ? "South is for TGE pick-ups only" : "TGE pick-ups are Rural or South only";
 const SOURCES = [["depot", "Depot"], ["customer", "Customer"]];
-const AREA_SHORT = { Lawrence: "Law", Owaka: "Owaka", "Owaka Rural": "Owaka Rural", "Owaka Town": "Owaka Town", Rural: "Rural", South: "South", Balclutha: "Bal Depot" };
+const AREA_SHORT = { Lawrence: "Law - Dunedin Depot", "Lawrence Local": "Law - Lawrence Local", Owaka: "Owaka", "Owaka Rural": "Owaka Rural", "Owaka Town": "Owaka Town", Rural: "Rural", South: "South", Balclutha: "Bal Depot" };
 export const CUSTOMERS = {
   NZC: { name: "NZ Couriers - Aaron Johnston", short: "NZC", due: 7, acct: "200", tax: "15% GST on Income", small: { code: "NZCS", rate: 5, desc: "NZC - Small" }, large: { code: "NZCL", rate: 8, desc: "NZ Couriers - Large" } },
   PH: { name: "Post Haste", short: "Post Haste", due: 7, acct: "200", tax: "15% GST on Income", small: { code: "PHS", rate: 5, desc: "Post Haste - Small" }, large: { code: "PHL", rate: 8, desc: "Post Haste - Large" } },
@@ -109,20 +112,20 @@ function glance() {
   // area × customer
   const cell = (area, c) => { const rs = rows_.filter(r => r.area === area && r.customer === c); if (!rs.length) return `<td class="meta" align="right">–</td>`; const sm = rs.reduce((a, r) => a + (r.small || 0), 0), lg = rs.reduce((a, r) => a + (r.large || 0), 0), mins = rs.filter(r => r.min_fee != null).length; return `<td align="right">${sm}${lg ? ` + ${lg}L` : ""}${mins ? ` <span class="meta">· ${mins} min</span>` : ""}<div class="meta">${money(rs.reduce((a, r) => a + fee(r), 0))}</div></td>`; };
   const custs = Object.keys(CUSTOMERS).filter(c => !gf.custs.size || gf.custs.has(c)); const areas = AREAS.filter(a => !gf.areas.size || gf.areas.has(a));
-  const areaTbl = `<table class="dt"><tr><th>Area</th>${custs.map(c => `<th align="right">${esc(R[c].short)}</th>`).join("")}<th align="right">Total</th></tr>${areas.map(a => { const rs = rows_.filter(r => r.area === a); return `<tr><td>${a}</td>${custs.map(c => cell(a, c)).join("")}<td align="right"><b>${sumP(rs)}</b><div class="meta">${money(rs.reduce((x, r) => x + fee(r), 0))}</div></td></tr>`; }).join("")}
+  const areaTbl = `<table class="dt"><tr><th>Area</th>${custs.map(c => `<th align="right">${esc(R[c].short)}</th>`).join("")}<th align="right">Total</th></tr>${areas.map(a => { const rs = rows_.filter(r => r.area === a); return `<tr><td>${esc(areaName(a))}</td>${custs.map(c => cell(a, c)).join("")}<td align="right"><b>${sumP(rs)}</b><div class="meta">${money(rs.reduce((x, r) => x + fee(r), 0))}</div></td></tr>`; }).join("")}
     <tr><td><b>Total</b></td>${custs.map(c => { const rs = rows_.filter(r => r.customer === c); return `<td align="right"><b>${sumP(rs)}</b><div class="meta">${money(rs.reduce((x, r) => x + fee(r), 0))}</div></td>`; }).join("")}<td align="right"><b>${parcels}</b><div class="meta">${money(rows_.reduce((x, r) => x + fee(r), 0))}</div></td></tr></table>`;
   // by driver
   const drv = Object.entries(rows_.reduce((a, r) => { const o = (a[r.driver] ??= { n: 0, p: 0, f: 0 }); o.n++; o.p += (r.small || 0) + (r.large || 0); o.f += fee(r); return a; }, {})).sort((a, b) => b[1].p - a[1].p);
   const drvTbl = drv.length ? `<table class="dt"><tr><th>Driver</th><th align="right">Entries</th><th align="right">Parcels</th><th align="right">Value</th></tr>${drv.map(([d, o]) => `<tr><td>${esc(nm(d))}</td><td align="right">${o.n}</td><td align="right">${o.p}</td><td align="right">${money(o.f)}</td></tr>`).join("")}</table>` : "";
   // by day (latest first)
-  const dayTbl = days.length ? `<table class="dt"><tr><th>Day</th>${custs.map(c => `<th align="right">${esc(R[c].short)}</th>`).join("")}<th align="right">Total</th><th>Areas</th></tr>${days.slice(0, 31).map(d => { const rs = rows_.filter(r => r.day === d); return `<tr${canEdit() ? ` class="clk" data-pu-day="${d}" title="Tap to edit this day's totals" style="cursor:pointer"` : ""}><td>${label(d)}${canEdit() ? ` <span class="meta">✎</span>` : ""}</td>${custs.map(c => `<td align="right">${sumP(rs.filter(r => r.customer === c)) || `<span class="meta">–</span>`}</td>`).join("")}<td align="right"><b>${sumP(rs)}</b></td><td class="meta">${[...new Set(rs.map(r => r.area))].join(", ")}</td></tr>`; }).join("")}</table>` : "";
+  const dayTbl = days.length ? `<table class="dt"><tr><th>Day</th>${custs.map(c => `<th align="right">${esc(R[c].short)}</th>`).join("")}<th align="right">Total</th><th>Areas</th></tr>${days.slice(0, 31).map(d => { const rs = rows_.filter(r => r.day === d); return `<tr${canEdit() ? ` class="clk" data-pu-day="${d}" title="Tap to edit this day's totals" style="cursor:pointer"` : ""}><td>${label(d)}${canEdit() ? ` <span class="meta">✎</span>` : ""}</td>${custs.map(c => `<td align="right">${sumP(rs.filter(r => r.customer === c)) || `<span class="meta">–</span>`}</td>`).join("")}<td align="right"><b>${sumP(rs)}</b></td><td class="meta">${[...new Set(rs.map(r => areaName(r.area)))].join(", ")}</td></tr>`; }).join("")}</table>` : "";
   const canRep = S.me?.isOwner || S.me?.id === "AL";
   return `<div class="card"><h2>Pick-ups at a glance<span>${esc(pname)} · small + large (L) · value at invoice rates, excl GST</span></h2>
     <div class="row" style="align-items:flex-end;margin-bottom:8px"><div class="nav" style="margin:0;flex:0 0 auto">${[["month", "Month"], ["week", "Week"], ["custom", "Dates"]].map(([k, l]) => `<button data-gp="${k}" class="${gp.mode === k ? "on" : ""}">${l}</button>`).join("")}</div>
       ${gp.mode === "week" ? `<div class="wkbar" style="margin:0;flex:1 1 220px"><button class="ar" data-gw="-1">‹</button><b>${label(gF)} – ${label(gT)}</b><button class="ar" data-gw="1">›</button></div>` : ""}
       ${gp.mode === "custom" ? `<label class="f" style="flex:1 1 130px">From<input class="in" type="date" id="gp-from" value="${gF}"></label><label class="f" style="flex:1 1 130px">To<input class="in" type="date" id="gp-to" value="${gT}"></label><button class="btn sm" id="gp-go" style="flex:0 0 auto">Show</button>` : ""}
       ${gp.mode === "month" ? `<span class="meta" style="flex:1 1 200px">Use ‹ › at the top to change month.</span>` : ""}</div>
-    <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">${AREAS.filter(a => a !== "Balclutha").map(a => `<button class="btn sm ${gf.areas.has(a) ? "" : "ghost"}" data-gfa="${a}" style="flex:0 0 auto">${a}</button>`).join("")}<span style="flex:0 0 8px"></span>${Object.keys(CUSTOMERS).map(c => `<button class="btn sm ${gf.custs.has(c) ? "" : "ghost"}" data-gfc="${c}" style="flex:0 0 auto">${esc(R[c].short)}</button>`).join("")}${gf.areas.size || gf.custs.size ? `<button class="btn ghost sm" data-gfx="1" style="flex:0 0 auto">✕ All</button>` : ""}</div>${tiles}
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">${AREAS.filter(a => a !== "Balclutha").map(a => `<button class="btn sm ${gf.areas.has(a) ? "" : "ghost"}" data-gfa="${a}" style="flex:0 0 auto">${esc(areaName(a))}</button>`).join("")}<span style="flex:0 0 8px"></span>${Object.keys(CUSTOMERS).map(c => `<button class="btn sm ${gf.custs.has(c) ? "" : "ghost"}" data-gfc="${c}" style="flex:0 0 auto">${esc(R[c].short)}</button>`).join("")}${gf.areas.size || gf.custs.size ? `<button class="btn ghost sm" data-gfx="1" style="flex:0 0 auto">✕ All</button>` : ""}</div>${tiles}
     ${rows_.length ? `<div class="scroll" style="margin-top:8px">${areaTbl}</div>
     <div class="row" style="align-items:flex-start;gap:12px;margin-top:8px"><div style="flex:1 1 260px"><h4 style="margin:4px 0">By driver</h4><div class="scroll">${drvTbl}</div></div><div style="flex:2 1 360px"><h4 style="margin:4px 0">By day${canEdit() ? ` <span class="meta">· tap a day to edit its totals</span>` : ""}</h4><div class="scroll" style="max-height:320px;overflow:auto">${dayTbl}</div></div></div>` : `<p class="meta">No pick-ups logged for ${esc(pname)}.</p>`}
     ${(() => { const ms = missingPU(); return `<h4 style="margin:12px 0 4px">Missing pick-up totals <span class="meta">${ms.length ? `${ms.length} · tap Remind to message the driver now (they're also chased automatically once their EOD is in)` : "none · every pick-up run has its totals in"}</span></h4>${ms.length ? `<div class="scroll"><table class="dt"><tr><th>Day</th><th>Driver</th><th>Area</th><th>Run</th><th></th></tr>${ms.map((m, i) => `<tr><td>${label(m.day)}</td><td>${esc(nm(m.driver))}</td><td>${esc(m.area)}</td><td>${esc(m.run)}</td><td align="right"><button class="btn ghost sm" data-pu-remind="${i}">Remind</button></td></tr>`).join("")}</table></div>${ms.length > 1 ? `<div class="row" style="margin-top:6px"><button class="btn sm" id="pu-remind-all" style="flex:0 0 auto">Remind everyone (${new Set(ms.map(m => m.driver)).size})</button></div>` : ""}` : ""}`; })()}
@@ -149,7 +152,7 @@ async function remind(list) {
 }
 function entriesCsv() {
   const head = ["Date", "Driver", "Area", "Customer", "Source", "Small", "Large", "Split fee", "Value excl GST", "Note", "Entered"];
-  const lines = grows.filter(gfOk).sort((a, b) => a.day.localeCompare(b.day) || a.area.localeCompare(b.area)).map(r => [r.day, nm(r.driver), r.area, rates()[r.customer]?.short || r.customer, r.source || "depot", r.small, r.large, r.min_fee ?? "", fee(r).toFixed(2), r.note || "", (r.created_at || "").slice(0, 16).replace("T", " ")]);
+  const lines = grows.filter(gfOk).sort((a, b) => a.day.localeCompare(b.day) || a.area.localeCompare(b.area)).map(r => [r.day, nm(r.driver), areaName(r.area), rates()[r.customer]?.short || r.customer, r.source || "depot", r.small, r.large, r.min_fee ?? "", fee(r).toFixed(2), r.note || "", (r.created_at || "").slice(0, 16).replace("T", " ")]);
   const csv = [head, ...lines].map(r => r.map(csvCell).join(",")).join("\r\n");
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); { const r = gRange(); a.download = gp.mode === "month" ? `pick-ups-${ym}.csv` : `pick-ups-${r.from}-to-${r.to}.csv`; } document.body.appendChild(a); a.click(); a.remove();
 }
@@ -186,7 +189,7 @@ function entryView() {
   const inp = (r, k, extra = "") => `<input class="in" data-row="${r.id}" data-k="${k}" value="${esc(r[k] ?? "")}" ${extra}>`;
   const table = rows.length ? `<div class="scroll"><table class="dt"><tr><th>Date</th><th>Area</th><th>Customer</th><th>Pick-up at</th><th>Small</th><th>Large</th><th>Driver</th><th>Note</th><th></th></tr>${rows.map(r => `<tr>
       <td>${inp(r, "day", `type="date" style="width:140px"`)}</td>
-      <td><select class="in" data-row="${r.id}" data-k="area">${opt(AREAS.map(a => [a, a]), r.area)}</select></td>
+      <td><select class="in" data-row="${r.id}" data-k="area">${opt(AREAS.map(a => [a, areaName(a)]), r.area)}</select></td>
       <td><select class="in" data-row="${r.id}" data-k="customer">${opt(Object.entries(CUSTOMERS).map(([k, v]) => [k, v.short]), r.customer)}</select></td>
       <td><select class="in" data-row="${r.id}" data-k="source">${opt(SOURCES, r.source || "depot")}</select></td>
       ${r.min_fee != null ? `<td colspan="2" class="meta">none · split fee ${money(r.min_fee)}</td>` : `<td>${inp(r, "small", `inputmode="numeric" style="width:64px"`)}</td><td>${inp(r, "large", `inputmode="numeric" style="width:64px"`)}</td>`}
@@ -196,7 +199,7 @@ function entryView() {
   const xl = extras.length ? `<div class="scroll"><table class="dt"><tr><th>Customer</th><th>Item</th><th>Description</th><th>Acct</th><th align="right">Qty</th><th align="right">Rate</th><th align="right">Amount</th><th></th></tr>${extras.map(x => `<tr><td>${esc(CUSTOMERS[x.customer]?.short || x.customer)}</td><td class="meta">${esc(x.item_code || "")}</td><td>${esc(x.description)}</td><td>${esc(x.account || "")}</td><td align="right">${+x.qty}</td><td align="right">${money(x.price)}</td><td align="right">${money(x.qty * x.price)}</td><td style="white-space:nowrap"><button class="btn ghost sm" data-x-edit="${x.id}">Edit</button> <button class="btn ghost sm" data-x-del="${x.id}">Delete</button></td></tr>`).join("")}</table></div>` : `<p class="meta">No extra items this month.</p>`;
   return `<div class="card"><h2>Enter pick-ups<span>for any driver and date</span></h2>
       <form class="frm" id="pe-f"><label class="f">Date<input class="in" type="date" id="pe-day" value="${today() < ym + "-01" || today() > lastDay(ym) ? lastDay(ym) : today()}" required></label>
-      <label class="f">Area<select class="in" id="pe-area">${opt(AREAS.map(a => [a, a]), "Lawrence")}</select></label>
+      <label class="f">Area<select class="in" id="pe-area">${opt(AREAS.map(a => [a, areaName(a)]), "Lawrence")}</select></label>
       <label class="f">Driver<select class="in" id="pe-drv">${opt([["", "—"], ...S.drivers.map(d => [d.id, d.name])], "")}</select></label>
       <div class="full scroll"><table class="dt"><tr><th rowspan="2">Customer</th><th colspan="2">Depot pick-ups</th><th colspan="2">Customer pick-ups</th></tr><tr><th>Small</th><th>Large</th><th>Small</th><th>Large</th></tr>${Object.entries(CUSTOMERS).map(([k, v]) => `<tr data-cust="${k}"><td>${esc(v.name)}</td>${SOURCES.map(([src]) => `<td><input class="in" data-pe="${k}.${src}.small" inputmode="numeric" placeholder="0" style="width:64px"></td><td><input class="in" data-pe="${k}.${src}.large" inputmode="numeric" placeholder="0" style="width:64px"></td>`).join("")}</tr>`).join("")}</table></div>
       <label class="f full">Note (optional)<input class="in" id="pe-n"></label><button class="btn full" type="submit">Save pick-ups</button></form></div>
@@ -234,7 +237,7 @@ function daySheet(d) {
   const R = rates();
   sheet(`<h3>Pick-ups · ${label(d)}</h3><p class="hint">Change a figure and tap Save on that line. To add a line for this day, use Data entry.</p>
     <div class="scroll"><table class="dt"><tr><th>Area</th><th>Customer</th><th>Driver</th><th>Small</th><th>Large</th><th>Note</th><th></th></tr>${rs.map(r => `<tr data-dr="${r.id}">
-      <td>${esc(r.area)}<div class="meta">${r.source === "customer" ? "customer" : "depot"}</div></td><td>${esc(R[r.customer]?.short || r.customer)}</td><td>${esc(nm(r.driver))}</td>
+      <td>${esc(areaName(r.area))}<div class="meta">${r.source === "customer" ? "customer" : "depot"}</div></td><td>${esc(R[r.customer]?.short || r.customer)}</td><td>${esc(nm(r.driver))}</td>
       ${r.min_fee != null ? `<td colspan="2" class="meta">none · split fee ${money(r.min_fee)}</td>` : `<td><input class="in" data-dk="small" inputmode="numeric" value="${r.small}" style="width:60px"></td><td><input class="in" data-dk="large" inputmode="numeric" value="${r.large}" style="width:60px"></td>`}
       <td><input class="in" data-dk="note" value="${esc(r.note || "")}" style="min-width:110px"></td>
       <td style="white-space:nowrap"><button class="btn sm" data-dsave="${r.id}">Save</button> <button class="btn ghost sm" data-ddel="${r.id}">Delete</button></td></tr>`).join("")}</table></div>`, (bg, close) => {
@@ -268,7 +271,7 @@ export function pickupSheet(existing = null, onSaved = null) {
   const e = existing || { day: today(), area: "Lawrence", customer: "NZC", source: "depot", small: 0, large: 0, note: "" };
   sheet(`<h3>${existing ? "Edit pick-up" : "Log a pick-up"}</h3><form class="frm" id="pf">
     <label class="f">Date<input class="in" type="date" id="pu-day" value="${e.day}" required></label>
-    <label class="f">Area<select class="in" id="pu-area">${opt(AREAS.map(a => [a, a]), e.area)}</select></label>
+    <label class="f">Area<select class="in" id="pu-area">${opt(AREAS.map(a => [a, areaName(a)]), e.area)}</select></label>
     <label class="f">Customer<select class="in" id="pu-cust">${opt(Object.entries(CUSTOMERS).map(([k, v]) => [k, v.name]), e.customer)}</select></label>
     <label class="f">Picked up at<select class="in" id="pu-src">${opt(SOURCES, e.source || "depot")}</select></label>
     <label class="f">Small parcels<input class="in" id="pu-s" inputmode="numeric" value="${e.small || ""}" placeholder="0"></label>

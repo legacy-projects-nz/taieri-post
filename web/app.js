@@ -798,8 +798,8 @@ function detailsCard() {
 }
 const PU_CUST = { NZC: "NZ Couriers", PH: "Post Haste", TGE: "TGE (NZ National Network)" };
 // Runs that do invoiced pick-ups, and the area they're usually in
-const PU_AREA = { TUA: "Rural", FLY: "Owaka Rural", DB: "Owaka Rural", LAW: "Lawrence" };
-const PU_AREAS = ["Rural", "South", "Owaka Rural", "Owaka Town", "Lawrence", "Balclutha"]; const puCust = a => a === "South" ? ["TGE"] : a === "Rural" ? ["NZC", "PH", "TGE"] : ["NZC", "PH"];   // South = TGE only; TGE also on Rural; never on Owaka / Lawrence / Balclutha
+const PU_AREA = { TUA: "Rural", FLY: "Owaka Rural", DB: "Owaka Rural", LAW: "Lawrence Local" };   // Lawrence run = local Lawrence pick-ups; D>B's "Lawrence" = Dunedin depot (25 Nov 2026)
+const PU_AREAS = ["Rural", "South", "Owaka Rural", "Owaka Town", "Lawrence", "Lawrence Local", "Balclutha"]; const PU_AREA_NAME = { Lawrence: "Lawrence · Dunedin depot (D>B)", "Lawrence Local": "Lawrence · local" }; const puAreaName = a => PU_AREA_NAME[a] || a; const puCust = a => a === "South" ? ["TGE"] : a === "Rural" ? ["NZC", "PH", "TGE"] : ["NZC", "PH"];   // South = TGE only; TGE also on Rural; never on Owaka / Lawrence / Balclutha
 const PU_MIN = 2.5; const PU_MIN_AREA = "Balclutha";   // Balclutha depot, no parcels
 const puLine = r => r.min_fee != null ? `none` : `${r.small} small${r.large ? ` + ${r.large} large` : ""}`;
 async function puMinFee(day, shift, key) {
@@ -815,16 +815,16 @@ function pickupsCard(T) {
   const list = S.pickups || []; const run = puToday(T); const todays = list.filter(r => r.day === today());
   return `<div class="card" id="pickups"><h2>Parcel pick-ups ${ib("pickups")}<span>${todays.length ? `✓ ${todays.length} logged today` : run ? "pick-up run today" : "Rural · South · Owaka Rural · Owaka Town · Lawrence · Balclutha"}</span></h2>
     
-    ${todays.length ? `<p class="meta c-ok" style="margin:0 0 8px">✓ Today: ${todays.map(r => `${esc(r.area)} ${esc(PU_CUST[r.customer] || r.customer)} (${PU_SRC_L[r.source] || "depot"}) ${puLine(r)}`).join(" · ")}</p>` : ""}
+    ${todays.length ? `<p class="meta c-ok" style="margin:0 0 8px">✓ Today: ${todays.map(r => `${esc(puAreaName(r.area))} ${esc(PU_CUST[r.customer] || r.customer)} (${PU_SRC_L[r.source] || "depot"}) ${puLine(r)}`).join(" · ")}</p>` : ""}
     <div class="row"><button class="btn sm" id="pu-log" style="flex:0 0 auto">+ Enter pick-ups</button></div>
-    ${list.length ? `<details style="margin-top:8px"><summary>This month · ${list.length} logged</summary><div class="list" style="margin-top:6px">${list.map(r => `<div class="item"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><div>${label(r.day)} · ${esc(r.area)} · ${esc(PU_CUST[r.customer] || r.customer)} · ${PU_SRC_L[r.source] || "depot"}</div><div class="meta">${puLine(r)}${r.note ? ` · ${esc(r.note)}` : ""}</div></div>${puEditable(r) ? `<button class="btn ghost sm" data-puedit="${r.id}" style="flex:0 0 auto">Edit</button>` : ""}</div></div>`).join("")}</div></details>` : ""}</div>`;
+    ${list.length ? `<details style="margin-top:8px"><summary>This month · ${list.length} logged</summary><div class="list" style="margin-top:6px">${list.map(r => `<div class="item"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><div>${label(r.day)} · ${esc(puAreaName(r.area))} · ${esc(PU_CUST[r.customer] || r.customer)} · ${PU_SRC_L[r.source] || "depot"}</div><div class="meta">${puLine(r)}${r.note ? ` · ${esc(r.note)}` : ""}</div></div>${puEditable(r) ? `<button class="btn ghost sm" data-puedit="${r.id}" style="flex:0 0 auto">Edit</button>` : ""}</div></div>`).join("")}</div></details>` : ""}</div>`;
 }
 /** Drivers can fix their own pick-up lines on the day only (matches the database rule) */
 const puEditable = r => r.driver === S.me.id && r.day === today();
 function editPickup(id) {
   const r = (S.pickups || []).find(x => x.id === id); if (!r) return;
   const isMin = r.min_fee != null;
-  sheet(`<h3>Edit pick-ups</h3><p class="hint">${label(r.day)} · ${esc(r.area)} · ${esc(PU_CUST[r.customer] || r.customer)} · ${PU_SRC_L[r.source] || "depot"}</p><form class="frm" id="pe">
+  sheet(`<h3>Edit pick-ups</h3><p class="hint">${label(r.day)} · ${esc(puAreaName(r.area))} · ${esc(PU_CUST[r.customer] || r.customer)} · ${PU_SRC_L[r.source] || "depot"}</p><form class="frm" id="pe">
     ${isMin ? `<p class="meta full">No parcels logged. Got parcels after all? Delete this and enter the pick-ups again.</p>` : `<label class="f">Small<input class="in" id="pe-s" inputmode="numeric" value="${r.small}"></label><label class="f">Large<input class="in" id="pe-l" inputmode="numeric" value="${r.large}"></label>
     <label class="f full">Note (optional)<input class="in" id="pe-n" value="${esc(r.note || "")}"></label><button class="btn full" type="submit">Save changes</button>`}
     <button class="btn ghost full" type="button" id="pe-del">Delete this line</button></form>`, (bg, close) => {
@@ -847,7 +847,7 @@ function editPickupArea(area, day) {
   const grp = (c, src) => lines.filter(r => r.customer === c && (r.source || "depot") === src);
   const val = (c, src, k) => grp(c, src).reduce((a, r) => a + (r[k] || 0), 0);
   const note = lines.find(r => r.note)?.note || "";
-  sheet(`<h3>Edit pick-ups · ${esc(area)}</h3><form class="frm" id="pa">
+  sheet(`<h3>Edit pick-ups · ${esc(puAreaName(area))}</h3><form class="frm" id="pa">
     <div class="full"><table class="dt" style="width:100%"><tr><th rowspan="2">Customer</th><th colspan="2">Depot</th><th colspan="2">Customer</th></tr><tr><th>Small</th><th>Large</th><th>Small</th><th>Large</th></tr>${Object.entries(PU_CUST).filter(([k]) => puCust(area).includes(k)).map(([k, v]) => `<tr><td>${esc(v)}</td>${PU_SRC.map(src => `<td><input class="in" data-pa="${k}.${src}.small" inputmode="numeric" placeholder="0" value="${val(k, src, "small") || ""}" style="width:54px"></td><td><input class="in" data-pa="${k}.${src}.large" inputmode="numeric" placeholder="0" value="${val(k, src, "large") || ""}" style="width:54px"></td>`).join("")}</tr>`).join("")}</table></div>
     <label class="f full">Note (optional)<input class="in" id="pa-n" value="${esc(note)}"></label>
     ${mins.length ? `<p class="meta full">Also logged: none. It's removed if you enter parcels.</p>` : ""}
@@ -881,8 +881,8 @@ const isPhotoTask = key => !!key && !!S.addons.find(a => a.id === key)?.photo;
 const rsBtn = (shiftId, key = "tw_twrunsheet") => key === BAYVAN ? `<button type="button" class="btn sm accent" style="flex:0 0 auto;min-height:34px" data-bayvan="${shiftId}">📷 Photos</button>` : key === MAIL_KEY ? `<div class="row" style="flex:0 0 auto;gap:6px"><button type="button" class="btn sm accent" style="flex:0 0 auto;min-height:34px" data-mailtrays="${shiftId}">📷 Photos</button><button type="button" class="btn sm ghost" style="flex:0 0 auto;min-height:34px" data-mailnil="${shiftId}">Nil</button></div>` : `<label class="btn sm accent" style="flex:0 0 auto;min-height:34px;cursor:pointer">📷 Photo<input type="file" accept="image/*" capture="environment" data-rsphoto="${shiftId}" data-rskey="${esc(key)}" hidden></label>`;
 function logPickup(opt = {}) {
   const area = opt.area || PU_AREA[puToday(S.days[today()])] || "Lawrence";
-  sheet(`<h3>Enter pick-ups${opt.area ? ` · ${esc(opt.area)}` : ""}</h3><form class="frm" id="pf"><label class="f">Date<input class="in" type="date" id="pu-day" value="${today()}" required></label>
-    <label class="f">Area<select class="in" id="pu-area">${PU_AREAS.map(a => `<option ${a === area ? "selected" : ""}>${a}</option>`).join("")}</select></label>
+  sheet(`<h3>Enter pick-ups${opt.area ? ` · ${esc(puAreaName(opt.area))}` : ""}</h3><form class="frm" id="pf"><label class="f">Date<input class="in" type="date" id="pu-day" value="${today()}" required></label>
+    <label class="f">Area<select class="in" id="pu-area">${PU_AREAS.map(a => `<option value="${a}" ${a === area ? "selected" : ""}>${puAreaName(a)}</option>`).join("")}</select></label>
     <div class="full"><table class="dt" style="width:100%"><tr><th rowspan="2">Customer</th><th colspan="2">Depot</th><th colspan="2">Customer</th></tr><tr><th>Small</th><th>Large</th><th>Small</th><th>Large</th></tr>${Object.entries(PU_CUST).map(([k, v]) => `<tr data-cust="${k}"${puCust(area).includes(k) ? "" : " hidden"}><td>${esc(v)}</td>${PU_SRC.map(src => `<td><input class="in" data-pu="${k}.${src}.small" inputmode="numeric" placeholder="0" style="width:54px"></td><td><input class="in" data-pu="${k}.${src}.large" inputmode="numeric" placeholder="0" style="width:54px"></td>`).join("")}</tr>`).join("")}</table></div>
     <label class="f full">Note (optional)<input class="in" id="pu-n"></label><button class="btn full" type="submit">Save pick-ups</button>
     <button class="btn ghost full" type="button" id="pu-none"${area === PU_MIN_AREA ? "" : " hidden"}>None – no parcels here today</button></form>`, (bg, close) => {
