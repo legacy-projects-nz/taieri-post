@@ -14,7 +14,8 @@ S.open = {};   // which folded boxes are open this visit (not saved: everything 
 (async () => {
   try { S.me = await requireUser(app); } catch { return; }
   // office staff who don't drive (e.g. fleet) have no driver portal: send them to the owner portal
-  if (S.me.role !== "driver" && S.me.role !== "owner" && !S.me.can("scorecard")) { location.replace("/admin/"); return; }
+  // admins (e.g. Alejandro) land on the staff portal too; they reach View as from its "Driver portals" button (/#portals) (25 Nov 2026)
+  if (S.me.role !== "driver" && S.me.role !== "owner" && (!S.me.can("scorecard") || (S.me.role === "admin" && !/as=|portals/.test(location.hash)))) { location.replace("/admin/"); return; }
   errCtx({ app: "driver", person: S.me.id });
   // first load: if the connection drops, say so and keep trying instead of sitting on "Loading…"
   for (let i = 0; ; i++) {
