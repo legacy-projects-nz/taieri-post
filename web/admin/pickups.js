@@ -101,7 +101,7 @@ const fee = r => { if (r.min_fee != null) return +r.min_fee; const C = rates()[r
 function glance() {
   if (gp.mode === "month") grows = rows;
   const rows_ = grows.filter(gfOk); const R = rates(); const [, m] = ym.split("-").map(Number); const t = today(); const { from: gF, to: gT } = gRange(); const inRange = gF <= t && t <= gT;
-  const pname = gp.mode === "month" ? MONTH_L[m - 1] : gp.mode === "week" ? `week of ${label(gF)}` : `${label(gF)} – ${label(gT)}`;
+  const pname = gp.mode === "month" ? MONTH_L[m - 1] : gp.mode === "week" ? `week of ${label(gF)}` : gp.mode === "day" ? label(gF) : `${label(gF)} – ${label(gT)}`;
   const parcels = rows_.reduce((a, r) => a + (r.small || 0) + (r.large || 0), 0);
   const invNet = rows_.reduce((a, r) => a + fee(r), 0) + (gp.mode === "month" && !gf.areas.size ? extras.filter(x => !gf.custs.size || gf.custs.has(x.customer)).reduce((a, x) => a + (+x.qty) * (+x.price), 0) : 0);
   const days = [...new Set(rows_.map(r => r.day))].sort().reverse();
@@ -121,8 +121,9 @@ function glance() {
   const dayTbl = days.length ? `<table class="dt"><tr><th>Day</th>${custs.map(c => `<th align="right">${esc(R[c].short)}</th>`).join("")}<th align="right">Total</th><th>Areas</th></tr>${days.slice(0, 31).map(d => { const rs = rows_.filter(r => r.day === d); return `<tr${canEdit() ? ` class="clk" data-pu-day="${d}" title="Tap to edit this day's totals" style="cursor:pointer"` : ""}><td>${label(d)}${canEdit() ? ` <span class="meta">✎</span>` : ""}</td>${custs.map(c => `<td align="right">${sumP(rs.filter(r => r.customer === c)) || `<span class="meta">–</span>`}</td>`).join("")}<td align="right"><b>${sumP(rs)}</b></td><td class="meta">${[...new Set(rs.map(r => areaName(r.area)))].join(", ")}</td></tr>`; }).join("")}</table>` : "";
   const canRep = S.me?.isOwner || S.me?.id === "AL";
   return `<div class="card"><h2>Pick-ups at a glance<span>${esc(pname)} · small + large (L) · value at invoice rates, excl GST</span></h2>
-    <div class="row" style="align-items:flex-end;margin-bottom:8px"><div class="nav" style="margin:0;flex:0 0 auto">${[["month", "Month"], ["week", "Week"], ["custom", "Dates"]].map(([k, l]) => `<button data-gp="${k}" class="${gp.mode === k ? "on" : ""}">${l}</button>`).join("")}</div>
-      ${gp.mode === "week" ? `<div class="wkbar" style="margin:0;flex:1 1 220px"><button class="ar" data-gw="-1">‹</button><b>${label(gF)} – ${label(gT)}</b><button class="ar" data-gw="1">›</button></div>` : ""}
+    <div class="row" style="align-items:flex-end;margin-bottom:8px"><div class="nav" style="margin:0;flex:0 0 auto">${[["day", "Day"], ["week", "Week"], ["month", "Month"], ["custom", "Dates"]].map(([k, l]) => `<button data-gp="${k}" class="${gp.mode === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      ${gp.mode === "day" ? `<div class="wkbar" style="margin:0;flex:1 1 220px"><button class="ar" data-gd="-1" title="Previous day">‹</button><b>${label(gF)}</b><button class="ar" data-gd="1" title="Next day">›</button>${gF !== t ? `<button class="btn ghost sm" data-gd="0" style="flex:0 0 auto">Today</button>` : ""}</div>` : ""}
+      ${gp.mode === "week" ? `<div class="wkbar" style="margin:0;flex:1 1 220px"><button class="ar" data-gw="-1" title="Last week">‹‹</button><b>${label(gF)} – ${label(gT)}</b><button class="ar" data-gw="1" title="Next week">››</button></div>` : ""}
       ${gp.mode === "custom" ? `<label class="f" style="flex:1 1 130px">From<input class="in" type="date" id="gp-from" value="${gF}"></label><label class="f" style="flex:1 1 130px">To<input class="in" type="date" id="gp-to" value="${gT}"></label><button class="btn sm" id="gp-go" style="flex:0 0 auto">Show</button>` : ""}
       ${gp.mode === "month" ? `<span class="meta" style="flex:1 1 200px">Use ‹ › at the top to change month.</span>` : ""}</div>
     <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">${AREAS.filter(a => a !== "Balclutha").map(a => `<button class="btn sm ${gf.areas.has(a) ? "" : "ghost"}" data-gfa="${a}" style="flex:0 0 auto">${esc(areaName(a))}</button>`).join("")}<span style="flex:0 0 8px"></span>${Object.keys(CUSTOMERS).map(c => `<button class="btn sm ${gf.custs.has(c) ? "" : "ghost"}" data-gfc="${c}" style="flex:0 0 auto">${esc(R[c].short)}</button>`).join("")}${gf.areas.size || gf.custs.size ? `<button class="btn ghost sm" data-gfx="1" style="flex:0 0 auto">✕ All</button>` : ""}</div>${tiles}
@@ -298,9 +299,11 @@ export function wirePickups() {
   $$("[data-gfx]").forEach(b => b.onclick = () => { gf.areas.clear(); gf.custs.clear(); render(); });
   $$("[data-gp]").forEach(b => b.onclick = async () => { const k = b.dataset.gp; const t = today();
     if (k === "week") { const f = monOfD(t); gp = { mode: k, from: f, to: addDays(f, 6) }; }
+    else if (k === "day") gp = { mode: k, from: t, to: t };
     else if (k === "custom") gp = { mode: k, from: gp.from || ym + "-01", to: gp.to || (lastDay(ym) < t ? lastDay(ym) : t) };
     else gp = { mode: "month", from: null, to: null };
     await loadGlance(); render(); });
+  $$("[data-gd]").forEach(b => b.onclick = async () => { const n = +b.dataset.gd; const d = n ? addDays(gp.from, n) : today(); gp = { mode: "day", from: d, to: d }; await loadGlance(); render(); });
   $$("[data-gw]").forEach(b => b.onclick = async () => { const f = addDays(gp.from, 7 * +b.dataset.gw); gp = { mode: "week", from: f, to: addDays(f, 6) }; await loadGlance(); render(); });
   $("#gp-go")?.addEventListener("click", async () => { const f = $("#gp-from").value, t2 = $("#gp-to").value; if (!f || !t2 || t2 < f) return toast("Pick a from and to date", "err"); gp = { mode: "custom", from: f, to: t2 }; await loadGlance(); render(); });
   $$("[data-pu-m]").forEach(b => b.onclick = async () => { ym = shiftMonth(ym, +b.dataset.puM); await reload(); });
