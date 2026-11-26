@@ -19,7 +19,7 @@ const tile = (l, v, s = "", cls = null, attrs = "") => `<${attrs ? "button" : "d
 
 export function liveTab() {
   const n = nzNow(); const t = n.date;
-  const boss = S.me.isOwner || S.me.role === "admin"; const nSod = boss ? (S.sodReqs || []).filter(r => r.status === "pending").length : 0, nXt = S.me.isOwner ? (S.extra || []).filter(r => r.status === "pending").length : 0;
+  const boss = S.me.isOwner || S.me.role === "admin"; const nSod = boss ? (S.sodReqs || []).filter(r => r.status === "pending").length + (S.eodEdits || []).filter(r => r.status === "pending").length : 0, nXt = S.me.isOwner ? (S.extra || []).filter(r => r.status === "pending").length : 0;
   const signBar = nSod + nXt ? `<button class="btn sm" data-go="fix" style="margin-bottom:10px">⏱ ${[nSod ? `${nSod} start time${nSod > 1 ? "s" : ""}` : "", nXt ? `${nXt} hours` : ""].filter(Boolean).join(" · ")} to sign off → Admin</button>` : "";
   return `${signBar}${briefBtn()}<div class="top4">${nowCard(n)}${availCard(S.avDay || t, n)}${onBreakCard()}</div>
     <div class="grid2"><div class="card"><h2>Live feed<span>today</span></h2>${feed(t)}</div><div class="card"><h2>Where everyone is<span>app open · grey = 10+ min old</span></h2><div class="map" id="map"></div></div></div>`;
@@ -238,11 +238,11 @@ function actionCentre(scores, n) {
   const vans = S.vans.filter(v => v.active && v.plate !== "OTHER" && ([v.wof_due, v.rego_due].some(d => d && (new Date(d) - new Date(t)) / 86400000 <= R.dueSoonDays) || v.wof_failed || (!v.no_ruc && v.ruc_paid_to && v.odometer && v.ruc_paid_to - v.odometer <= R.rucSoonKm)));
   const openA = k => S.alerts.filter(a => !a.resolved_at && k(a)).length;
   const addonA = openA(a => ["timing_missed", "pickup_missing"].includes(a.kind)), fleetA = openA(a => String(a.dedupe_key || "").startsWith("vchk|")), otherA = openA(a => !["sod_late", "eod_late", "timing_missed", "pickup_missing"].includes(a.kind) && !String(a.dedupe_key || "").startsWith("vchk|"));
-  const boss = S.me.isOwner || S.me.role === "admin"; const sreq = boss ? (S.sodReqs || []).filter(r => r.status === "pending").length : 0, xreq = S.me.isOwner ? (S.extra || []).filter(r => r.status === "pending").length : 0;
+  const boss = S.me.isOwner || S.me.role === "admin"; const sreq = boss ? (S.sodReqs || []).filter(r => r.status === "pending").length : 0, xreq = S.me.isOwner ? (S.extra || []).filter(r => r.status === "pending").length : 0, ereq = boss ? (S.eodEdits || []).filter(r => r.status === "pending").length : 0;
   const unread = briefUnread(); let nAdd = 0; try { nAdd = addTodo().length; } catch { }
   // five groups, in order: Approvals > Roster > SOD / EOD > Add-ons > Fleet & people. Each opens one pop-up with everything in it.
   const G = [
-    ["approvals", "Approvals", sreq + xreq + aw + leave, [sreq && `${sreq} start time${sreq > 1 ? "s" : ""}`, xreq && `${xreq} hours`, aw && `${aw} roster change${aw > 1 ? "s" : ""}`, leave && `${leave} leave`], "warn"],
+    ["approvals", "Approvals", sreq + xreq + ereq + aw + leave, [sreq && `${sreq} start time${sreq > 1 ? "s" : ""}`, ereq && `${ereq} EOD edit${ereq > 1 ? "s" : ""}`, xreq && `${xreq} hours`, aw && `${aw} roster change${aw > 1 ? "s" : ""}`, leave && `${leave} leave`], "warn"],
     ["roster", "Roster", unc + unread, [unc && `${unc} change${unc > 1 ? "s" : ""} not confirmed`, unread && `${unread} brief${unread > 1 ? "s" : ""} not read`], "crit"],
     ["sodeod", "SOD / EOD", overdue + reviews + pending, [overdue && `${overdue} overdue now`, reviews && `${reviews} to review`, pending && `${pending} missing figures`], overdue ? "crit" : "warn"],
     ["addons", "Add-ons", addonA + nAdd, [nAdd && `${nAdd} not ticked`, addonA && `${addonA} task${addonA > 1 ? "s" : ""} missed or pick-ups not in`], "warn"],
@@ -277,6 +277,28 @@ function xtCard() {
   return `<div class="card ${pend.length ? "hot" : ""}" id="xtreq" ${pend.length ? "" : `data-empty="1"`}><h2><i class="ico">＋</i>Hours to sign off<span>${pend.length ? `${pend.length} to approve` : "nothing waiting"}</span></h2>
     ${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : `<p class="empty">✓ Nothing to approve.</p>`}${recent.length ? `<details><summary>Recent</summary><div class="list" style="margin-top:8px">${recent.map(row).join("")}</div></details>` : ""}</div>`;
 }
+/* ---- EOD edits by drivers: saved straight away, Jeremy approves (keep) or declines (put back) ---- */
+const EF_LBL = { finish_time: "Finish", parcels: "Parcels", stops: "Stops", pickups: "Pick-ups", pickup_parcels: "Pick-up parcels", sort_min: "Sort min", trays: "Trays", cycled: "Cycled", legs: "Legs", newspapers: "Newspapers", mail_stops: "Mail stops", note: "Note" };
+const efV = v => v == null || v === "" ? "—" : Array.isArray(v) ? (v.join(", ") || "—") : typeof v === "string" && /^\d\d:\d\d(:\d\d)?$/.test(v) ? fmtT(toMin(v)) : String(v);
+function eodDiff(r) { const b = r.before || {}, a = r.after || {}; const out = [];
+  for (const k of Object.keys(EF_LBL)) if (JSON.stringify(b[k] ?? null) !== JSON.stringify(a[k] ?? null)) out.push(`${EF_LBL[k]}: <s class="meta">${esc(efV(b[k]))}</s> → <b>${esc(efV(a[k]))}</b>`);
+  const be = b.extra || {}, ae = a.extra || {}; for (const k of new Set([...Object.keys(be), ...Object.keys(ae)])) if (!/^nzp_(driver|feed|checked_at)$|^sort_tap$/.test(k) && JSON.stringify(be[k] ?? null) !== JSON.stringify(ae[k] ?? null)) out.push(`${esc(k.replace(/_/g, " "))}: <s class="meta">${esc(efV(be[k]))}</s> → <b>${esc(efV(ae[k]))}</b>`);
+  return out.length ? out.join(" · ") : "No figures changed"; }
+export function eodEditCard() {
+  const all = S.eodEdits || []; const pend = all.filter(r => r.status === "pending"); const recent = all.filter(r => r.status !== "pending").slice(0, 8);
+  const row = r => `<div class="item ${r.status === "pending" ? "warn" : r.status === "approved" ? "done" : ""}"><div class="row" style="justify-content:space-between"><b>${esc(nm(r.driver))} · ${esc(r.run || "")} · ${label(r.day)}</b><span class="meta">${ago(r.updated_at || r.created_at)}</span></div>
+    <div>${eodDiff(r)}</div>
+    ${r.status === "pending" ? `<div class="row" style="margin-top:6px"><input class="in" data-ereply="${r.id}" placeholder="Reply to ${esc(first(nm(r.driver)))} (optional)" style="flex:2 1 160px"><button class="btn sm" data-ereq="${r.id}" data-ok="1">✓ Approve</button><button class="btn ghost sm" data-ereq="${r.id}" data-ok="0">Decline</button></div>`
+      : `<div class="meta ${r.status === "approved" ? "c-ok" : "c-crit"}">${r.status === "approved" ? "✓ Approved · edit kept" : "✗ Declined · EOD put back"}${r.decided_by ? ` by ${esc(fnm(r.decided_by))}` : ""}${r.reply ? ` · ${esc(r.reply)}` : ""}</div>`}</div>`;
+  return `<div class="card ${pend.length ? "hot" : ""}" id="eodedit" ${pend.length ? "" : `data-empty="1"`}><h2><i class="ico">✎</i>EOD edits to approve<span>${pend.length ? `${pend.length} waiting` : "nothing waiting"}</span></h2>
+    ${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : `<p class="empty">✓ Nothing to approve.</p>`}${recent.length ? `<details><summary>Recent decisions</summary><div class="list" style="margin-top:8px">${recent.map(row).join("")}</div></details>` : ""}</div>`;
+}
+async function decideEodEdit(id, ok) {
+  const reply = $(`[data-ereply="${id}"]`)?.value.trim() || null;
+  const { error } = await sb.rpc("eod_edit_decide", { p_id: id, p_approve: ok, p_reply: reply }); if (error) { await loadAll(); render(); return toast(error.message, "err"); }
+  toast(ok ? "Approved · edit kept" : "Declined · EOD put back", "ok"); await loadAll(); render();
+}
+export function wireEodEdits(root = document) { root.querySelectorAll("[data-ereq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; const it = b.closest(".item"); if (it) it.style.display = "none"; decideEodEdit(b.dataset.ereq, b.dataset.ok === "1"); }); }
 async function decideXt(id, ok) {
   const reply = $(`[data-xreply="${id}"]`)?.value.trim() || null;
   const { error } = await sb.rpc("extra_time_decide", { p_id: id, p_approve: ok, p_reply: reply }); if (error) return toast(error.message, "err");
@@ -317,7 +339,7 @@ async function todoSheet(kind) {
   const brief = await import("/admin/brief.js"); const wkB = dow(t) === 6 ? addDays(monOf(t), 7) : monOf(t);
   const wireSign = () => { $$(".todo-body [data-sreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; if (b.dataset.ok !== undefined && !b.textContent.includes("Save")) { const it = b.closest(".item"); if (it) it.style.display = "none"; } decideSodReq(b.dataset.sreq, b.dataset.ok === "1"); }); $$(".todo-body [data-xreq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; { const it = b.closest(".item"); if (it) it.style.display = "none"; } decideXt(b.dataset.xreq, b.dataset.ok === "1"); }); };
   const GROUPS = {
-    approvals: ["Approvals", [["Start times to sign off", () => (S.me.isOwner || S.me.role === "admin") ? sodReqCard() : "", wireSign], ["Hours to sign off", () => S.me.isOwner ? xtCard() : "", () => { }], ["Roster changes to approve", B.approve[2], B.approve[3]], ["Leave requests", B.leave[2], B.leave[3]]]],
+    approvals: ["Approvals", [["Start times to sign off", () => (S.me.isOwner || S.me.role === "admin") ? sodReqCard() : "", wireSign], ["EOD edits to approve", () => (S.me.isOwner || S.me.role === "admin") ? eodEditCard() : "", () => wireEodEdits($(".todo-body") || document)], ["Hours to sign off", () => S.me.isOwner ? xtCard() : "", () => { }], ["Roster changes to approve", B.approve[2], B.approve[3]], ["Leave requests", B.leave[2], B.leave[3]]]],
     roster: ["Roster", [["Changes not confirmed", B.unconfirmed[2], B.unconfirmed[3]], [`Roster brief · week of ${label(wkB)}`, () => Object.keys(brief.briefStatus(wkB)).length ? brief.statusList(wkB) : none("No brief sent for this week yet (Run Board → This week)."), () => brief.wireNudge(document)]]],
     sodeod: ["SOD / EOD", [["Overdue right now", B.overdue[2], B.overdue[3]], ["Reviews", B.reviews[2], B.reviews[3]], ["Missing EOD figures", () => pendingRuns().length ? pendingHtml() : none("All EOD figures in."), () => pendingWire($(".todo-body"))]]],
     addons: ["Add-ons", [["Add-ons not ticked", () => fx.addSection(), () => fx.wireFix()], ["Timed tasks missed · pick-ups not in", () => alertList(a => ["timing_missed", "pickup_missing"].includes(a.kind), "Nothing missed."), () => ad.wireAlerts()]]],

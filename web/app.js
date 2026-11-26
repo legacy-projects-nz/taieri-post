@@ -1434,7 +1434,7 @@ function eodForm(shiftId, sortOnly, edit = false) {
   const needRs = !ex && !sortOnly && !isSort(code) && !shift.done?.tw_twrunsheet && !(S.marks || []).some(m => m.key === `add|${shiftId}|tw_twrunsheet` && m.status !== "ask") && rulesFor({ shift }, shift.day).some(r => r.addon === "tw_twrunsheet");
   if (needRs) fields += `<label class="chk full"><input type="checkbox" id="runsheet" required>Runsheet photo taken (NZ Post needs it before every EOD)</label>`;
   fields += `<label class="f full">Note (optional)<input class="in" id="note" placeholder="anything Jeremy should know" value="${esc(ex?.note || "")}"></label>`;
-  sheet(`<h3>${ex ? "Edit EOD" : "EOD"} · ${esc(sortOnly || isSort(code) ? (S.runsBy[code]?.label || "Sort") : code)}</h3><p class="hint">${label(shift.day)}${shift.van ? ` · ${esc(shift.van)}` : ""}. ${ex ? `Sent ${fmtTime(ex.sent_at)}${ex.edited_at ? `, last edited ${fmtTime(ex.edited_at)}` : ""}. Change what's wrong and save — Jeremy sees it was edited.` : "Fill in every box that applies."}</p><form class="frm" id="ef">${fields}<button class="btn full" type="submit">${ex ? "Save changes" : "Send EOD"}</button></form>`, (bg, close) => {
+  sheet(`<h3>${ex ? "Edit EOD" : "EOD"} · ${esc(sortOnly || isSort(code) ? (S.runsBy[code]?.label || "Sort") : code)}</h3><p class="hint">${label(shift.day)}${shift.van ? ` · ${esc(shift.van)}` : ""}. ${ex ? `Sent ${fmtTime(ex.sent_at)}${ex.edited_at ? `, last edited ${fmtTime(ex.edited_at)}` : ""}. Change what's wrong and save — Jeremy approves the change.` : "Fill in every box that applies."}</p><form class="frm" id="ef">${fields}<button class="btn full" type="submit">${ex ? "Save changes" : "Send EOD"}</button></form>`, (bg, close) => {
     bg.querySelectorAll(".chk input").forEach(i => i.onchange = () => i.parentElement.classList.toggle("on", i.checked));
     // sorting minutes from the taps: prefilled, and kept in step with a typed start time until the driver changes the box themselves
     const smIn = bg.querySelector("#sort_min"); let smTouched = false; const tapNow = () => { const r = bg.querySelector("#run_st"); return seg ? sortTap(TD, seg, r?.value ? Date.parse(nzToIso(shift.day, r.value)) : undefined) : null; };
@@ -1462,12 +1462,12 @@ function eodForm(shiftId, sortOnly, edit = false) {
       if (runStopRatio(S.C, code) != null && !mailRun(S.C, code) && !sortOnly && !isSort(code)) row.stops = row.parcels == null ? null : Math.round(row.parcels * runStopRatio(S.C, code));   // TGE Surge: stops = 90% of parcels
       if (mailRun(S.C, code) && !sortOnly && !isSort(code)) { row.stops = autoStops(S.C, row.parcels); row.mail_stops = shift.mail_stops ?? ex?.mail_stops ?? null; }   // mail left is kept on the shift (photo count)   // stops aren't asked for: 80% of the parcels
       const upd = async () => { const { data, error } = await sb.from("eod").update(row).eq("shift_id", shiftId).select("shift_id"); if (error) return error.message.includes("row-level") ? "Too late to edit this one — ask Jeremy" : error.message; return data && data.length ? null : "Too late to edit this one — ask Jeremy"; };
-      if (ex) { const m = await upd(); if (m) return toast(m, "err"); close(); toast("EOD updated ✓", "ok"); await loadAll(); render(); return; }
+      if (ex) { const m = await upd(); if (m) return toast(m, "err"); close(); toast("EOD updated ✓ · sent to Jeremy to approve", "ok"); await loadAll(); render(); return; }
       Object.assign(row, { shift_id: shiftId, driver: S.me.id }); if (shift.day !== n.date) row.sent_at = nzToIso(shift.day, g("finish").value);
       const { error } = await sb.from("eod").insert(row);
       if (error && (error.code === "23505" || /duplicate key/.test(error.message))) {   // already sent (double tap / slow signal): save these figures over it instead
         const r2 = { ...row }; delete r2.shift_id; delete r2.driver; delete r2.sent_at; Object.assign(row, r2); const m = await upd();
-        close(); toast(m ? "EOD was already sent ✓" : "EOD already sent · updated ✓", "ok"); await loadAll(); render(); return; }
+        close(); toast(m ? "EOD was already sent ✓" : "EOD already sent · changes sent to Jeremy to approve", "ok"); await loadAll(); render(); return; }
       if (error) return toast(error.message, "err");
       if (g("runsheet")?.checked) { const { error: e2 } = await sb.rpc("task_done", { p_shift: shiftId, p_addon: "tw_twrunsheet" }); if (e2) toast(`EOD sent, but the runsheet task couldn't be ticked: ${e2.message}`, "err"); }
       close(); toast("EOD sent ✓ Thanks!", "ok"); await loadAll(); render(); };
