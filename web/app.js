@@ -193,8 +193,9 @@ function askCard() {
 function gateItems() {
   const t = today(); const out = []; const seen = new Set();
   for (const x of [...askList(), ...carryOver()]) { const id = x.s.id + "|" + x.k; if (seen.has(id)) continue; seen.add(id); out.push({ type: "task", ...x }); }
-  for (const i of (S.sc?.items || [])) if (i.day < t && !i.row && !i.pre && i.shift && ["late", "miss", "over"].includes(i.st)) out.push({ type: "post", kind: i.kind, s: i.shift, day: i.day, name: `${i.kind} not sent` });
-  for (const e of (S.sc?.effDays || [])) if (e.day < t && e.pending && e.need && !String(e.need).includes("EOD")) { const r = (e.rows || []).find(r => r.eod && r.shift); if (r) out.push({ type: "figs", s: r.shift, day: e.day, name: `EOD figures missing: ${e.need}` }); }
+  const lim = addDays(t, -45);
+  for (const i of (S.sc?.items || [])) if (i.day < t && i.day >= lim && !i.row && !i.pre && i.shift && ["late", "miss", "over"].includes(i.st)) out.push({ type: "post", kind: i.kind, s: i.shift, day: i.day, name: `${i.kind} not sent` });
+  for (const e of (S.sc?.effDays || [])) if (e.day < t && e.day >= lim && e.pending && e.need && !String(e.need).includes("EOD")) { const r = (e.rows || []).find(r => r.eod && r.shift); if (r) out.push({ type: "figs", s: r.shift, day: e.day, name: `EOD figures missing: ${e.need}` }); }
   return out.sort((a, b) => (a.s.day || a.day).localeCompare(b.s.day || b.day));
 }
 function gateCard() {
@@ -207,10 +208,13 @@ function gateSheet(sodShift) {
     const btns = x.type === "task" ? `<label class="btn sm accent" style="cursor:pointer">📷 Upload<input type="file" accept="image/*" capture="environment" data-gup="${i}" hidden></label><button class="btn sm" data-gst="${i}|done">Done</button><button class="btn sm warn" data-gst="${i}|late">Late</button><button class="btn sm ghost" data-gst="${i}|miss">Not done</button>`
       : `<button class="btn sm accent" data-gedit="${i}">Edit</button>`;
     return `<div class="item crit"><div><b>${esc(x.name)}</b>${where}</div><div class="row" style="gap:4px;margin-top:6px;flex-wrap:wrap">${btns}</div></div>`; };
-  sheet(L.length ? `<h3>Sort these out first</h3><p class="hint"><b>Done</b> = done on the day, just not ticked · <b>Late</b> = done after the day · <b>Not done</b> = it didn't happen · <b>Upload</b> = add a photo of it. <b>Edit</b> opens the post to fill in.</p><div class="list">${L.map(row).join("")}</div>`
+  sheet(L.length ? `<h3>Sort these out first</h3><p class="hint"><b>Done</b> = done on the day, just not ticked · <b>Late</b> = done after the day · <b>Not done</b> = it didn't happen · <b>Upload</b> = add a photo of it. <b>Edit</b> opens the post to fill in.</p><div class="list">${L.map(row).join("")}</div>${sodShift ? `<button class="btn ghost full" id="g-skip" style="margin-top:10px">Can't fix these · start my day</button><p class="meta">They stay in To fix and Jeremy is told.</p>` : ""}`
     : `<h3>All sorted ✓</h3><p class="meta">Nothing left from earlier days.</p>${sodShift ? `<button class="btn full" id="g-sod">Post my SOD</button>` : ""}`, (bg, close) => {
     const again = async msg => { toast(msg, "ok"); await loadAll(); render(); close(); gateSheet(sodShift); };
     bg.querySelector("#g-sod")?.addEventListener("click", () => { close(); sendSod(sodShift); });
+    bg.querySelector("#g-skip")?.addEventListener("click", async e => { e.currentTarget.disabled = true;
+      const { error } = await sb.rpc("gate_skip", { p_items: L.map(x => `${x.s.run || ""} ${x.s.day || x.day}: ${x.name}`).join("\n") }); if (error) reportError("gate_skip", error);
+      S.gateSkip = today(); close(); sendSod(sodShift); });
     bg.querySelectorAll("[data-gst]").forEach(b => b.onclick = async () => { const [i, st] = b.dataset.gst.split("|"); const x = L[+i]; b.parentElement.querySelectorAll("button").forEach(z => z.disabled = true);
       const { error } = await sb.rpc("task_resolve", { p_shift: x.s.id, p_addon: x.k, p_status: st, p_name: x.name }); if (error) { b.parentElement.querySelectorAll("button").forEach(z => z.disabled = false); return toast(error.message, "err"); }
       again(st === "done" ? "Ticked ✓" : st === "late" ? "Recorded as done late" : "Recorded as not done"); });
@@ -1311,7 +1315,7 @@ const opt = (list, val) => list.map(([v, l]) => `<option value="${esc(v)}" ${v =
 
 async function sendSod(shiftId, lateMode = false) {
   const shift = S.shifts.find(s => s.id === shiftId); const D = S.days[shift.day];
-  if (!lateMode && !S.viewAs && gateItems().length) return gateSheet(shiftId);   // outstanding items from earlier days come first
+  if (!lateMode && !S.viewAs && S.gateSkip !== today() && gateItems().length) return gateSheet(shiftId);   // outstanding items from earlier days come first
   const runs = D.segs.filter(x => !x.sort).map(x => x.shift.run); const van = D.segs.map(x => x.shift.van).find(Boolean) || null;
   const runId = runs.map(r => S.C.runCodes[r] || r).join(" + ");
   if (lateMode) { // late: ask for the actual start time
@@ -1446,7 +1450,7 @@ function eodForm(shiftId, sortOnly, edit = false) {
       await sb.rpc("task_photo_done", { p_shift: shiftId, p_addon: "mail_left", p_path: path, p_note: null });
       mlSt.textContent = "Counting…"; let r = null; try { const x = await sb.functions.invoke("mailcount", { body: { shift: shiftId, paths: [path], mode: "left" } }); r = x.data || { error: x.error?.message }; } catch (err) { r = { error: String(err?.message || err) }; }
       mlDone = true; mlSt.innerHTML = r?.ok ? `✓ About <b>${r.count}</b> stops of mail left — they come off today's mail stops.` : "✓ Photo saved — Jeremy will check the mail left."; });
-    bg.querySelector("#ef").onsubmit = async e => { e.preventDefault(); if (!mlDone) return toast("Take a photo of the mail left, or tap All delivered", "err"); const g = id => bg.querySelector("#" + id); const num = id => g(id) && g(id).value !== "" ? +g(id).value : null; const bool = id => g(id) && g(id).value !== "" ? g(id).value === "true" : null;
+    bg.querySelector("#ef").onsubmit = async e => { e.preventDefault(); const sb0 = bg.querySelector("#ef button[type=submit]"); if (sb0?.disabled) return; if (sb0) { sb0.disabled = true; setTimeout(() => { sb0.disabled = false; }, 4000); } if (!mlDone) return toast("Take a photo of the mail left, or tap All delivered", "err"); const g = id => bg.querySelector("#" + id); const num = id => g(id) && g(id).value !== "" ? +g(id).value : null; const bool = id => g(id) && g(id).value !== "" ? g(id).value === "true" : null;
       const row = { finish_time: g("finish").value, sort_min: num("sort_min"), parcels: num("parcels"), stops: num("stops"), trays: num("trays"), pickups: num("pickups"), pickup_parcels: num("pickup_parcels"), cycled: num("cycled"), sorted_parcels: bool("sorted_parcels"), sorted_mail: bool("sorted_mail"), nzc_ph: bool("nzc_ph"), legs: [...bg.querySelectorAll("input[name=leg]:checked")].map(i => i.value), newspapers: !!g("news")?.checked, note: g("note").value || null, run_id: S.C.runCodes[code] || null };
       if (g("tge_rural")) row.extra = { ...(ex?.extra || {}), tge_rural: num("tge_rural") ?? 0 };
       const tapM = !ex ? tapNow() : null; if (tapM != null) row.extra = { ...(row.extra || ex?.extra || {}), sort_tap: tapM };
@@ -1457,9 +1461,14 @@ function eodForm(shiftId, sortOnly, edit = false) {
       if (isDB) { const t = num("db_tge") ?? 0, o = num("db_other") ?? 0; row.parcels = t + o; row.extra = { ...(row.extra || ex?.extra || {}), tge_total: t, other_total: o }; }
       if (runStopRatio(S.C, code) != null && !mailRun(S.C, code) && !sortOnly && !isSort(code)) row.stops = row.parcels == null ? null : Math.round(row.parcels * runStopRatio(S.C, code));   // TGE Surge: stops = 90% of parcels
       if (mailRun(S.C, code) && !sortOnly && !isSort(code)) { row.stops = autoStops(S.C, row.parcels); row.mail_stops = shift.mail_stops ?? ex?.mail_stops ?? null; }   // mail left is kept on the shift (photo count)   // stops aren't asked for: 80% of the parcels
-      if (ex) { const { error } = await sb.from("eod").update(row).eq("shift_id", shiftId); if (error) return toast(error.message.includes("row-level") ? "Too late to edit this one — ask Jeremy" : error.message, "err"); close(); toast("EOD updated ✓", "ok"); await loadAll(); render(); return; }
+      const upd = async () => { const { data, error } = await sb.from("eod").update(row).eq("shift_id", shiftId).select("shift_id"); if (error) return error.message.includes("row-level") ? "Too late to edit this one — ask Jeremy" : error.message; return data && data.length ? null : "Too late to edit this one — ask Jeremy"; };
+      if (ex) { const m = await upd(); if (m) return toast(m, "err"); close(); toast("EOD updated ✓", "ok"); await loadAll(); render(); return; }
       Object.assign(row, { shift_id: shiftId, driver: S.me.id }); if (shift.day !== n.date) row.sent_at = nzToIso(shift.day, g("finish").value);
-      const { error } = await sb.from("eod").insert(row); if (error) return toast(error.message, "err");
+      const { error } = await sb.from("eod").insert(row);
+      if (error && (error.code === "23505" || /duplicate key/.test(error.message))) {   // already sent (double tap / slow signal): save these figures over it instead
+        const r2 = { ...row }; delete r2.shift_id; delete r2.driver; delete r2.sent_at; Object.assign(row, r2); const m = await upd();
+        close(); toast(m ? "EOD was already sent ✓" : "EOD already sent · updated ✓", "ok"); await loadAll(); render(); return; }
+      if (error) return toast(error.message, "err");
       if (g("runsheet")?.checked) { const { error: e2 } = await sb.rpc("task_done", { p_shift: shiftId, p_addon: "tw_twrunsheet" }); if (e2) toast(`EOD sent, but the runsheet task couldn't be ticked: ${e2.message}`, "err"); }
       close(); toast("EOD sent ✓ Thanks!", "ok"); await loadAll(); render(); };
   });
