@@ -288,7 +288,7 @@ export function eodEditCard() {
   const all = S.eodEdits || []; const pend = all.filter(r => r.status === "pending"); const recent = all.filter(r => r.status !== "pending").slice(0, 8);
   const row = r => `<div class="item ${r.status === "pending" ? "warn" : r.status === "approved" ? "done" : ""}"><div class="row" style="justify-content:space-between"><b>${esc(nm(r.driver))} · ${esc(r.run || "")} · ${label(r.day)}</b><span class="meta">${ago(r.updated_at || r.created_at)}</span></div>
     <div>${eodDiff(r)}</div>
-    ${r.status === "pending" ? `<div class="row" style="margin-top:6px"><input class="in" data-ereply="${r.id}" placeholder="Reply to ${esc(first(nm(r.driver)))} (optional)" style="flex:2 1 160px"><button class="btn sm" data-ereq="${r.id}" data-ok="1">✓ Approve</button><button class="btn ghost sm" data-ereq="${r.id}" data-ok="0">Decline</button></div>`
+    ${r.status === "pending" ? `<div class="row" style="margin-top:6px"><input class="in" data-ereply="${r.id}" placeholder="Reply to ${esc(first(nm(r.driver)))} (optional)" style="flex:2 1 160px"><button class="btn sm" data-ereq="${r.id}" data-ok="1">✓ Approve</button><button class="btn ghost sm" data-eedit="${r.id}">Edit</button><button class="btn ghost sm" data-ereq="${r.id}" data-ok="0">Decline</button></div>`
       : `<div class="meta ${r.status === "approved" ? "c-ok" : "c-crit"}">${r.status === "approved" ? "✓ Approved · edit kept" : "✗ Declined · EOD put back"}${r.decided_by ? ` by ${esc(fnm(r.decided_by))}` : ""}${r.reply ? ` · ${esc(r.reply)}` : ""}</div>`}</div>`;
   return `<div class="card ${pend.length ? "hot" : ""}" id="eodedit" ${pend.length ? "" : `data-empty="1"`}><h2><i class="ico">✎</i>EOD edits to approve<span>${pend.length ? `${pend.length} waiting` : "nothing waiting"}</span></h2>
     ${pend.length ? `<div class="list">${pend.map(row).join("")}</div>` : `<p class="empty">✓ Nothing to approve.</p>`}${recent.length ? `<details><summary>Recent decisions</summary><div class="list" style="margin-top:8px">${recent.map(row).join("")}</div></details>` : ""}</div>`;
@@ -298,7 +298,10 @@ async function decideEodEdit(id, ok) {
   const { error } = await sb.rpc("eod_edit_decide", { p_id: id, p_approve: ok, p_reply: reply }); if (error) { await loadAll(); render(); return toast(error.message, "err"); }
   toast(ok ? "Approved · edit kept" : "Declined · EOD put back", "ok"); await loadAll(); render();
 }
-export function wireEodEdits(root = document) { root.querySelectorAll("[data-ereq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; const it = b.closest(".item"); if (it) it.style.display = "none"; decideEodEdit(b.dataset.ereq, b.dataset.ok === "1"); }); }
+export function wireEodEdits(root = document) {
+  root.querySelectorAll("[data-eedit]").forEach(b => b.onclick = e => { e.stopPropagation(); const r = (S.eodEdits || []).find(x => x.id === b.dataset.eedit); const row = r && (S.eods || []).find(x => x.shift_id === r.shift_id);
+    if (!row) return toast("Couldn't find that EOD", "err"); eodEdit(row, { after: () => sb.rpc("eod_edit_decide", { p_id: r.id, p_approve: true, p_reply: "Edited by Jeremy" }) }); });   // your edit = approved as you left it
+  root.querySelectorAll("[data-ereq]").forEach(b => b.onclick = e => { e.stopPropagation(); b.disabled = true; const it = b.closest(".item"); if (it) it.style.display = "none"; decideEodEdit(b.dataset.ereq, b.dataset.ok === "1"); }); }
 async function decideXt(id, ok) {
   const reply = $(`[data-xreply="${id}"]`)?.value.trim() || null;
   const { error } = await sb.rpc("extra_time_decide", { p_id: id, p_approve: ok, p_reply: reply }); if (error) return toast(error.message, "err");
