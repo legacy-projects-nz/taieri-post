@@ -22,7 +22,7 @@ async function daySummary(sb: any, day: string) {
     all(sb.from("pickups").select("*").eq("day", day)), all(sb.from("vehicle_checks").select("*").gte("at", new Date(day + "T00:00:00+13:00").toISOString()).lt("at", new Date(addDays(day, 1) + "T06:00:00+13:00").toISOString())),
   ]);
   const runsBy = Object.fromEntries(runs.map((r: any) => [r.code, r])); const nm = (id: string) => people.find((p: any) => p.id === id)?.name || id || "—";
-  const an = (k: string) => addons.find((a: any) => a.id === k)?.name || addName(k);
+  const an = (k: string) => k === "key_photo" ? "Key photo" : addons.find((a: any) => a.id === k)?.name || addName(k);
   const ids = shifts.map((s: any) => s.id);
   const [sods, eods] = ids.length ? await Promise.all([all(sb.from("sod").select("*").in("shift_id", ids)), all(sb.from("eod").select("*").in("shift_id", ids))]) : [[], []];
   // photos → signed links (full size) + small previews

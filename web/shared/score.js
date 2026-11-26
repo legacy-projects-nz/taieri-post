@@ -273,7 +273,7 @@ export function meetRule(r, s) {
 /* add-on names: the add-ons table (loaded by each app via setAddonNames) wins; the fixed list below is only the fallback */
 let ADDON_NAMES = {};
 export function setAddonNames(list) { ADDON_NAMES = Object.fromEntries((list || []).filter(a => a?.id && a.name).map(a => [a.id, a.name])); }
-export function addName(k) { return ADDON_NAMES[k] || ({ outram: "Outram Depot", pgg: "PGG", airport: "Airport", milton: "Milton", balclutha: "Balclutha", owaka: "Owaka", rose: "Roseneath receiver", sb: "Sawyers Bay receiver", fish: "Harbour Fish pick-up", pc: "Port Chalmers receiver", digi: "Digi Art pick-up", fonterra: "Fonterra pick-up", waihola: "Waihola Store" })[k] || k; }
+export function addName(k) { return ADDON_NAMES[k] || ({ outram: "Outram Depot", pgg: "PGG", airport: "Airport", milton: "Milton", balclutha: "Balclutha", owaka: "Owaka", rose: "Roseneath receiver", sb: "Sawyers Bay receiver", fish: "Harbour Fish pick-up", pc: "Port Chalmers receiver", digi: "Digi Art pick-up", fonterra: "Fonterra pick-up", waihola: "Waihola Store", key_photo: "Key photo" })[k] || k; }
 
 /* "+ Hours": approved extra minutes a driver logged for a day (vehicle clean, check, maintenance, admin, Jeremy's requests) */
 export const XT_KINDS = { van_clean: { name: "Vehicle clean", min: 20 }, vehicle_check: { name: "Vehicle check", min: 10 }, refuel: { name: "Refuel", min: 5 }, vehicle_maint: { name: "Vehicle maintenance" }, admin: { name: "Admin" }, owner_request: { name: "Jeremy's request", approve: true } };
