@@ -1,4 +1,31 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Run Board (classic) · Taieri Ops</title><style>[hidden]:not([hidden=until-found i]){display:none!important}</style>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Run Board (classic) · Taieri Ops</title><style>[hidden]:not([hidden=until-found i]){display:none!important}
+/* one-screen week (28 Nov 2026): the 7 days share the board width equally instead of growing to fit every add-on tag on one line */
+#grid{min-width:0;table-layout:fixed}
+th.runcol,td.runcol{width:104px;min-width:104px;max-width:104px;padding:6px 6px}
+td.runcol .code{font-size:13.5px}
+td.runcol .nm{font-size:10px}
+td.cell{min-width:0;padding:4px 3px;overflow:hidden}
+.win{flex-wrap:wrap;white-space:normal;row-gap:2px;font-size:10.5px}
+.win .wt{flex:1 0 auto;white-space:nowrap}
+.tag-a,.tag-t,.tag-tr{font-size:8.5px;padding:0 3px}
+.pair,.pair .row2{min-width:0}
+.pair .row2{flex:0 0 auto}
+.pair .row2 .slot.v{flex:0 0 38px;justify-content:center;padding:2px 2px}
+.slot{padding:2px 4px}
+.slot.d{flex:1 1 auto}
+.pair.multi .slot.d{flex:1 1 44%}
+.slot .st{margin-right:10px;gap:0}
+.slot .st b{font-size:10px;min-width:0}
+.slot .st i{padding:0 1px}
+.slot .st.unset{display:none}
+.slot:hover .st.unset{display:inline-flex}
+.slot.d.filled{font-size:13.5px}
+.slot.v.filled{font-size:11px;letter-spacing:0}
+.slot.v svg{display:none}
+.slot.a,.slot.t{flex:0 0 18px}
+.slot .x{font-size:11px}
+#sc0{display:none}
+</style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">

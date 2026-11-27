@@ -1278,7 +1278,7 @@ function slotEl(cls,kind,day,run,val,bad,role){
     else el.innerHTML='<span>'+esc(DNAME[val]||val)+'</span>';
     if(kind==="driver"&&role!=="tr"&&W[run].novan){
       var sk=stKey(f),sv=get(day,run)[sk];
-      var st=document.createElement("span");st.className="st";st.title="Start hour (am) — click the arrows";
+      var st=document.createElement("span");st.className="st"+(sv?"":" unset");st.title="Start hour (am) — click the arrows";
       st.innerHTML='<b>'+(sv?fmtSt(sv):"–")+'</b><span class="ar"><i class="up">▲</i><i class="dn">▼</i></span>';
       st.addEventListener("pointerdown",function(ev){ev.stopPropagation();});
       st.querySelector(".up").addEventListener("click",function(ev){ev.stopPropagation();var v=sv?Math.min(ST_MAX,sv+0.5):ST_MIN;setA(day,run,sk,v);});
