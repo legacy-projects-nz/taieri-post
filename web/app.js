@@ -911,7 +911,7 @@ const lawShift = T => (T?.segs || []).find(x => x.shift.run === "LAW")?.shift ||
 const lawTot = () => { const L = S.lawPu || []; return { small: L.reduce((a, r) => a + (r.small || 0), 0), large: L.reduce((a, r) => a + (r.large || 0), 0), n: L.length }; };
 function lawBar(T) {
   const sh = lawShift(T); if (!sh) return "";
-  const t = lawTot(); const pl = sh.meet_place || "Milton";
+  const t = lawTot(); const pl = sh.meet_place || "Balclutha";
   const pu = t.n ? `<button class="btn qb done" id="law-pu"><b data-s="${t.small} S · ${t.large} B">📦 ${t.small} small · ${t.large} big</b><small>Lawrence pick-ups</small></button>` : `<button class="btn qb off" id="law-pu"><b data-s="📦 LAW PUs">📦 LAW pick-ups</b><small>not in yet</small></button>`;
   const mt = sh.milton_at ? `<button class="btn qb accent" id="law-meet"><b data-s="${esc(pl === "Balclutha" ? "Bal" : "Mil")} ${fmtT(toMin(sh.milton_at))}">📍 ${esc(pl)} ${fmtT(toMin(sh.milton_at))}</b><small>meet-up</small></button>` : `<button class="btn qb off" id="law-meet"><b data-s="📍 Meet-up">📍 Meet-up</b><small>not set yet</small></button>`;
   return `<div class="qbar">${pu}${mt}</div>`;
@@ -930,12 +930,12 @@ function lawPuPop() {
 }
 function lawMeetSheet() {
   const sh = lawShift(S.days[today()]); if (!sh) return;
-  sheet(`<h3>📍 Meet-up</h3>${sh.milton_at ? `<p style="font:800 26px var(--fd);margin:4px 0">${esc(sh.meet_place || "Milton")} · ${fmtT(toMin(sh.milton_at))}</p><p class="meta">Meet the D>B driver there with your Lawrence load.</p>` : `<p class="hint">The D>B driver hasn't set today's meet-up yet. It's usually Milton at 10:30 until they do. You'll get a notification.</p>`}<button class="btn full" id="lm-ok">OK</button>`, (bg, close) => { bg.querySelector("#lm-ok").onclick = close; });
+  sheet(`<h3>📍 Meet-up</h3>${sh.milton_at ? `<p style="font:800 26px var(--fd);margin:4px 0">${esc(sh.meet_place || "Balclutha")} · ${fmtT(toMin(sh.milton_at))}</p><p class="meta">Meet the D>B driver there with your Lawrence load.</p>` : `<p class="hint">The D>B driver hasn't set today's meet-up yet. It's usually Milton at 10:30 until they do. You'll get a notification.</p>`}<button class="btn full" id="lm-ok">OK</button>`, (bg, close) => { bg.querySelector("#lm-ok").onclick = close; });
 }
 /** D>B driver: pick Milton or Balclutha and the time, then save; the Lawrence driver gets it */
 function meetSheet(shiftId) {
   const sh = S.shifts.find(z => z.id === shiftId); if (!sh) return;
-  let pl = sh.meet_place || "Milton"; const tm = String(sh.milton_at || "10:30").slice(0, 5);
+  let pl = sh.meet_place || "Balclutha"; const tm = String(sh.milton_at || "09:30").slice(0, 5);
   sheet(`<h3>📍 Meet-up with Lawrence</h3><p class="hint">${label(sh.day)} · pick where and when, then Save. The Lawrence driver gets it straight away.</p><form class="frm" id="mt">
     <div class="full row" style="gap:8px">${["Milton", "Balclutha"].map(p => `<button type="button" class="btn ${p === pl ? "accent" : "ghost"}" data-mtp="${p}" style="flex:1 1 0">${p}</button>`).join("")}</div>
     <label class="f full">Time<input class="in" type="time" step="300" id="mt-t" value="${esc(tm)}" required></label>

@@ -267,7 +267,7 @@ export const meetOn = (r, s) => r?.addon === "tw_t10" && !!s?.milton_at;
 export function meetRule(r, s) {
   if (!r || !MEET_ADDONS.includes(r.addon) || !s?.milton_at) return r;
   const hm = String(s.milton_at).slice(0, 5); const t = fmtT(toMin(hm));
-  const pl = s.meet_place || "Milton";   // Milton or Balclutha, picked by the D>B driver
+  const pl = s.meet_place || "Balclutha";   // Milton or Balclutha (default Balclutha 9:30, 28 Nov 2026), picked by the D>B driver
   return { ...r, closes: hm, meet: hm, place: pl, note: (r.note || "").replace(/\b\d{1,2}:\d{2}(\s*[ap]m)?\b/gi, t).replace(/\b(Milton|Balclutha)\b/g, pl) || `Meet at ${pl} at ${t}` };
 }
 /* add-on names: the add-ons table (loaded by each app via setAddonNames) wins; the fixed list below is only the fallback */
