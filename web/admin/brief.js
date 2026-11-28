@@ -53,8 +53,7 @@ export function briefCard(wk) {
     ${ppl.length ? `<div class="row" style="align-items:center;margin-top:8px"><span class="meta">Preview for</span><select class="in" id="br-pick" style="max-width:200px">${ppl.map(d => `<option value="${d}" ${d === pick ? "selected" : ""}>${esc(nm(d))}</option>`).join("")}</select></div>
     <div class="item" style="margin-top:6px">${briefHtml(briefFor(wk, pick))}</div>` : `<p class="empty">Nobody is rostered this week yet.</p>`}
     ${sent ? statusList(wk) : ""}
-    ${can && ppl.length && !heldOf(wk).length ? `<button class="btn full" id="br-send" style="margin-top:8px">${sent ? "Send updated brief" : "Send roster brief"} to ${ppl.length} driver${ppl.length === 1 ? "" : "s"}</button>` : ""}</div>
-    ${commsCard(wk)}`;
+    ${can && ppl.length && !heldOf(wk).length ? `<button class="btn full" id="br-send" style="margin-top:8px">${sent ? "Send updated brief" : "Send roster brief"} to ${ppl.length} driver${ppl.length === 1 ? "" : "s"}</button>` : ""}</div>`;
 }
 /* ---- Week comms: driver notes + group email, marked ready, then sent together with "Approve & send all" ---- */
 const noteOf = wk => S.notes.find(x => x.week_start === wk) || {};
@@ -66,7 +65,7 @@ const mdMail = md => { const out = []; let ul = false; const inl = t => esc(t).r
     if (ul) { out.push("</ul>"); ul = false; }
     if (h) out.push(`<p><b>${inl(h[1])}</b></p>`); else if (l) out.push(`<p>${inl(l)}</p>`); }
   if (ul) out.push("</ul>"); return out.join(""); };
-function commsCard(wk) {
+export function commsCard(wk) {
   const can = S.me.isOwner || S.me.can("roster_approve"); const n = noteOf(wk); const c = commsState(wk); const st = briefStatus(wk);
   const notesN = c.held || Object.keys(st).length;
   return `<div class="card" id="comms"><h2>Week comms<span>${c.sent ? `✓ sent ${fmtTs(c.sent)}` : `${c.notes ? "✓ driver notes ready" : "driver notes not ready"} · ${c.email ? "✓ email ready" : "email not ready"}`}</span></h2>

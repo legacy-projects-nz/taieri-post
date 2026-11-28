@@ -6,7 +6,7 @@ import { addName, segTimes } from "/shared/score.js";
 import { S, sheet, opt, nm, fnm, weekBar, wireWeek, loadAll, render, fn } from "/admin/admin.js";
 import { sickSheet, onLongPress } from "/admin/sick.js";
 import { actBtns } from "/admin/settle.js";
-import { briefCard, wireBrief, wireComms, commsState, sendAllComms } from "/admin/brief.js";
+import { briefCard, commsCard, wireBrief, wireComms, commsState, sendAllComms } from "/admin/brief.js";
 
 // back-up used (allowance_outcomes = called_in): shown on the BU slot; loaded per week, re-checked when the board is drawn
 const BU = { wk: null, at: 0, by: {} };
@@ -102,6 +102,7 @@ export function runBoardTab() { loadBuUsed();
     ${awaiting.length ? approvalCard(awaiting, canApprove) : ""}
     <div class="rb${isToday ? " today" : ""}"><table><thead><tr><th class="run">Run</th>${dayIdxs.map(i => { const D = DAYS[i]; const day = addDays(S.week, i); const hol = S.C.holidays[day]; return `<th class="${day === t ? "c-accent" : ""}">${D} <span class="meta">${label(day).slice(4)}</span>${hol ? `<div class="meta c-warn">${esc(hol.name)}</div>` : ""}</th>`; }).join("")}</tr></thead><tbody>${rows}</tbody></table></div>
     <p class="hint">Tap a slot to set the driver, van, times, add-ons or a trainee. ${pub ? `Red outline = changed since drivers were last told (push it to them when you're ready). ` : ""}Amber = waiting for Jeremy's OK. "? not confirmed" = the driver hasn't tapped Got it yet.</p>
+    ${isToday ? "" : commsCard(S.week)}
     ${confirmCard(sentItems, ackOf, n)}
     ${ruleCheck(ws, leaveOn)}
     <div class="card"><h2>Roster notes<span>week of ${label(S.week)}</span></h2><textarea class="in" id="wk-notes" rows="5" placeholder="Notes for this week's roster (road closures, training, reminders)…" ${canSend ? "" : "disabled"}>${esc(note)}</textarea><p class="hint">Saves when you click away.</p></div>
