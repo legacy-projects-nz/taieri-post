@@ -148,7 +148,7 @@ document.querySelector(".wrap")?.prepend(b);
 try { window.TP_HOLIDAYS = (await q(sb.from("settings").select("value").eq("key", "holidays").maybeSingle()))?.value || {}; } catch { window.TP_HOLIDAYS = {}; }
 
 // finally load the untouched board code
-const s = document.createElement("script"); s.src = "/admin/classic/board.js"; document.body.appendChild(s);
+const s = document.createElement("script"); s.src = "/admin/classic/board.js?v=" + Date.now(); document.body.appendChild(s);
 
 function makeGate() { const g = document.createElement("div"); g.id = "shim-gate"; g.style.cssText = "position:fixed;inset:0;background:#000;z-index:999;overflow:auto;color:#eef1f4"; document.body.appendChild(g); return g; }
 function removeGate() { document.getElementById("shim-gate")?.remove(); }
