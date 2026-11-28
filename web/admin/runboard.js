@@ -6,7 +6,7 @@ import { addName, segTimes } from "/shared/score.js";
 import { S, sheet, opt, nm, fnm, weekBar, wireWeek, loadAll, render, fn } from "/admin/admin.js";
 import { sickSheet, onLongPress } from "/admin/sick.js";
 import { actBtns } from "/admin/settle.js";
-import { briefCard, wireBrief } from "/admin/brief.js";
+import { briefCard, wireBrief, wireComms, commsState, sendAllComms } from "/admin/brief.js";
 
 // back-up used (allowance_outcomes = called_in): shown on the BU slot; loaded per week, re-checked when the board is drawn
 const BU = { wk: null, at: 0, by: {} };
@@ -88,7 +88,7 @@ export function runBoardTab() { loadBuUsed();
   const canSend = S.me.can("roster"); const canApprove = S.me.isOwner || S.me.can("roster_approve");
   const wi = weekInfo(); const pub = !!wi?.published_at; const filled = ws.filter(s => s.driver && s.run !== "BU").length;
   const status = S.ro ? `<span class="meta">View only</span>` : !pub
-    ? (canApprove && filled ? `<button class="btn sm" id="approve-roster">Approve roster → drivers' app</button>` : `<span class="meta c-warn">${filled ? "Not approved yet — drivers can't see this week" : "Empty week — add shifts, then approve"}</span>`)
+    ? (canApprove && filled ? (() => { const c = commsState(S.week); const both = c.notes && c.email && !c.sent; return `${c.sent ? "" : `<span class="pill ${c.notes ? "ok" : "warn"}">${c.notes ? "✓ " : ""}Driver notes ready</span><span class="pill ${c.email ? "ok" : "warn"}">${c.email ? "✓ " : ""}Email ready</span>`}<button class="btn sm" id="approve-roster">${both ? "Approve & send all" : "Approve roster → drivers' app"}</button>`; })() : `<span class="meta c-warn">${filled ? "Not approved yet — drivers can't see this week" : "Empty week — add shifts, then approve"}</span>`)
     : pend.length && canSend ? `<button class="btn crit sm" id="send-changes">Push ${pend.length} change${pend.length === 1 ? "" : "s"} to drivers</button>`
     : pend.length ? `<span class="meta">${pend.length} change${pend.length === 1 ? "" : "s"} not pushed yet</span>`
     : `<span class="meta c-ok">✓ approved ${fmtTs(wi.published_at)} · drivers have the latest</span>`;
@@ -186,7 +186,7 @@ export function wireRunBoard() {
     const { error } = await sb.from("week_notes").upsert({ week_start: S.week, dismissed: next, updated_at: new Date().toISOString() }); if (error) return toast(error.message, "err"); toast(b.dataset.rc === "dis" ? "Dismissed" : "Restored", "ok"); });
   // [data-ack] confirm/dismiss buttons are handled by detail.js bind()
   wireApprovals();
-  if (S.rbView === "week") wireBrief(S.week);
+  if (S.rbView === "week") { wireBrief(S.week); wireComms(S.week); }
 }
 
 function slotSheet(day, run, slot) {
@@ -262,10 +262,14 @@ async function afterSend(changeId, items, pend) {
 function approveRoster() {
   const ws = weekShifts().filter(s => s.driver && s.run !== "BU"); const drivers = new Set(ws.map(s => s.driver));
   sheet(`<h3>Approve roster · week of ${label(S.week)}</h3><p class="hint">${ws.length} shifts for ${drivers.size} drivers go into the drivers' app as their roster for the week. No email, no alert and nothing for them to confirm — they'll see it under My shifts. After this, edits to this week show as changes you can push.</p>
-    <button class="btn" id="go">Approve roster</button>`, async (bg, close) => {
+    ${(() => { const c = commsState(S.week); return c.notes && c.email && !c.sent ? `<p class="hint c-ok">Driver notes and the group email are marked ready: they go out with this approval (app notes + phone alert + email to each driver).</p>` : `<p class="hint c-warn">${!c.notes ? "Driver notes aren't marked ready. " : ""}${!c.email ? "Group email isn't marked ready. " : ""}Only the roster goes out.</p>`; })()}
+    <button class="btn" id="go">${(() => { const c = commsState(S.week); return c.notes && c.email && !c.sent ? "Approve & send all" : "Approve roster"; })()}</button>`, async (bg, close) => {
     bg.querySelector("#go").onclick = async () => { const b = bg.querySelector("#go"); b.disabled = true;
       const { error } = await sb.rpc("publish_week", { wk: S.week }); if (error) { toast(error.message, "err"); b.disabled = false; return; }
-      close(); toast("Roster approved — it's in the drivers' app", "ok"); await loadAll(); render(); };
+      const c = commsState(S.week);
+      if (c.notes && c.email && !c.sent) { try { const r = await sendAllComms(S.week); toast(`Approved · ${r.notes} driver notes released · ${r.emails} emails sent${r.fails ? ` · ${r.fails} failed` : ""}`, r.fails ? "err" : "ok"); } catch (err) { toast(err.message, "err"); } }
+      else toast("Roster approved — it's in the drivers' app", "ok");
+      close(); await loadAll(); render(); };
   });
 }
 /** Approve / Reject buttons on changes waiting for Jeremy's OK (Run Board and the To do pop-up) */

@@ -72,7 +72,7 @@ async function loadAllNow() {
   try { const { data } = await sb.from("calendar_events").select("*").gte("day", addDays(t, -400)).order("day"); S.events = data || []; } catch { S.events = []; }
   S.set = set; S.C = cfg(set); S.runs = runs; S.runsBy = Object.fromEntries(runs.map(r => [r.code, r])); S.vans = Object.fromEntries(vans.map(v => [v.plate, v])); S.addons = addons; setAddonNames(addons); S.rules = rules;
   S.people = Object.fromEntries(people.map(p => [p.id, p])); S.shifts = shifts.filter(s => s.driver === m); S.trainee = shifts.filter(s => s.trainee === m && s.driver !== m);
-  S.changes = changes; S.acks = acks; S.briefs = (msgs || []).filter(m => m.messages.kind === "brief"); S.msgs = (msgs || []).filter(m => m.messages.kind !== "brief"); S.leave = leave; S.alerts = alerts; S.entries = entries; S.marks = marks; S.feed = feed; S.vchk = vchk || [];
+  S.changes = changes; S.acks = acks; S.briefs = (msgs || []).filter(m => m.messages.kind === "brief" && !m.messages.held); S.msgs = (msgs || []).filter(m => m.messages.kind !== "brief"); S.leave = leave; S.alerts = alerts; S.entries = entries; S.marks = marks; S.feed = feed; S.vchk = vchk || [];
   const ids = S.shifts.map(s => s.id);
   // second round, all at once (was one after another): SOD/EOD/overrides, pick-ups, access info, van washes, breaks
   const soft = (p, d) => Promise.resolve(p).then(r => r?.error ? d : (r?.data ?? d), () => d);

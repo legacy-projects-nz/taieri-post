@@ -53,7 +53,49 @@ export function briefCard(wk) {
     ${ppl.length ? `<div class="row" style="align-items:center;margin-top:8px"><span class="meta">Preview for</span><select class="in" id="br-pick" style="max-width:200px">${ppl.map(d => `<option value="${d}" ${d === pick ? "selected" : ""}>${esc(nm(d))}</option>`).join("")}</select></div>
     <div class="item" style="margin-top:6px">${briefHtml(briefFor(wk, pick))}</div>` : `<p class="empty">Nobody is rostered this week yet.</p>`}
     ${sent ? statusList(wk) : ""}
-    ${can && ppl.length ? `<button class="btn full" id="br-send" style="margin-top:8px">${sent ? "Send updated brief" : "Send roster brief"} to ${ppl.length} driver${ppl.length === 1 ? "" : "s"}</button>` : ""}</div>`;
+    ${can && ppl.length && !heldOf(wk).length ? `<button class="btn full" id="br-send" style="margin-top:8px">${sent ? "Send updated brief" : "Send roster brief"} to ${ppl.length} driver${ppl.length === 1 ? "" : "s"}</button>` : ""}</div>
+    ${commsCard(wk)}`;
+}
+/* ---- Week comms: driver notes + group email, marked ready, then sent together with "Approve & send all" ---- */
+const noteOf = wk => S.notes.find(x => x.week_start === wk) || {};
+export const heldOf = wk => S.msgs.filter(m => m.kind === "brief" && m.week_start === wk && m.held);
+export function commsState(wk) { const n = noteOf(wk); return { notes: !!n.notes_ready_at, email: !!n.email_ready_at, sent: n.comms_sent_at || null, held: heldOf(wk).length }; }
+const mdMail = md => { const out = []; let ul = false; const inl = t => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+  for (const raw of String(md || "").split(/\r?\n/)) { const l = raw.trim(); const li = /^[-•]\s+(.*)$/.exec(l); const h = /^#{1,3}\s+(.*)$/.exec(l);
+    if (li) { if (!ul) { out.push("<ul>"); ul = true; } out.push(`<li>${inl(li[1])}</li>`); continue; }
+    if (ul) { out.push("</ul>"); ul = false; }
+    if (h) out.push(`<p><b>${inl(h[1])}</b></p>`); else if (l) out.push(`<p>${inl(l)}</p>`); }
+  if (ul) out.push("</ul>"); return out.join(""); };
+function commsCard(wk) {
+  const can = S.me.isOwner || S.me.can("roster_approve"); const n = noteOf(wk); const c = commsState(wk); const st = briefStatus(wk);
+  const notesN = c.held || Object.keys(st).length;
+  return `<div class="card" id="comms"><h2>Week comms<span>${c.sent ? `✓ sent ${fmtTs(c.sent)}` : `${c.notes ? "✓ driver notes ready" : "driver notes not ready"} · ${c.email ? "✓ email ready" : "email not ready"}`}</span></h2>
+    <p class="hint">Mark the driver notes and the group email ready once you're happy with them. "Approve & send all" then approves the roster, releases each driver's notes in the app and emails everyone.</p>
+    <div class="row" style="align-items:center;gap:8px"><b style="flex:1">Driver notes</b><span class="meta">${c.held ? `${c.held} held until sent` : notesN ? `${notesN} sent` : "none yet"}</span>
+      ${can && !c.sent ? `<button class="btn sm ${c.notes ? "ghost" : ""}" id="cm-notes">${c.notes ? "✓ Driver notes ready" : "Mark driver notes ready"}</button>` : ""}</div>
+    <label class="f" style="margin-top:8px">Group email subject<input class="in" id="cm-subj" value="${esc(n.email_subject || `Roster – week of ${wkLabel(wk)}`)}" ${can && !c.sent ? "" : "disabled"}></label>
+    <label class="f">Group email (## heading, - bullet, **bold**)<textarea class="in" id="cm-body" rows="12" ${can && !c.sent ? "" : "disabled"}>${esc(n.email_body || "")}</textarea></label>
+    <details><summary>Preview</summary><div class="item" style="margin-top:6px">${mdMail(n.email_body)}</div></details>
+    ${can && !c.sent ? `<button class="btn sm ${c.email ? "ghost" : ""}" id="cm-email" style="margin-top:6px">${c.email ? "✓ Email ready" : "Mark email ready"}</button>` : ""}</div>`;
+}
+export function wireComms(wk) {
+  const save = async (extra = {}) => { const s = $("#cm-subj")?.value, b = $("#cm-body")?.value;
+    await q(sb.from("week_notes").upsert({ week_start: wk, email_subject: s, email_body: b, updated_at: new Date().toISOString(), ...extra })); };
+  $("#cm-subj")?.addEventListener("blur", async () => { await save({ email_ready_at: null }); await loadAll(); render(true); });
+  $("#cm-body")?.addEventListener("blur", async () => { const n = noteOf(wk); if (($("#cm-body").value || "") === (n.email_body || "")) return; await save({ email_ready_at: null }); await loadAll(); render(true); toast("Email saved — mark it ready again when you're happy", "ok"); });
+  $("#cm-email")?.addEventListener("click", async () => { const on = !commsState(wk).email; await save({ email_ready_at: on ? new Date().toISOString() : null }); await loadAll(); render(true); });
+  $("#cm-notes")?.addEventListener("click", async () => { const on = !commsState(wk).notes; await q(sb.from("week_notes").upsert({ week_start: wk, notes_ready_at: on ? new Date().toISOString() : null, updated_at: new Date().toISOString() })); await loadAll(); render(true); });
+}
+/** release held driver notes (or create them), push each driver, email everyone the group email */
+export async function sendAllComms(wk) {
+  const n = noteOf(wk); const held = heldOf(wk); let ids = [];
+  if (held.length) { await q(sb.from("messages").update({ held: false }).in("id", held.map(m => m.id))); ids = held.map(m => m.id); }
+  else if (!Object.keys(briefStatus(wk)).length) for (const d of briefPeople(wk)) { const msg = await q(sb.from("messages").insert({ sender: S.me.id, kind: "brief", week_start: wk, title: `Roster · ${wkLabel(wk)}`, body: briefFor(wk, d), needs_confirm: true }).select().single()); await q(sb.from("message_recipients").insert({ message_id: msg.id, person: d })); ids.push(msg.id); }
+  for (const id of ids) fn("notify", { type: "message", message_id: id }).catch(() => { });
+  const to = [...new Set([...briefPeople(wk), ...S.recips.filter(r => held.some(m => m.id === r.message_id)).map(r => r.person)])].map(d => S.peopleBy[d]?.email).filter(Boolean);
+  let fails = 0; if (n.email_body) for (const e of to) await fn("notify", { type: "email", to: [e], subject: n.email_subject || `Roster – week of ${wkLabel(wk)}`, html: mdMail(n.email_body) }).catch(() => { fails++; });
+  await q(sb.from("week_notes").upsert({ week_start: wk, comms_sent_at: new Date().toISOString(), updated_at: new Date().toISOString() }));
+  return { notes: ids.length, emails: to.length - fails, fails };
 }
 export function statusList(wk) {
   const st = briefStatus(wk); const ppl = [...new Set([...briefPeople(wk), ...Object.keys(st)])].sort((a, b) => nm(a).localeCompare(nm(b)));
