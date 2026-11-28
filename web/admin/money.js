@@ -24,7 +24,7 @@ const money = n => (n < 0 ? "−$" : "$") + Math.abs(n).toFixed(2);
 const money0 = n => (n < 0 ? "−$" : "$") + Math.round(Math.abs(n)).toLocaleString();
 // shared bases: per = "day" | "week" | "month"; days = working days a week it's spread over
 const GROUPS = {
-  "PCB + RSB": { runs: ["PCB", "RSB", "WH"], per: "month", amt: 0, days: 6 },
+  "PCB + RSB": { runs: ["PCB", "RSB", "WH", "CAROSE"], per: "month", amt: 0, days: 6 },
   "TUA + Flyer": { runs: ["TUA", "FLY"], per: "month", amt: 0, days: 5 },
   "Lawrence": { runs: ["LAW"], per: "month", amt: 0, days: 5 },
   // TGE: one group per run, from the TGE weekly summary emails (net excl GST), average of the 7 full weeks w/e 20 Sep – 8 Nov 2026.
@@ -42,7 +42,7 @@ const RUN_DAYS = { FLY: 4 };   // days a week a run goes out, where it's fewer t
 const COSTS = [["fuel", "Fuel", 0], ["ruc", "Road user charges", 0], ["veh", "Vehicle costs & repairs", 0], ["sub", "Subcontractors", 0], ["ins", "Insurance", 0], ["acc", "ACC levy", 0],
   ["loan", "Loan fees & interest", 0], ["soft", "Software", 0], ["staffx", "Staff training, uniforms, meetings", 0], ["acct", "Accountancy", 0], ["office", "Office, phone, rent, marketing, bank", 0]];
 const COST_DAYS = 6;   // working days a week the monthly costs are spread over
-const PARCEL_RUNS = ["TUA", "FLY", "RAM", "PCB", "RSB", "LAW", "S", "T", "SG"];
+const PARCEL_RUNS = ["TUA", "FLY", "RAM", "PCB", "RSB", "CAROSE", "LAW", "S", "T", "SG"];
 // TGE Surge (SG): paid by the hour plus by the parcel, no base (rates in settings.money_model).
 // Until the EOD is in (and with no history yet) parcels are estimated at EST_PARCELS.
 const HOURLY_RUNS = ["SG"];
@@ -93,7 +93,7 @@ const parcelsOf = shift => parcelsSrc(shift)?.n ?? null;
 // income streams for the Income tab
 export const STREAMS = [["wh", "NZ Post West Harbour", "RSB, PCB and the Saturday combined run. Full amount, before Gina's share."], ["nzp", "NZ Post TP", "TUA, Flyer, Outram, Lawrence and food bag."], ["tge", "TGE", "TGE S and T."], ["tgeSurge", "TGE Surge", "TGE Surge: hours plus parcels, plus GST."], ["tgeRural", "TGE Rural", "Rural TGE parcels delivered on Outram, TUA and Flyer, from the EOD."], ["tgeSouth", "TGE South", "South TGE pick-ups."], ["ruralPH", "Rural PH", "Rural Post Haste pick-ups."], ["ruralNZC", "Rural NZC", "Rural NZ Couriers pick-ups."], ["owakaPH", "Owaka PH", "Owaka and Balclutha Post Haste pick-ups."], ["owakaNZC", "Owaka NZC", "Owaka and Balclutha NZ Couriers pick-ups, Owaka Medical, Telford mail and the Balclutha minimum."], ["lawPH", "Lawrence PH", "Lawrence Post Haste pick-ups."], ["lawNZC", "Lawrence NZC", "Lawrence NZ Couriers pick-ups."]];
 const TGE_RUNS = ["S", "T", "SG"];
-const WH_RUNS = ["PCB", "RSB", "WH"];
+const WH_RUNS = ["PCB", "RSB", "WH", "CAROSE"];
 const runStream = run => run === "SG" ? "tgeSurge" : TGE_RUNS.includes(run) ? "tge" : WH_RUNS.includes(run) ? "wh" : "nzp";
 const areaStream = (area, tge, cu) => { if (tge) return area === "South" ? "tgeSouth" : "tge"; const c = cu === "PH" ? "PH" : "NZC";
   return area === "Rural" ? "rural" + c : (area === "Lawrence" || area === "Lawrence Local") ? "law" + c : area === "South" ? "tgeSouth" : "owaka" + c; };   // Owaka areas and Balclutha → Owaka

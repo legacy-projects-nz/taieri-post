@@ -7,7 +7,7 @@ import { sodStart, dayShifts, effCalc, ownerBreakHrs } from "/shared/score.js";
 import { S, nm, fnm, weekBar } from "/admin/admin.js";
 import { cmpDays, cmpHas, cmpBar, cmpWeeks } from "/admin/compare.js";
 
-const COVERS = () => ({ SUP: ["RAM", "TUA", "FLY"], SUP3: ["PCB", "RSB"], ...(S.C.rules.sortCovers || {}) });
+const COVERS = () => ({ SUP: ["RAM", "TUA", "FLY"], SUP3: ["PCB", "RSB", "CAROSE"], ...(S.C.rules.sortCovers || {}) });
 const at = ts => ts ? nzNow(new Date(ts)).min : null;
 const hm = m => m == null ? "—" : `${Math.floor(m / 60)}h ${String(Math.round(m % 60)).padStart(2, "0")}m`;
 

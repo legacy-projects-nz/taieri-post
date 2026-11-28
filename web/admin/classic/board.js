@@ -73,6 +73,7 @@ var W={
  FLY:{name:"Flyer",net:"nzp",d:{Mon:[[m(5),m(10,30)]],Wed:[[m(5),m(9,30)]],Fri:[[m(5),m(9,30)]]}},
  WH:{name:"Saturday combined run",label:"PCB+RSB",net:"nzp",rest:1,d:{Sat:[[m(8),m(13)]]}},
  RSB:{name:"Roseneath / Sawyers Bay",net:"nzp",rest:1,hard:1,d:{Mon:[[m(12,30),m(15)]],Tue:[[m(12,30),m(17)]],Wed:[[m(12,30),m(15)]],Thu:[[m(12,30),m(17)]],Fri:[[m(12,30),m(15)]],Sat:[[m(8),m(13)]]}},
+ CAROSE:{name:"Carey's Bay / Roseneath",label:"CAROSE",net:"nzp",rest:1,hard:1,d:{Mon:[[m(8),m(13)]],Tue:[[m(8),m(13)]],Wed:[[m(8),m(13)]],Thu:[[m(8),m(13)]],Fri:[[m(8),m(13)]],Sat:[[m(8),m(13)]]}},   /* new West Harbour run (28 Nov 2026) */
  PCB:{name:"Port Chalmers / Careys Bay",net:"nzp",rest:1,hard:1,d:{Mon:[[m(8),m(11)]],Tue:[[m(7,30),m(12)]],Wed:[[m(8),m(11)]],Thu:[[m(7,30),m(12)]],Fri:[[m(8),m(11)]],Sat:[[m(8),m(13)]]}},
  TUA:{name:"TUA",net:"nzp",d:{Mon:[[m(5),m(10,45)]],Tue:[[m(5),m(9,45)]],Wed:[[m(5),m(9,45)]],Thu:[[m(5),m(9,45)]],Fri:[[m(5),m(9,45)]]}},
  RAM:{name:"Outram T-RAM",net:"nzp",hard:1,d:{Mon:[[m(13),m(16)]],Tue:[[m(13),m(16)]],Wed:[[m(13),m(16)]],Thu:[[m(13),m(16)]],Fri:[[m(13),m(16)]]}},
@@ -92,7 +93,7 @@ var W={
  MFB1:{name:"MFB 1",net:"sun",d:{Sun:[[m(10),m(16)]]}},
  MFB2:{name:"MFB 2",net:"sun",d:{Sun:[[m(10),m(16)]]}}
 };
-var ORDER=["TUA","DB","FLY","LAW","RAM","PCB","RSB","S","T","SG","FB","FBP","FB2","FB2P","SUP","SUP3","SUP2","BU"];
+var ORDER=["TUA","DB","FLY","LAW","RAM","PCB","RSB","CAROSE","S","T","SG","FB","FBP","FB2","FB2P","SUP","SUP3","SUP2","BU"];
 /* Saturday: PCB and RSB now go out as two separate rounds (split Oct 2026) — COMBINED is switched off by pointing it at no day */
 var COMBINED={day:"none",top:"PCB",under:"RSB",label:"PCB + RSB combined"};
 
@@ -319,7 +320,7 @@ function win(run,day){
 }
 function defWin(run,day){return W[run].d[day]||null;}
 /* run experience: which driver is signed off ("yes") or in training ("tr") on which run; the AM/PM food bag rows and Saturday combined share one skill */
-var SKILL_RUNS=["TUA","DB","FLY","LAW","RAM","PCB","RSB","S","T","SG","FB"];
+var SKILL_RUNS=["TUA","DB","FLY","LAW","RAM","PCB","RSB","CAROSE","S","T","SG","FB"];
 var SKILL_OF={WH:"PCB",FBP:"FB",FB2:"FB",FB2P:"FB"};
 function skillRun(run){var s=SKILL_OF[run]||run;return SKILL_RUNS.indexOf(s)>=0?s:null;}
 function skillOf(drv,run){var s=skillRun(run);if(!s)return "yes";return (state.cfg.skills||{})[drv+"|"+s]||"";}
@@ -1602,7 +1603,7 @@ boardText(),
 /* ---------- week approval: email NZ Post runs to Alejandro (admin) ---------- */
 var ADMIN_EMAIL="alejandromartinezdj@outlook.com";
 var APPR=null,apprUnsub=null,apprWk=null;
-var NZP_RUNS=["FLY","TUA","RAM","LAW","DB","PCB","RSB"],NZP_NAME={FLY:"D5636a",TUA:"D5636",RAM:"Z5636",LAW:"PLAD01",DB:"D>B",PCB:"PPCS63",RSB:"PPCS64"};
+var NZP_RUNS=["FLY","TUA","RAM","LAW","DB","PCB","RSB","CAROSE"],NZP_NAME={CAROSE:"CAROSE",FLY:"D5636a",TUA:"D5636",RAM:"Z5636",LAW:"PLAD01",DB:"D>B",PCB:"PPCS63",RSB:"PPCS64"};
 function watchAppr(){
   if(apprUnsub){try{apprUnsub();}catch(e){}apprUnsub=null;}
   APPR=null;apprWk=key(state.mon);renderAppr();
@@ -1631,7 +1632,7 @@ function nzpRows(){
       var serial=Math.round((Date.UTC(dt.getFullYear(),dt.getMonth(),dt.getDate())-Date.UTC(1899,11,30))/864e5);
       rows.push({date:("0"+dt.getDate()).slice(-2)+"/"+("0"+(dt.getMonth()+1)).slice(-2)+"/"+dt.getFullYear(),day:d,run:NZP_NAME[run],driver:who,
         serial:serial,pday:{Tue:"Tues",Thu:"Thurs"}[d]||d,pdriver:main,note:a.tr?"Training: "+drvName(a.tr):"",
-        airport:ad.indexOf("airport")>=0,milton:run==="DB"||ad.indexOf("milton")>=0,balclutha:ad.indexOf("balclutha")>=0,owaka:ad.indexOf("owaka")>=0,wh:run==="PCB"||run==="RSB"});
+        airport:ad.indexOf("airport")>=0,milton:run==="DB"||ad.indexOf("milton")>=0,balclutha:ad.indexOf("balclutha")>=0,owaka:ad.indexOf("owaka")>=0,wh:run==="PCB"||run==="RSB"||run==="CAROSE"});
     });
   });
   return rows;

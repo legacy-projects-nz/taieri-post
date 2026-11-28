@@ -66,7 +66,7 @@ function effCompare(rows) {
     ${wks.length > 1 ? `<h3 style="margin:12px 0 4px;font-size:15px">Week by week</h3><div class="scroll"><table class="dt"><tr><th>Week of</th>${ids.map(id => `<th>${esc(fnm(id))}</th>`).join("")}<th>Everyone</th></tr>${wks.map(w => { const inW = r => r.d >= w && r.d <= addDays(w, 6); const T = ok.filter(inW); return `<tr><td>${label(w).slice(0, 6)}</td>${ids.map(id => { const g = effAgg(by[id].filter(inW)); return `<td class="num">${g ? pc(g.p) : ""}</td>`; }).join("")}<td class="num meta">${T.length ? pc(effAgg(T)?.p) : ""}</td></tr>`; }).join("")}</table></div>` : ""}
     <p class="hint" style="margin:0">Each figure is total expected hours ÷ total tracked hours for those runs (${S.C.rules.effMethod === "tdt" ? "TDT method" : "allowed ÷ taken"}), so a long run counts more than a short one. Training days and runs without an EOD are left out.</p></div>`;
 }
-const RUN_ORDER = ["FLY", "TUA", "LAW", "RAM", "DB", "WH", "RSB", "PCB", "S", "T"];
+const RUN_ORDER = ["FLY", "TUA", "LAW", "RAM", "DB", "WH", "RSB", "PCB", "CAROSE", "S", "T"];
 function effView() {
   const days = cmpDays(); const rows = []; const pool = new Set(); const allRuns = new Set();
   for (const d of days) for (const drv of S.drivers) { if (S.shifts.some(s => s.day === d && s.driver === drv.id)) pool.add(drv.id); if (!cmpHas(drv.id)) continue; const D = dayShifts(S.shifts.filter(s => s.day === d && s.driver === drv.id), S.runsBy, drv.id)[d]; if (!D) continue; const runs = D.segs.filter(x => !x.sort); const sortRost = D.segs.filter(x => x.sort).reduce((a, x) => a + ((x.en ?? x.st) - x.st), 0); const sod = D.segs.map(x => S.sodBy[x.shift.id]).find(Boolean);
@@ -80,7 +80,7 @@ function effView() {
 }
 
 /* ---------- Formulas (run time allowed) ---------- */
-const RUNS_F = ["TUA", "FLY", "RAM", "LAW", "DB", "PCB", "RSB", "WH", "S", "T"];
+const RUNS_F = ["TUA", "FLY", "RAM", "LAW", "DB", "PCB", "RSB", "WH", "CAROSE", "S", "T"];
 const F_COLS = [["base", "Base (min)"], ["parcel", "Per parcel"], ["stop", "Per stop"], ["tray", "Per tray"], ["mail", "Per mail stop"], ["slots", "Tray slots (mail)"], ["pickup", "Per pick-up stop"], ["puparcel", "Per pick-up parcel (TGE)"], ["addon", "Add-ons (est. min)"], ["floor", "Minimum (min)"]];
 function exampleHours(m, C) { const tge = (m.net || (/^(S|T)$/.test(m.code) ? "tge" : "nzp")) === "tge"; let min = m.base + (tge ? 120 * m.parcel + 70 * m.stop + 5 * (m.pickup || 0) + 20 * (m.puparcel || 0) + 90 : 70 * m.parcel + (m.mail != null ? 56 : 60) * m.stop + 1 * (m.tray || 0) + 75 * (m.mail || 0) + C.sortF.pBase + C.sortF.mailTray) + (m.addon || 0); if (m.floor && min < m.floor) min = m.floor; return (min / 60).toFixed(1); }
 function formulasView() {

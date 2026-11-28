@@ -23,7 +23,7 @@ export const LEGS = ["airport", "milton", "balclutha", "owaka"];
 /* NZ Post runs on the scanner-total + mail-tray model (18 Nov 2026): the runsheet photo asks for the scanner's parcel total, stops are
    never asked for (80% of the parcel total), and the mail tray photo gives the day's mail stops (tray slots with mail, counted from the photo).
    Settings → rules.mailRuns to change the list; effSimple[code].mail = minutes per mail stop. */
-export const MAIL_RUNS = ["TUA", "FLY", "RAM", "LAW", "RSB", "PCB", "WH"];
+export const MAIL_RUNS = ["TUA", "FLY", "RAM", "LAW", "RSB", "PCB", "WH", "CAROSE"];
 /** A standing (always-on) task applies to this shift: right run, not a no-Saturday Saturday, on/after the add-on's start date (addons.since),
  *  and, when the add-on has timing rules, an active rule covering the run on that weekday (e.g. West Harbour mail trays only Tue/Thu/Sat). */
 export function standingOn(a, run, day, rules) { if (!a?.always || !a.runs.includes(run)) return false; if (a.no_saturday && dow(day) === 5) return false; if (a.since && day < a.since) return false;
