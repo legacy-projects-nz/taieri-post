@@ -871,6 +871,9 @@ function render(){
         onTap(trg,function(ev){ev.stopPropagation();setTrain(day,run,false);});
         w.appendChild(trg);
       }
+      if((run==="PCB"||run==="RSB")&&W.CAROSE&&win("CAROSE",day)&&anyDrv(get(day,"CAROSE"))){
+        var sc=document.createElement("span");sc.className="tag-tr";sc.style.background="var(--accent,#2a6fd0)";sc.textContent=run==="PCB"?"PORT ONLY":"SB ONLY";sc.title="CAROSE (Carey's Bay / Roseneath) is on today";w.appendChild(sc);
+      }
       if(unc){var ut=document.createElement("span");ut.className="tag-u";ut.textContent="? "+unc.map(function(n){return String(n).split(" ")[0];}).join(", ");ut.title="Not confirmed yet: "+unc.join(", ")+" — click to confirm or dismiss";
         ut.addEventListener("pointerdown",function(ev){ev.stopPropagation();});
         (function(ut,day,run,unc){onTap(ut,function(ev){ev.stopPropagation();openUncMenu(ut,day,run,unc);});})(ut,day,run,unc);
