@@ -84,6 +84,7 @@ var W={
  SUP:{name:"NZP depot · Rural",label:"Sort – Rural",net:"nzp",novan:1,slots:4,d:{Mon:[[m(5),m(18)]],Tue:[[m(5),m(18)]],Wed:[[m(5),m(18)]],Thu:[[m(5),m(18)]],Fri:[[m(5),m(18)]],Sat:[[m(5),m(18)]]}},
  BU:{name:"Back up",label:"Back up",net:"nzp",novan:1,slots:2,d:{Mon:[[m(5),m(18)]],Tue:[[m(5),m(18)]],Wed:[[m(5),m(18)]],Thu:[[m(5),m(18)]],Fri:[[m(5),m(18)]],Sat:[[m(5),m(18)]],Sun:[[m(5),m(18)]]}},
  SUP2:{name:"TGE depot",label:"Sort – TGE",net:"tge",novan:1,d:{Mon:[[m(6,30),m(8)]],Tue:[[m(6,30),m(8)]],Wed:[[m(6,30),m(8)]],Thu:[[m(6,30),m(8)]],Fri:[[m(6,30),m(8)]]}},   /* TGE sort 6:30–8:00, weekdays only */
+ SUP4:{name:"NZP depot · D>B",label:"Sort – D>B",net:"nzp",novan:1,d:{Mon:[[m(6),m(8)]],Tue:[[m(6),m(8)]],Wed:[[m(6),m(8)]],Thu:[[m(6),m(8)]],Fri:[[m(6),m(8)]]}},   /* D>B mail sort, straight before D>B (28 Nov 2026) */
  SUP3:{name:"NZP depot · West Harbour",label:"Sort – West Harbour",net:"nzp",novan:1,slots:2,d:{Mon:[[m(5),m(8)]],Tue:[[m(5),m(8)]],Wed:[[m(5),m(8)]],Thu:[[m(5),m(8)]],Fri:[[m(5),m(8)]],Sat:[[m(5),m(8)]]}},
  FB:{name:"Food bag · am shift",label:"Food bag 1 AM",net:"sun",fixed:1,slim:1,d:{Sun:[[m(11),m(14)]]}},
  FBP:{name:"Food bag · pm shift",label:"Food bag 1 PM",net:"sun",fixed:1,slim:1,d:{Sun:[[m(14),m(17)]]}},
@@ -93,7 +94,7 @@ var W={
  MFB1:{name:"MFB 1",net:"sun",d:{Sun:[[m(10),m(16)]]}},
  MFB2:{name:"MFB 2",net:"sun",d:{Sun:[[m(10),m(16)]]}}
 };
-var ORDER=["TUA","DB","FLY","LAW","RAM","PCB","RSB","CAROSE","S","T","SG","FB","FBP","FB2","FB2P","SUP","SUP3","SUP2","BU"];
+var ORDER=["TUA","DB","FLY","LAW","RAM","PCB","RSB","CAROSE","S","T","SG","FB","FBP","FB2","FB2P","SUP","SUP4","SUP3","SUP2","BU"];
 /* Saturday: PCB and RSB now go out as two separate rounds (split Oct 2026) — COMBINED is switched off by pointing it at no day */
 var COMBINED={day:"none",top:"PCB",under:"RSB",label:"PCB + RSB combined"};
 
