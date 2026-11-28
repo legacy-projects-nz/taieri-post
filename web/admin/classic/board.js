@@ -871,9 +871,6 @@ function render(){
         onTap(trg,function(ev){ev.stopPropagation();setTrain(day,run,false);});
         w.appendChild(trg);
       }
-      if((run==="PCB"||run==="RSB")&&W.CAROSE&&win("CAROSE",day)&&anyDrv(get(day,"CAROSE"))){
-        var sc=document.createElement("span");sc.className="tag-tr";sc.style.background="var(--accent,#2a6fd0)";sc.textContent=run==="PCB"?"PORT ONLY":"SB ONLY";sc.title="CAROSE (Carey's Bay / Roseneath) is on today";w.appendChild(sc);
-      }
       if(unc){var ut=document.createElement("span");ut.className="tag-u";ut.textContent="? "+unc.map(function(n){return String(n).split(" ")[0];}).join(", ");ut.title="Not confirmed yet: "+unc.join(", ")+" — click to confirm or dismiss";
         ut.addEventListener("pointerdown",function(ev){ev.stopPropagation();});
         (function(ut,day,run,unc){onTap(ut,function(ev){ev.stopPropagation();openUncMenu(ut,day,run,unc);});})(ut,day,run,unc);
@@ -1292,6 +1289,12 @@ function slotEl(cls,kind,day,run,val,bad,role){
     if(kind==="van"){var v=vanOf(val);el.innerHTML='<span>'+esc(plateOf(val).replace(/[0-9]/g,""))+'</span>';el.title=plateOf(val);}
     else if(role==="tr"){el.innerHTML='<span>T</span>';el.title="Trainee: "+(DNAME[val]||val)+" — right-click to clear";}
     else el.innerHTML='<span>'+esc(DNAME[val]||val)+'</span>';
+    /* CAROSE on this day: PCB driver does Port only, RSB driver does SB only */
+    if(kind==="driver"&&role!=="tr"&&(run==="PCB"||run==="RSB")&&anyDrv(get(day,"CAROSE"))){
+      var sc=document.createElement("span");sc.className="scope";sc.textContent=run==="PCB"?"Port only":"SB only";sc.title="CAROSE (Carey's Bay / Roseneath) is on "+day;
+      sc.style.cssText="margin-left:4px;font:700 8.5px var(--fm,monospace);letter-spacing:.04em;padding:0 4px;border-radius:3px;background:#2a6fd0;color:#fff;white-space:nowrap;line-height:13px;flex:0 0 auto";
+      el.appendChild(sc);
+    }
     if(kind==="driver"&&role!=="tr"&&W[run].novan){
       var sk=stKey(f),sv=get(day,run)[sk];
       var st=document.createElement("span");st.className="st"+(sv?"":" unset");st.title="Start hour (am) — click the arrows";
