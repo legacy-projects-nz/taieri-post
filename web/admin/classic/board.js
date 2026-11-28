@@ -890,6 +890,18 @@ function render(){
         rightClick(t,"",function(){toggleAdd(day,run,id,false);},false);
         w.appendChild(t);
       });
+      /* add-ons nobody has today: offered (dashed) on every run that can do them — click to put it on this run */
+      if(anyDrv(asg)){var seen={},di=DAYS.indexOf(day);
+        TW.forEach(function(r){var aid=twAidOf(r),a=ADDON[aid],runs=twRunsOf(r);
+          if(!a||a.always||seen[aid]||runs.indexOf(run)<0||(r.days||[]).indexOf(di)<0||satBlocked(day,aid))return;
+          if((asg.add||[]).indexOf(aid)>=0)return;
+          if(runs.some(function(c){return W[c]&&win(c,day)&&(get(day,c).add||[]).indexOf(aid)>=0;}))return;
+          seen[aid]=1;
+          var t=document.createElement("span");t.className="tag-a";t.style.cssText="border:1px dashed currentColor;opacity:.55;background:transparent";
+          t.textContent="+ "+a.short;t.title=a.name+" isn't on any run today — click to put it on "+RL(run);
+          t.addEventListener("pointerdown",function(ev){ev.stopPropagation();});
+          t.addEventListener("click",function(ev){ev.stopPropagation();toggleAdd(day,run,aid,true);});
+          w.appendChild(t);});}
       /* standing tasks (always on this run, e.g. the runsheet photo): shown, never ticked, can't be removed */
       ADDONS.forEach(function(a){
         if(!a.always||!twAllowed(day,run,a.id)||satBlocked(day,a.id)||(asg.add||[]).indexOf(a.id)>=0)return;
