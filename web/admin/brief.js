@@ -76,9 +76,14 @@ function commsCard(wk) {
     <label class="f" style="margin-top:8px">Group email subject<input class="in" id="cm-subj" value="${esc(n.email_subject || `Roster – week of ${wkLabel(wk)}`)}" ${can && !c.sent ? "" : "disabled"}></label>
     <label class="f">Group email (## heading, - bullet, **bold**)<textarea class="in" id="cm-body" rows="12" ${can && !c.sent ? "" : "disabled"}>${esc(n.email_body || "")}</textarea></label>
     <details><summary>Preview</summary><div class="item" style="margin-top:6px">${mdMail(n.email_body)}</div></details>
-    ${can && !c.sent ? `<button class="btn sm ${c.email ? "ghost" : ""}" id="cm-email" style="margin-top:6px">${c.email ? "✓ Email ready" : "Mark email ready"}</button>` : ""}</div>`;
+    ${can && !c.sent ? `<button class="btn sm ${c.email ? "ghost" : ""}" id="cm-email" style="margin-top:6px">${c.email ? "✓ Email ready" : "Mark email ready"}</button>` : ""}
+    ${can && !c.sent && c.notes && c.email && weekPublished(wk) ? `<button class="btn full" id="cm-send" style="margin-top:8px">Send all: driver notes + group email</button>` : ""}</div>`;
 }
+const weekPublished = wk => !!noteOf(wk).published_at;
 export function wireComms(wk) {
+  $("#cm-send")?.addEventListener("click", async e => { if (!confirm("Release the driver notes in the app and email everyone now?")) return; e.target.disabled = true;
+    try { const r = await sendAllComms(wk); toast(`${r.notes} driver notes released · ${r.emails} emails sent${r.fails ? ` · ${r.fails} failed` : ""}`, r.fails ? "err" : "ok"); } catch (err) { e.target.disabled = false; toast(err.message, "err"); }
+    await loadAll(); render(true); });
   const save = async (extra = {}) => { const s = $("#cm-subj")?.value, b = $("#cm-body")?.value;
     await q(sb.from("week_notes").upsert({ week_start: wk, email_subject: s, email_body: b, updated_at: new Date().toISOString(), ...extra })); };
   $("#cm-subj")?.addEventListener("blur", async () => { await save({ email_ready_at: null }); await loadAll(); render(true); });
